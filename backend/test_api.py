@@ -1,6 +1,6 @@
 """Integration tests use a dedicated Redis DB and rollback-only PostgreSQL transaction."""
 import os
-os.environ['REDIS_URL'] = 'redis://127.0.0.1:56389/15'
+os.environ.setdefault('REDIS_URL', 'redis://127.0.0.1:56389/15')
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
