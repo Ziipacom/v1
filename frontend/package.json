@@ -9,6 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
+    "start:render": "node render-server.mjs",
     "lint": "oxlint",
     "format": "oxfmt"
   },

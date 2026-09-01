@@ -1,0 +1,93 @@
+[
+  {
+    "id": "demo-afterhours",
+    "title": "After hours. All feeling.",
+    "description": "A visual moodboard for a late-night set. Preview photography, not a live broadcast.",
+    "category": "music",
+    "creator": "Ziipa Sessions",
+    "tags": ["music", "electronic", "studio"],
+    "city": "New York",
+    "cover": "/media/studio.jpg",
+    "media_url": null,
+    "label": "Music moodboard",
+    "demo": true
+  },
+  {
+    "id": "demo-sintel",
+    "title": "A small story. A bigger world.",
+    "description": "Sintel trailer \u00b7 \u00a9 Blender Foundation \u00b7 CC BY 3.0. An open-film sample for testing video playback.",
+    "category": "video",
+    "creator": "Blender Foundation",
+    "tags": ["film", "animation", "storytelling"],
+    "city": "",
+    "cover": "/media/sintel.png",
+    "media_url": "/media/sintel-trailer.mp4",
+    "label": "Playable sample",
+    "demo": true
+  },
+  {
+    "id": "demo-gaming",
+    "title": "One more round.",
+    "description": "Gaming channel concept. Connect a broadcast provider to stream gameplay.",
+    "category": "games",
+    "creator": "Ziipa Arcade",
+    "tags": ["gaming", "community"],
+    "city": "Los Angeles",
+    "cover": "/media/gaming.jpg",
+    "media_url": null,
+    "label": "Channel preview",
+    "demo": true
+  },
+  {
+    "id": "demo-studio",
+    "title": "Inside the creator room.",
+    "description": "A space for live conversations and behind-the-scenes sessions. No stream is currently live.",
+    "category": "live",
+    "creator": "Ziipa Sessions",
+    "tags": ["studio", "music", "live"],
+    "city": "New York",
+    "cover": "/media/studio.jpg",
+    "media_url": null,
+    "label": "Offline \u00b7 preview",
+    "demo": true
+  },
+  {
+    "id": "demo-ocean",
+    "title": "Find a different rhythm.",
+    "description": "A coastal visual study. Photo preview for your discovery feed.",
+    "category": "video",
+    "creator": "Ziipa Collective",
+    "tags": ["nature", "travel"],
+    "city": "Lisbon",
+    "cover": "/media/ocean.jpg",
+    "media_url": null,
+    "label": "Photo preview",
+    "demo": true
+  },
+  {
+    "id": "demo-nft",
+    "title": "Worlds / 001",
+    "description": "Digital collection concept. No token has been minted; no ownership or valuation is implied.",
+    "category": "nft",
+    "creator": "Ziipa Editions",
+    "tags": ["art", "digital"],
+    "city": "",
+    "cover": "/brand/ziipa-background.png",
+    "media_url": null,
+    "label": "Collection concept",
+    "demo": true
+  },
+  {
+    "id": "demo-store",
+    "title": "The studio collection",
+    "description": "A seller storefront concept for creative goods. Checkout and inventory are not connected.",
+    "category": "store",
+    "creator": "Ziipa Supply",
+    "tags": ["studio", "design"],
+    "city": "New York",
+    "cover": "/media/studio.jpg",
+    "media_url": null,
+    "label": "Store preview",
+    "demo": true
+  }
+]

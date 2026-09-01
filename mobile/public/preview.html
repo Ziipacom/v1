@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ziipa — Mobile app preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --phone-width: 390px;
+        --preview-scale: 1;
+      }
+      * {
+        box-sizing: border-box;
+        scrollbar-width: none;
+      }
+      *::-webkit-scrollbar {
+        display: none;
+      }
+      body {
+        margin: 0;
+        background: radial-gradient(ellipse at 50% 30%, #211137, #090710 70%);
+        color: #f7f3ff;
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+      }
+      main {
+        min-height: 100svh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 22px 16px;
+        gap: 14px;
+      }
+      header {
+        text-align: center;
+      }
+      h1 {
+        font-size: 20px;
+        letter-spacing: -0.5px;
+        margin: 0;
+        font-weight: 650;
+      }
+      p {
+        margin: 5px 0 0;
+        color: #b3a6c7;
+        font-size: 12px;
+      }
+      nav {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      button,
+      a {
+        font: inherit;
+        font-size: 12px;
+        background: #1c1529;
+        color: #c5b8d9;
+        border: 1px solid #3c2c51;
+        border-radius: 20px;
+        padding: 7px 13px;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      button[aria-pressed="true"] {
+        color: white;
+        background: #6026b9;
+        border-color: #8c51db;
+      }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid #b1ee46;
+        outline-offset: 3px;
+      }
+      .device-stage {
+        width: calc((var(--phone-width) + 4px) * var(--preview-scale));
+        height: calc(848px * var(--preview-scale));
+        flex-shrink: 0;
+      }
+      .phone {
+        box-sizing: content-box;
+        width: var(--phone-width);
+        height: 844px;
+        transform: scale(var(--preview-scale));
+        transform-origin: top left;
+        overflow: hidden;
+        border-radius: 30px;
+        border: 2px solid #49365f;
+        background: #110d1c;
+        box-shadow: 0 25px 80px #0008;
+      }
+      iframe {
+        display: block;
+        border: 0;
+        width: 100%;
+        height: 100%;
+        background: #110d1c;
+      }
+      footer {
+        color: #9688ac;
+        text-align: center;
+        font-size: 11px;
+        max-width: 480px;
+      }
+      @media (max-width: 440px) {
+        main {
+          padding: 12px 8px;
+          gap: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Ziipa · mobile app</h1>
+        <p>Interactive browser preview of the React Native app</p>
+      </header>
+      <nav aria-label="Preview screen size">
+        <button type="button" data-width="390" aria-pressed="true">
+          Compact · 390
+        </button>
+        <button type="button" data-width="430" aria-pressed="false">
+          Large · 430
+        </button>
+        <button type="button" id="restart">Restart</button>
+        <button type="button" id="scale" aria-pressed="false">
+          Actual size
+        </button>
+        <a href="/" target="_blank" rel="noopener">Full screen ↗</a>
+      </nav>
+      <div class="device-stage">
+        <div class="phone">
+          <iframe
+            src="/"
+            title="Ziipa mobile app"
+            allow="autoplay; fullscreen"
+            allowfullscreen
+          ></iframe>
+        </div>
+      </div>
+      <footer>
+        Sample edits reset · Signed-in changes use your Ziipa API · Testnet
+        wallet<br />
+        Tap the menu for Studio. Tap a card, then swipe vertically through the
+        feed.
+      </footer>
+    </main>
+    <script>
+      let actualSize = false;
+      function fitPhone() {
+        const phoneWidth = Number.parseInt(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            "--phone-width",
+          ),
+        );
+        const fit = Math.min(
+          1,
+          Math.max(0.3, (window.innerHeight - 182) / 848),
+          (window.innerWidth - 32) / (phoneWidth + 4),
+        );
+        document.documentElement.style.setProperty(
+          "--preview-scale",
+          String(actualSize ? 1 : fit),
+        );
+      }
+      window.addEventListener("resize", fitPhone);
+      document.querySelector("#scale").addEventListener("click", (event) => {
+        actualSize = !actualSize;
+        event.currentTarget.setAttribute("aria-pressed", String(actualSize));
+        event.currentTarget.textContent = actualSize
+          ? "Fit to view"
+          : "Actual size";
+        fitPhone();
+      });
+      fitPhone();
+      document.querySelectorAll("[data-width]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.documentElement.style.setProperty(
+            "--phone-width",
+            `${button.dataset.width}px`,
+          );
+          fitPhone();
+          document
+            .querySelectorAll("[data-width]")
+            .forEach((item) =>
+              item.setAttribute("aria-pressed", String(item === button)),
+            );
+        });
+      });
+      document
+        .querySelector("#restart")
+        .addEventListener("click", () =>
+          document.querySelector("iframe").contentWindow.location.reload(),
+        );
+    </script>
+  </body>
+</html>

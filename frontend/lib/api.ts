@@ -9,7 +9,7 @@ export async function api<T = unknown>(path: string, data?: unknown): Promise<T>
       signal: AbortSignal.timeout(10000),
     });
   } catch {
-    throw new Error('Unable to reach Ziipa. Please check that the local backend is running.');
+    throw new Error('Unable to reach Ziipa. Please try again in a moment.');
   }
   let result;
   try { result = await response.json(); } catch { throw new Error('The service is unavailable. Please try again.'); }

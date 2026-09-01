@@ -1,0 +1,42 @@
+name: ziipa
+services:
+  ipfs:
+    image: ipfs/kubo:v0.43.0
+    profiles: [web3]
+    command: [daemon, --offline, --migrate=true]
+    ports:
+      - '127.0.0.1:56001:5001'
+      - '127.0.0.1:58080:8080'
+    volumes:
+      - ipfs_data:/data/ipfs
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ziipa
+      POSTGRES_PASSWORD: ziipa_local
+      POSTGRES_DB: ziipa
+    ports:
+      - '127.0.0.1:55439:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ziipa']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - '127.0.0.1:56389:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  ipfs_data:
+  postgres_data:
+  redis_data:
