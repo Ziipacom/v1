@@ -51,12 +51,22 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      ipfs:
+        image: ipfs/kubo:v0.43.0
+        ports:
+          - 5001:5001
+        options: >-
+          --health-cmd "ipfs id"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
     env:
       DATABASE_URL: postgresql+psycopg://ziipa:ziipa_test@127.0.0.1:5432/ziipa
       REDIS_URL: redis://127.0.0.1:6379/15
+      IPFS_API_URL: http://127.0.0.1:5001
       FRONTEND_ORIGIN: http://localhost:5178
       MOBILE_WEB_ORIGIN: http://localhost:8082
     steps:
