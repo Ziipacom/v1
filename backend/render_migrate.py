@@ -1,13 +1,11 @@
-"""Create the initial Ziipa schema during a Render pre-deploy step.
+"""Apply reviewed, versioned schema changes before serving traffic."""
 
-This is intentionally idempotent for the first release. Replace it with
-reviewed versioned migrations before making incompatible schema changes.
-"""
-
-from app import Base, engine
+from alembic import command
+from alembic.config import Config
+from app import engine
 
 
 if __name__ == '__main__':
-    Base.metadata.create_all(engine)
+    command.upgrade(Config('alembic.ini'), 'head')
     engine.dispose()
     print('Ziipa database schema is ready.')

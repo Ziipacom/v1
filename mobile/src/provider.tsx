@@ -224,7 +224,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     }
   }, [session, api, putData]);
   async function authenticate(email: string, password: string, name?: string) {
-    const result = await request<Session>(
+    const result = await request<Session | { verification_required: true; message: string }>(
       `/api/mobile/auth/${name === undefined ? "login" : "register"}`,
       undefined,
       {
@@ -240,6 +240,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
             }),
       },
     );
+    if ('verification_required' in result) throw new Error(result.message);
     await writeSession(result);
     const user = await request<User>("/api/me", result.access_token);
     activeToken.current = result.access_token;

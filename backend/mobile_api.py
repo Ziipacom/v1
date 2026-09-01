@@ -13,8 +13,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column, Session
 
 from app import Base, User, Waitlist, Register, Login, db, cache, passwords, DUMMY_HASH, current_user, guard, settings
+from account_services import (AccountState, AccountToken, forget_session, remember_session,
+                              revoke_user_sessions, send_verification, session_key, state_for)
 import creator
-from creator import CreatorItem, CreatorMedia, CreatorFeed, CreatorComment, CreatorPreferences, PreferencesInput, prefs_for, assert_visible
+from creator import CreatorItem, CreatorMedia, CreatorFeed, CreatorComment, CreatorPreferences, PendingUpload, PreferencesInput, prefs_for, assert_visible
+from storage_services import LocalStorage, storage
 
 router = APIRouter()
 TOKEN_TTL = 7 * 24 * 3600
@@ -75,10 +78,7 @@ class ResolveInput(BaseModel):
 
 def native_session(user):
     token = secrets.token_urlsafe(32)
-    try:
-        cache.setex('mobile_session:' + hashlib.sha256(token.encode()).hexdigest(), TOKEN_TTL, str(user.id))
-    except RedisError:
-        raise HTTPException(503, 'Sign-in is temporarily unavailable. Please try again.')
+    remember_session(user.id, session_key('mobile_session:', token), TOKEN_TTL)
     return {'access_token': token, 'token_type': 'Bearer', 'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=TOKEN_TTL)).isoformat(), 'user': {'id': user.id, 'name': user.name, 'email': user.email}}
 
 
@@ -93,6 +93,10 @@ def register_native(data: NativeRegister, session: Session = Depends(db)):
     except IntegrityError:
         session.rollback()
         raise HTTPException(409, 'Unable to create an account. Try signing in.')
+    send_verification(session, user)
+    if settings.require_email_verification:
+        return {'verification_required': True,
+                'message': 'Check your email to verify the account, then sign in.'}
     return native_session(user)
 
 
@@ -102,6 +106,8 @@ def login_native(data: Login, session: Session = Depends(db)):
     valid = passwords.verify(data.password, user.password_hash if user else DUMMY_HASH)
     if not valid or not user:
         raise HTTPException(401, 'Email or password is incorrect')
+    if settings.require_email_verification and not state_for(session, user).email_verified_at:
+        raise HTTPException(403, 'Verify your email before signing in.')
     return native_session(user)
 
 
@@ -110,10 +116,9 @@ def logout_native(request: Request):
     scheme, _, token = request.headers.get('authorization', '').partition(' ')
     if scheme.lower() != 'bearer' or not token:
         raise HTTPException(401, 'Mobile session required')
-    try:
-        cache.delete('mobile_session:' + hashlib.sha256(token.encode()).hexdigest())
-    except RedisError:
-        raise HTTPException(503, 'Could not revoke this session. Try again.')
+    key = session_key('mobile_session:', token)
+    uid = cache.get(key)
+    forget_session(int(uid) if uid else None, key)
     return {'ok': True}
 
 
@@ -190,6 +195,9 @@ def resolve(report_id: str, data: ResolveInput, user: User = Depends(moderator),
 
 def drain_media_deletions(session):
     """Retryable cleanup; only UUID files immediately inside the media root are eligible."""
+    provider = storage()
+    if not isinstance(provider, LocalStorage):
+        return
     root = creator.MEDIA_ROOT.resolve()
     for row in session.scalars(select(MediaDeletion).limit(500)).all():
         try:
@@ -212,18 +220,28 @@ def delete_account(data: DeleteAccount, user: User = Depends(current_user), sess
     session.execute(select(User).where(User.id == user.id).with_for_update())
     item_ids = list(session.scalars(select(CreatorItem.id).where(CreatorItem.owner_id == user.id)))
     media_ids = list(session.scalars(select(CreatorMedia.id).where(CreatorMedia.owner_id == user.id)))
+    provider = storage()
+    if not isinstance(provider, LocalStorage):
+        try:
+            for media_id in media_ids:
+                provider.delete(user.id, media_id)
+            for upload_id in session.scalars(select(PendingUpload.id).where(PendingUpload.owner_id == user.id)):
+                provider.delete_pending(user.id, upload_id)
+        except Exception as exc:
+            raise HTTPException(503, 'Private media cleanup is temporarily unavailable. Account deletion was not started.') from exc
     for media_id in media_ids:
-        session.merge(MediaDeletion(id=media_id))
+        if isinstance(provider, LocalStorage):
+            session.merge(MediaDeletion(id=media_id))
     session.execute(delete(ContentReport).where(or_(ContentReport.reporter_id == user.id, ContentReport.target_owner_id == user.id, ContentReport.item_id.in_(item_ids))))
     session.execute(delete(CreatorComment).where(or_(CreatorComment.owner_id == user.id, CreatorComment.item_id.in_(item_ids))))
     session.execute(delete(creator.CreatorDistribution).where(creator.CreatorDistribution.owner_id == user.id))
     session.execute(delete(creator.CreatorConnection).where(creator.CreatorConnection.owner_id == user.id))
-    for model in (CreatorItem, CreatorMedia, CreatorFeed, CreatorPreferences, PolicyAcceptance):
+    for model in (CreatorItem, CreatorMedia, CreatorFeed, CreatorPreferences, PendingUpload, PolicyAcceptance, AccountState, AccountToken):
         session.execute(delete(model).where(model.owner_id == user.id))
     session.execute(delete(Waitlist).where(Waitlist.email == user.email))
     session.delete(user)
     session.commit()
-    # All cookie and bearer sessions now fail current_user, including other devices.
+    revoke_user_sessions(user.id)
     drain_media_deletions(session)
     pending = bool(session.scalar(select(MediaDeletion.id).where(MediaDeletion.id.in_(media_ids)).limit(1)))
     return {'ok': True, 'pending_media_cleanup': pending}

@@ -147,15 +147,26 @@ export async function uploadMedia(
   if (!allowed.has(file.mimeType)) throw new Error("Unsupported creator file.");
   if (!file.size || file.size > uploadLimit)
     throw new Error("Choose a non-empty file no larger than 100 MB.");
+  const reservation = await request<{
+    id?: string;
+    mode: "api" | "direct";
+    url: string;
+    method: "POST" | "PUT";
+    headers: Record<string, string>;
+  }>("/api/creator/media/presign", token, {
+    filename: file.name,
+    content_type: file.mimeType,
+    size: file.size,
+  });
+  const direct = reservation.mode === "direct";
   const task = FileSystem.createUploadTask(
-    validateOrigin() + "/api/creator/media",
+    direct ? reservation.url : validateOrigin() + "/api/creator/media",
     file.uri,
     {
-      httpMethod: "POST",
+      httpMethod: direct ? "PUT" : "POST",
       uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
       headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": file.mimeType,
+        ...(direct ? reservation.headers : { Authorization: `Bearer ${token}`, "Content-Type": file.mimeType }),
       },
       sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
     },
@@ -174,10 +185,15 @@ export async function uploadMedia(
   try {
     const response = await task.uploadAsync();
     if (!response) throw new Error("Upload was cancelled. Please try again.");
-    const body = JSON.parse(response.body);
+    const body = response.body ? JSON.parse(response.body) : null;
     if (response.status >= 400)
       throw new ApiError(errorMessage(body), response.status);
-    return body as { id: string; url: string; content_type: string };
+    onProgress(100);
+    return direct
+      ? await request<{ id: string; url: string; content_type: string }>(
+          `/api/creator/media/${reservation.id}/complete`, token, {},
+        )
+      : (body as { id: string; url: string; content_type: string });
   } finally {
     clearTimeout(timer);
   }

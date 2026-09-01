@@ -24,6 +24,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx tsc --noEmit
+      - run: npx wrangler deploy --dry-run --config dist/server/wrangler.json
 
   backend:
     runs-on: ubuntu-latest
@@ -66,7 +67,34 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.lock.txt
       - run: python -m pip install -r requirements.lock.txt
-      - run: python -m pytest -q test_api.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - run: npm ci
+        working-directory: contracts
+      - run: npm run compile
+        working-directory: contracts
+      - name: Start local EVM for API integration tests
+        working-directory: contracts
+        run: |
+          npm run node > hardhat.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS -X POST http://127.0.0.1:8545 \
+              -H 'content-type: application/json' \
+              --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat hardhat.log
+          exit 1
+      - run: npm run deploy:local
+        working-directory: contracts
+      - run: python render_migrate.py
+      - run: python -m pytest -q test_api.py test_web3.py
+      - run: docker build -t ziipa-api-ci .
 
   contracts:
     runs-on: ubuntu-latest

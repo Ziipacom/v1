@@ -1,0 +1,19 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": [
+          "https://ziipa.com",
+          "https://www.ziipa.com",
+          "https://app.ziipa.com",
+          "http://localhost:5178",
+          "http://localhost:8082"
+        ],
+        "methods": ["PUT"],
+        "headers": ["Content-Type"]
+      },
+      "exposeHeaders": ["ETag"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}

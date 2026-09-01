@@ -1,17 +1,18 @@
 """Creator tools, owned media, and truthful cross-network distribution state."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import ForeignKey, String, JSON, DateTime, select, func, delete, UniqueConstraint
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Mapped, mapped_column, Session
 from app import Base, User, db, current_user, guard, settings
 from catalog import CATALOG
+from storage_services import LocalStorage, storage
 
 router = APIRouter(prefix='/api/creator', dependencies=[Depends(current_user)])
 MEDIA_ROOT = Path(settings.uploads_dir).expanduser().resolve()
@@ -42,6 +43,16 @@ class CreatorMedia(Base):
     owner_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
     content_type: Mapped[str] = mapped_column(String(50))
     size: Mapped[int]
+
+
+class PendingUpload(Base):
+    __tablename__ = 'pending_uploads'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    content_type: Mapped[str] = mapped_column(String(50))
+    size: Mapped[int]
+    filename: Mapped[str] = mapped_column(String(180))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class CreatorConnection(Base):
@@ -182,6 +193,37 @@ class DistributionInput(BaseModel):
         return self
 
 
+class UploadReservation(BaseModel):
+    filename: str = Field(min_length=1, max_length=180)
+    content_type: str = Field(min_length=3, max_length=50)
+    size: int = Field(gt=0, le=100 * 1024 * 1024)
+
+
+ALLOWED_MEDIA = {'video/mp4', 'video/quicktime', 'video/webm', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/flac', 'audio/ogg', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'}
+
+
+def valid_signature(content_type: str, header: bytes) -> bool:
+    signatures = {
+        'video/mp4': header[4:8] == b'ftyp', 'video/webm': header.startswith(b'\x1aE\xdf\xa3'),
+        'image/png': header.startswith(b'\x89PNG\r\n\x1a\n'), 'image/jpeg': header.startswith(b'\xff\xd8\xff'),
+        'image/webp': header[:4] == b'RIFF' and header[8:12] == b'WEBP',
+        'audio/wav': header[:4] == b'RIFF' and header[8:12] == b'WAVE',
+        'audio/mpeg': header[:3] == b'ID3' or (len(header) >= 2 and header[0] == 255 and header[1] & 224 == 224),
+        'video/quicktime': header[4:8] == b'ftyp', 'audio/mp4': header[4:8] == b'ftyp',
+        'audio/aac': len(header) >= 2 and header[0] == 255 and header[1] & 246 == 240,
+        'audio/flac': header.startswith(b'fLaC'), 'audio/ogg': header.startswith(b'OggS'),
+        'image/gif': header.startswith((b'GIF87a', b'GIF89a')),
+        'image/heic': header[4:8] == b'ftyp' and header[8:12] in {b'heic', b'heix', b'hevc', b'hevx'},
+        'image/heif': header[4:8] == b'ftyp' and header[8:12] in {b'mif1', b'msf1', b'heic', b'heif'},
+    }
+    return bool(signatures.get(content_type))
+
+
+def media_url(media_id: str) -> str:
+    path = f'/api/creator/media/{media_id}'
+    return settings.api_public_origin.rstrip('/') + path if settings.api_public_origin else path
+
+
 def prefs_for(session, user):
     row = session.get(CreatorPreferences, user.id)
     return PreferencesInput(**row.data).model_dump() if row else PreferencesInput().model_dump()
@@ -190,7 +232,7 @@ def prefs_for(session, user):
 def serialize_item(item, session):
     owner = session.get(User, item.owner_id)
     media = session.get(CreatorMedia, item.data.get('media_id')) if item.data.get('media_id') else None
-    media_url = f'/api/creator/media/{media.id}' if media else None
+    media_url = globals()['media_url'](media.id) if media else None
     image = media and media.content_type.startswith('image/')
     distributions = session.scalars(select(CreatorDistribution).where(CreatorDistribution.item_id == item.id, CreatorDistribution.owner_id == item.owner_id)).all()
     return {**item.data, 'visibility': item.visibility, 'id': item.id, 'creator': owner.name, 'creator_id': owner.id, 'cover': media_url if image else '/brand/ziipa-background.png', 'media_url': None if image else media_url, 'content_type': media.content_type if media else None, 'demo': False, 'label': 'Post' if item.visibility == 'published' else ('Removed by moderation' if item.visibility == 'hidden' else 'Draft'), 'created_at': item.created_at.isoformat(), 'distribution': [serialize_distribution(d) for d in distributions]}
@@ -219,14 +261,29 @@ def assert_visible(item_id, session, user):
         return
     row = session.get(CreatorItem, item_id)
     prefs = prefs_for(session, user)
-    if not row or row.owner_id in prefs['blocked_user_ids'] or (row.owner_id != user.id and row.visibility != 'published'):
+    if not row or row.owner_id in prefs['blocked_user_ids'] or (row.owner_id != user.id and (row.visibility != 'published' or not account_allows_view(session, row.owner_id))):
         raise HTTPException(404, 'Post not found')
+
+
+def account_allows_view(session, owner_id: int) -> bool:
+    from account_services import AccountState, PrivacyInput
+    row = session.get(AccountState, owner_id)
+    privacy = PrivacyInput(**(row.privacy or {})) if row else PrivacyInput()
+    return privacy.profile_visibility != 'private'
+
+
+def account_is_discoverable(session, owner_id: int) -> bool:
+    from account_services import AccountState, PrivacyInput
+    row = session.get(AccountState, owner_id)
+    privacy = PrivacyInput(**(row.privacy or {})) if row else PrivacyInput()
+    return privacy.profile_visibility != 'private' and privacy.discoverable
 
 
 @router.get('/bootstrap')
 def bootstrap(user: User = Depends(current_user), session: Session = Depends(db)):
     prefs = prefs_for(session, user)
     published = session.scalars(select(CreatorItem).where(CreatorItem.visibility == 'published').order_by(CreatorItem.created_at.desc()).limit(200)).all()
+    published = [i for i in published if i.owner_id == user.id or account_is_discoverable(session, i.owner_id)]
     items = [serialize_item(i, session) for i in published] + (CATALOG if settings.enable_demo_catalog and prefs['show_demos'] else [])
     items = [i for i in items if i.get('creator_id') not in prefs['blocked_user_ids'] and i['creator'] not in prefs['blocked_creators'] and not any(w.lower() in (i['title'] + ' ' + i['description'] + ' ' + ' '.join(i['tags'])).lower() for w in prefs['muted_words'] if w.strip())]
     own = session.scalars(select(CreatorItem).where(CreatorItem.owner_id == user.id).order_by(CreatorItem.created_at.desc())).all()
@@ -367,9 +424,10 @@ def add_comment(item_id: str, data: CommentInput, user: User = Depends(current_u
 
 @router.post('/media', dependencies=[Depends(guard)])
 async def upload(request: Request, user: User = Depends(current_user), session: Session = Depends(db)):
+    if settings.media_storage_backend != 'local':
+        raise HTTPException(409, 'Use the signed media upload flow for this environment.')
     content_type = request.headers.get('content-type', '').split(';')[0]
-    allowed = {'video/mp4', 'video/quicktime', 'video/webm', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/flac', 'audio/ogg', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'}
-    if content_type not in allowed:
+    if content_type not in ALLOWED_MEDIA:
         raise HTTPException(415, 'Choose a supported image, video, or audio creator file.')
     # Serialize uploads per owner so concurrent requests cannot bypass the storage quota.
     try:
@@ -394,20 +452,7 @@ async def upload(request: Request, user: User = Depends(current_user), session: 
                     raise HTTPException(413, 'File too large. Limit: 100 MB per upload and 1 GB per account.')
                 header = (header + chunk)[:32]
                 output.write(chunk)
-        signatures = {
-            'video/mp4': header[4:8] == b'ftyp', 'video/webm': header.startswith(b'\x1aE\xdf\xa3'),
-            'image/png': header.startswith(b'\x89PNG\r\n\x1a\n'), 'image/jpeg': header.startswith(b'\xff\xd8\xff'),
-            'image/webp': header[:4] == b'RIFF' and header[8:12] == b'WEBP',
-            'audio/wav': header[:4] == b'RIFF' and header[8:12] == b'WAVE',
-            'audio/mpeg': header[:3] == b'ID3' or (len(header) >= 2 and header[0] == 255 and header[1] & 224 == 224),
-            'video/quicktime': header[4:8] == b'ftyp', 'audio/mp4': header[4:8] == b'ftyp',
-            'audio/aac': len(header) >= 2 and header[0] == 255 and header[1] & 246 == 240,
-            'audio/flac': header.startswith(b'fLaC'), 'audio/ogg': header.startswith(b'OggS'),
-            'image/gif': header.startswith((b'GIF87a', b'GIF89a')),
-            'image/heic': header[4:8] == b'ftyp' and header[8:12] in {b'heic', b'heix', b'hevc', b'hevx'},
-            'image/heif': header[4:8] == b'ftyp' and header[8:12] in {b'mif1', b'msf1', b'heic', b'heif'},
-        }
-        if not size or not signatures[content_type]:
+        if not size or not valid_signature(content_type, header):
             raise HTTPException(415, 'File contents do not match the selected media type.')
         session.add(CreatorMedia(id=media_id, owner_id=user.id, content_type=content_type, size=size))
         session.commit()
@@ -415,7 +460,55 @@ async def upload(request: Request, user: User = Depends(current_user), session: 
         path.unlink(missing_ok=True)
         session.rollback()
         raise
-    return {'id': media_id, 'url': f'/api/creator/media/{media_id}', 'content_type': content_type}
+    return {'id': media_id, 'url': media_url(media_id), 'content_type': content_type}
+
+
+@router.post('/media/presign', dependencies=[Depends(guard)])
+def presign_upload(data: UploadReservation, user: User = Depends(current_user), session: Session = Depends(db)):
+    if settings.media_storage_backend != 'r2':
+        return {'mode': 'api', 'url': media_url(''), 'method': 'POST', 'headers': {'Content-Type': data.content_type}}
+    if data.content_type not in ALLOWED_MEDIA:
+        raise HTTPException(415, 'Choose a supported image, video, or audio creator file.')
+    session.execute(delete(PendingUpload).where(PendingUpload.expires_at < datetime.now(timezone.utc)))
+    try:
+        session.execute(select(User).where(User.id == user.id).with_for_update(nowait=True))
+    except OperationalError:
+        session.rollback()
+        raise HTTPException(409, 'Another upload is in progress. Please wait for it to finish.')
+    used = session.scalar(select(func.coalesce(func.sum(CreatorMedia.size), 0)).where(CreatorMedia.owner_id == user.id))
+    reserved = session.scalar(select(func.coalesce(func.sum(PendingUpload.size), 0)).where(PendingUpload.owner_id == user.id))
+    if used + reserved + data.size > 1024 * 1024 * 1024:
+        raise HTTPException(413, 'Storage limit reached (1 GB per account).')
+    media_id = str(uuid.uuid4())
+    row = PendingUpload(id=media_id, owner_id=user.id, content_type=data.content_type,
+                        size=data.size, filename=Path(data.filename).name[:180],
+                        expires_at=datetime.now(timezone.utc) + timedelta(seconds=settings.r2_presign_ttl_seconds))
+    session.add(row)
+    session.commit()
+    return {'id': media_id, 'mode': 'direct', **storage().presign_put(user.id, media_id, data.content_type, data.size)}
+
+
+@router.post('/media/{media_id}/complete', dependencies=[Depends(guard)])
+def complete_upload(media_id: str, user: User = Depends(current_user), session: Session = Depends(db)):
+    row = session.get(PendingUpload, media_id)
+    if not row or row.owner_id != user.id:
+        raise HTTPException(404, 'Upload reservation not found.')
+    expires = row.expires_at.replace(tzinfo=timezone.utc) if row.expires_at.tzinfo is None else row.expires_at
+    if expires < datetime.now(timezone.utc):
+        session.delete(row)
+        session.commit()
+        raise HTTPException(410, 'Upload reservation expired. Start the upload again.')
+    size, content_type, header = storage().inspect(user.id, media_id)
+    if size != row.size or content_type != row.content_type or not valid_signature(row.content_type, header):
+        storage().delete_pending(user.id, media_id)
+        session.delete(row)
+        session.commit()
+        raise HTTPException(415, 'Uploaded file does not match the reserved media type or size.')
+    storage().promote(user.id, media_id)
+    session.add(CreatorMedia(id=row.id, owner_id=row.owner_id, content_type=row.content_type, size=row.size))
+    session.delete(row)
+    session.commit()
+    return {'id': media_id, 'url': media_url(media_id), 'content_type': content_type}
 
 
 @router.get('/media/{media_id}')
@@ -429,7 +522,13 @@ def read_media(media_id: str, user: User = Depends(current_user), session: Sessi
         shared = session.scalar(select(CreatorItem.id).where(CreatorItem.visibility == 'published', CreatorItem.data['media_id'].as_string() == media_id))
         if not shared:
             raise HTTPException(404, 'Media not found')
-    path = MEDIA_ROOT / row.id
-    if not path.is_file():
-        raise HTTPException(404, 'Media file unavailable')
-    return FileResponse(path, media_type=row.content_type, headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
+        if not account_allows_view(session, row.owner_id):
+            raise HTTPException(404, 'Media not found')
+    provider = storage()
+    if isinstance(provider, LocalStorage):
+        path = MEDIA_ROOT / row.id
+        if not path.is_file():
+            raise HTTPException(404, 'Media file unavailable')
+        return FileResponse(path, media_type=row.content_type, headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
+    return RedirectResponse(provider.read_url(row.owner_id, row.id), status_code=307,
+                            headers={'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer'})

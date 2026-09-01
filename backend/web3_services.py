@@ -22,8 +22,10 @@ class Web3Settings(BaseSettings):
     web3_local_rpc: str = 'http://127.0.0.1:8545'
     web3_public_origin: str = 'http://localhost:8082'
     web3_registry: str = str(ROOT / '.local' / 'web3-deployments.json')
+    web3_registry_json: str = ''
     ipfs_api_url: str = 'http://127.0.0.1:56001'
     ipfs_public: bool = False
+    pinata_jwt: str = ''
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
 
@@ -48,7 +50,8 @@ def chain_info(chain_id):
 def registry(chain_id):
     chain_info(chain_id)
     try:
-        return json.loads(Path(config.web3_registry).read_text())[str(chain_id)]
+        document = json.loads(config.web3_registry_json) if config.web3_registry_json else json.loads(Path(config.web3_registry).read_text())
+        return document[str(chain_id)]
     except (OSError, ValueError, KeyError):
         return {}
 
@@ -101,6 +104,22 @@ def content_uri(uri):
 
 
 def pin(data: bytes, filename: str):
+    if config.pinata_jwt:
+        try:
+            response = httpx.post(
+                'https://api.pinata.cloud/pinning/pinFileToIPFS',
+                headers={'Authorization': f'Bearer {config.pinata_jwt}'},
+                data={'pinataMetadata': json.dumps({'name': filename}),
+                      'pinataOptions': json.dumps({'cidVersion': 1})},
+                files={'file': (filename, data, 'application/octet-stream')},
+                timeout=120, follow_redirects=False,
+            )
+            response.raise_for_status()
+            return content_uri('ipfs://' + response.json()['IpfsHash'])
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(503, 'Pinata IPFS storage is unavailable. Nothing has been minted; retry when storage is ready.') from exc
     endpoint = config.ipfs_api_url.rstrip('/')
     if '://' not in endpoint:
         endpoint = 'http://' + endpoint

@@ -18,6 +18,7 @@ import { color, font, styles } from "../theme";
 import { Action, Field, Logo, Notice } from "../components/ui";
 import { useZiipa } from "../provider";
 import { demoEnabled } from "../lib/config";
+import { request } from "../lib/api";
 
 export function WelcomeScreen({
   navigation,
@@ -238,6 +239,21 @@ export function LoginScreen({
           onPress={() => void submit()}
           busy={busy}
         />
+        {!register && (
+          <Action
+            secondary
+            title="Email me a password reset link"
+            disabled={busy || !email.trim()}
+            onPress={() => {
+              setBusy(true);
+              setError("");
+              void request<{ message: string }>("/api/auth/forgot-password", undefined, { email: email.trim() })
+                .then((result) => setError(result.message))
+                .catch((e) => setError((e as Error).message))
+                .finally(() => setBusy(false));
+            }}
+          />
+        )}
         <Action
           secondary
           title={

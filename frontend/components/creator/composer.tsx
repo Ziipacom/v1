@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { NativeSelect } from '@/components/ui/native-select';
-import { api } from '@/lib/api';
+import { api, apiUrl } from '@/lib/api';
 import type { Item, Category } from './types';
 import { MediaPlayer, vtt } from './media-player';
 
@@ -25,7 +25,7 @@ export function Composer({item,remix,onSaved}:{item?:Item;remix?:Item;onSaved:()
  const preview:Item={id:'preview',title:title||'Your preview',description,category,creator:'You',city,tags:[],cover:media?.content_type.startsWith('image/')?media.url:'/brand/ziipa-background.png',media_url:media&&!media.content_type.startsWith('image/')?media.url:null,content_type:media?.content_type,label:'Your upload',demo:false,trim_start:start,trim_end:Number(end)||null,captions};
  async function upload(file:File) {
   setBusy(true);setError('');setNotice('Uploading to your local workspace…');
-  try {if(file.size>50*1024*1024)throw new Error('Choose a file smaller than 50 MB.');const response=await fetch('/api/creator/media',{method:'POST',credentials:'same-origin',headers:{'Content-Type':file.type},body:file,signal:AbortSignal.timeout(120000)});const result=await response.json() as {id:string;url:string;content_type:string;detail?:string};if(!response.ok)throw new Error(result.detail||'Upload failed');setMedia(result);setNotice('Upload saved. Add your details, then save or publish.');}
+  try {if(file.size>50*1024*1024)throw new Error('Choose a file smaller than 50 MB.');const reservation=await api<{id?:string;mode:'api'|'direct';url:string;headers:Record<string,string>}>('/creator/media/presign',{filename:file.name,content_type:file.type,size:file.size});const direct=reservation.mode==='direct';const response=await fetch(direct?reservation.url:apiUrl('/creator/media'),{method:direct?'PUT':'POST',credentials:direct?'omit':'include',headers:direct?reservation.headers:{'Content-Type':file.type},body:file,signal:AbortSignal.timeout(120000)});const uploadResult=await response.json().catch(()=>null) as {id:string;url:string;content_type:string;detail?:string}|null;if(!response.ok)throw new Error(uploadResult?.detail||'Upload failed');const result=direct?await api<{id:string;url:string;content_type:string}>(`/creator/media/${reservation.id}/complete`,{}):uploadResult!;setMedia(result);setNotice('Upload saved. Add your details, then save or publish.');}
   catch(e){setError((e as Error).message);setNotice('');}finally{setBusy(false);}
  }
  async function save(visibility:'draft'|'published') {

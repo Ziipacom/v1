@@ -1,8 +1,12 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import hashlib
+import logging
 from pathlib import Path
 import secrets
+import time
+import uuid
+from typing import Literal
 
 from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,10 +35,34 @@ class Settings(BaseSettings):
     social_tiktok_client_id: str = ''
     social_twitch_client_id: str = ''
     social_youtube_client_id: str = ''
+    environment: str = 'development'
+    release: str = 'local'
+    api_public_origin: str = 'http://localhost:8018'
+    public_app_url: str = 'http://localhost:5178'
+    require_email_verification: bool = False
+    resend_api_key: str = ''
+    email_from: str = 'Ziipa <accounts@ziipa.com>'
+    sentry_dsn: str = ''
+    media_storage_backend: Literal['local', 'r2'] = 'local'
+    r2_endpoint_url: str = ''
+    r2_access_key_id: str = ''
+    r2_secret_access_key: str = ''
+    r2_bucket_name: str = ''
+    r2_presign_ttl_seconds: int = 900
+    r2_download_ttl_seconds: int = 300
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
 
 settings = Settings()
+
+if settings.sentry_dsn:
+    import sentry_sdk
+    sentry_sdk.init(dsn=settings.sentry_dsn, environment=settings.environment,
+                    release=settings.release, traces_sample_rate=0.1,
+                    send_default_pii=False)
+
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+logger = logging.getLogger('ziipa.api')
 
 
 def configured_origins():
@@ -94,14 +122,24 @@ async def lifespan(app):
 
 
 app = FastAPI(title='Ziipa API', version='0.1.0', lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=list(TRUSTED_ORIGINS), allow_credentials=True, allow_methods=['GET', 'POST'], allow_headers=['Content-Type', 'Authorization'])
+app.add_middleware(CORSMiddleware, allow_origins=list(TRUSTED_ORIGINS), allow_credentials=True,
+                   allow_methods=['GET', 'POST', 'PUT', 'OPTIONS'],
+                   allow_headers=['Content-Type', 'Authorization', 'X-Request-ID'],
+                   expose_headers=['X-Request-ID'])
 
 
 @app.middleware('http')
 async def private_api_responses(request: Request, call_next):
+    request_id = request.headers.get('x-request-id', '')[:80] or str(uuid.uuid4())
+    started = time.monotonic()
     response = await call_next(request)
     response.headers['Cache-Control'] = 'private, no-store'
     response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Request-ID'] = request_id
+    logger.info('%s', {'event': 'http_request', 'request_id': request_id,
+                       'method': request.method, 'path': request.url.path,
+                       'status': response.status_code,
+                       'duration_ms': round((time.monotonic() - started) * 1000)})
     return response
 
 
@@ -148,10 +186,8 @@ def current_user(request: Request, session: Session = Depends(db)):
 
 def start_session(user, response):
     token = secrets.token_urlsafe(32)
-    try:
-        cache.setex('session:' + hashlib.sha256(token.encode()).hexdigest(), 86400, str(user.id))
-    except RedisError:
-        raise HTTPException(503, 'Account saved, but sign-in is unavailable. Please try signing in later.')
+    from account_services import remember_session, session_key
+    remember_session(user.id, session_key('session:', token), 86400)
     response.set_cookie('ziipa_session', token, httponly=True, secure=settings.secure_cookies, samesite='lax', max_age=86400, path='/')
 
 
@@ -183,6 +219,9 @@ def health(response: Response):
         services['redis'] = 'connected'
     except RedisError:
         services['redis'] = 'unavailable'
+    services['media_storage'] = settings.media_storage_backend
+    services['email'] = 'configured' if settings.resend_api_key else 'demo'
+    services['environment'] = settings.environment
     if 'unavailable' in services.values():
         response.status_code = 503
     return services
@@ -208,8 +247,14 @@ def register(data: Register, response: Response, session: Session = Depends(db))
         session.rollback()
         raise HTTPException(409, 'Unable to create an account with these details. Try signing in.')
     session.refresh(user)
+    from account_services import send_verification
+    send_verification(session, user)
+    if settings.require_email_verification:
+        return {'name': user.name, 'email': user.email, 'email_verified': False,
+                'verification_required': True,
+                'message': 'Check your email to verify the account, then sign in.'}
     start_session(user, response)
-    return {'name': user.name, 'email': user.email}
+    return {'name': user.name, 'email': user.email, 'email_verified': False}
 
 
 @app.post('/api/auth/login', dependencies=[Depends(guard)])
@@ -218,6 +263,10 @@ def login(data: Login, response: Response, session: Session = Depends(db)):
     valid = passwords.verify(data.password, user.password_hash if user else DUMMY_HASH)
     if not user or not valid:
         raise HTTPException(401, 'Email or password is incorrect')
+    if settings.require_email_verification:
+        from account_services import state_for
+        if not state_for(session, user).email_verified_at:
+            raise HTTPException(403, 'Verify your email before signing in.')
     start_session(user, response)
     return {'name': user.name, 'email': user.email}
 
@@ -225,17 +274,23 @@ def login(data: Login, response: Response, session: Session = Depends(db)):
 @app.post('/api/auth/logout', dependencies=[Depends(guard)])
 def logout(request: Request, response: Response):
     token = request.cookies.get('ziipa_session', '')
-    try:
-        cache.delete('session:' + hashlib.sha256(token.encode()).hexdigest())
-    except RedisError:
-        raise HTTPException(503, 'Unable to end session. Please try again.')
+    from account_services import forget_session, session_key
+    key = session_key('session:', token)
+    uid = cache.get(key) if token else None
+    forget_session(int(uid) if uid else None, key)
     response.delete_cookie('ziipa_session', path='/')
     return {'ok': True}
 
 
 @app.get('/api/me')
-def me(user: User = Depends(current_user)):
-    return {'id': user.id, 'name': user.name, 'email': user.email, 'joined': user.created_at.isoformat(), 'membership': 'Early explorer', 'is_moderator': user.email in {e.strip().lower() for e in settings.moderator_emails.split(',') if e.strip()}}
+def me(user: User = Depends(current_user), session: Session = Depends(db)):
+    from account_services import state_for
+    state = state_for(session, user)
+    verified = bool(state.email_verified_at)
+    session.commit()
+    return {'id': user.id, 'name': user.name, 'email': user.email, 'email_verified': verified,
+            'joined': user.created_at.isoformat(), 'membership': 'Early explorer',
+            'is_moderator': user.email in {e.strip().lower() for e in settings.moderator_emails.split(',') if e.strip()}}
 
 
 from creator import router as creator_router
@@ -244,3 +299,5 @@ from mobile_api import router as mobile_router
 app.include_router(mobile_router)
 from web3_api import router as web3_router
 app.include_router(web3_router)
+from account_services import router as account_router
+app.include_router(account_router)

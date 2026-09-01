@@ -23,7 +23,7 @@ def client():
         session.close()
         transaction.rollback()
         app.dependency_overrides.clear()
-        for prefix in ('session:*', 'mobile_session:*'):
+        for prefix in ('session:*', 'mobile_session:*', 'user_sessions:*'):
             for key in cache.scan_iter(prefix):
                 cache.delete(key)
 
@@ -60,7 +60,7 @@ def test_rate_limit(client):
 def test_health(client):
     result = client.get('/api/health')
     assert result.status_code == 200
-    assert result.json() == {'database':'connected','redis':'connected'}
+    assert result.json() == {'database':'connected','redis':'connected','media_storage':'local','email':'demo','environment':'development'}
 
 
 def register_creator(client, email='creator@example.com'):
@@ -230,3 +230,102 @@ def test_account_deletion_removes_media_and_invalidates_all_devices(client, tmp_
     assert client.get('/api/me', headers=headers).status_code == 401
     assert client.get('/api/me', headers={'Authorization': f'Bearer {token2}'}).status_code == 401
     assert client.post('/api/mobile/auth/login', json={'email': 'native@example.com', 'password': 'native-password-123'}).status_code == 401
+
+
+def test_email_verification_recovery_privacy_and_export(client, monkeypatch):
+    import re
+    import account_services
+    sent = []
+    monkeypatch.setattr(account_services, 'send_email', lambda to, subject, text: sent.append((to, subject, text)))
+    original = {'name': 'Privacy Test', 'email': 'privacy@example.com', 'password': 'privacy-password-123'}
+    assert client.post('/api/auth/register', json=original).status_code == 201
+    assert client.get('/api/me').json()['email_verified'] is False
+    verify_token = re.search(r'token=([^\s]+)', sent[-1][2]).group(1)
+    assert client.post('/api/auth/verify-email', json={'token': verify_token}).status_code == 200
+    assert client.post('/api/auth/verify-email', json={'token': verify_token}).status_code == 400
+    assert client.get('/api/me').json()['email_verified'] is True
+    privacy = {'profile_visibility': 'members', 'discoverable': False,
+               'personalized_feeds': False, 'marketing_emails': True}
+    assert client.post('/api/account/privacy', json=privacy).json() == privacy
+    assert client.get('/api/account/privacy').json() == privacy
+    exported = client.get('/api/account/export').json()
+    assert exported['account']['privacy'] == privacy
+    assert exported['account']['email_verified'] is True
+
+    native = client.post('/api/mobile/auth/login', json={'email': original['email'], 'password': original['password']}).json()['access_token']
+    assert client.post('/api/auth/forgot-password', json={'email': original['email']}).status_code == 200
+    reset_token = re.search(r'token=([^\s]+)', sent[-1][2]).group(1)
+    replacement = 'replacement-password-456'
+    assert client.post('/api/auth/reset-password', json={'token': reset_token, 'password': replacement}).status_code == 200
+    assert client.get('/api/me').status_code == 401
+    assert client.get('/api/me', headers={'Authorization': f'Bearer {native}'}).status_code == 401
+    assert client.post('/api/auth/login', json={'email': original['email'], 'password': original['password']}).status_code == 401
+    assert client.post('/api/auth/login', json={'email': original['email'], 'password': replacement}).status_code == 200
+    assert client.post('/api/auth/forgot-password', json={'email': 'missing@example.com'}).json() == {'message': 'If an account exists, a password reset link has been sent.'}
+
+
+def test_production_registration_requires_verification_before_session(client, monkeypatch):
+    import re
+    import account_services
+    from app import settings
+    sent = []
+    monkeypatch.setattr(settings, 'require_email_verification', True)
+    monkeypatch.setattr(account_services, 'send_email', lambda to, subject, text: sent.append(text))
+    data = {'name': 'Verify First', 'email': 'verify-first@example.com', 'password': 'verify-first-password-123'}
+    result = client.post('/api/auth/register', json=data)
+    assert result.status_code == 201 and result.json()['verification_required'] is True
+    assert 'ziipa_session' not in result.cookies
+    assert client.get('/api/me').status_code == 401
+    assert client.post('/api/auth/login', json={'email': data['email'], 'password': data['password']}).status_code == 403
+    token = re.search(r'token=([^\s]+)', sent[-1]).group(1)
+    assert client.post('/api/auth/verify-email', json={'token': token}).status_code == 200
+    assert client.post('/api/auth/login', json={'email': data['email'], 'password': data['password']}).status_code == 200
+
+
+def test_r2_upload_reservation_validates_object_before_recording(client, monkeypatch):
+    import base64
+    import creator
+    png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jE9sAAAAASUVORK5CYII=')
+
+    class FakeStorage:
+        deleted = []
+        def presign_put(self, owner_id, media_id, content_type, size):
+            return {'url': 'https://r2.invalid/signed', 'method': 'PUT', 'headers': {'Content-Type': content_type}}
+        def inspect(self, owner_id, media_id):
+            return len(png), 'image/png', png[:32]
+        def promote(self, owner_id, media_id):
+            pass
+        def delete_pending(self, owner_id, media_id):
+            self.deleted.append((owner_id, media_id))
+        def delete(self, owner_id, media_id):
+            self.deleted.append((owner_id, media_id))
+
+    fake = FakeStorage()
+    monkeypatch.setattr(creator.settings, 'media_storage_backend', 'r2')
+    monkeypatch.setattr(creator, 'storage', lambda: fake)
+    register_creator(client, 'r2@example.com')
+    reservation = client.post('/api/creator/media/presign', json={'filename': 'pixel.png', 'content_type': 'image/png', 'size': len(png)})
+    assert reservation.status_code == 200
+    body = reservation.json()
+    assert body['mode'] == 'direct' and body['method'] == 'PUT'
+    complete = client.post(f"/api/creator/media/{body['id']}/complete", json={})
+    assert complete.status_code == 200
+    assert complete.json()['content_type'] == 'image/png'
+    assert client.post(f"/api/creator/media/{body['id']}/complete", json={}).status_code == 404
+
+
+def test_private_profile_is_removed_from_discovery_and_media_access(client, tmp_path, monkeypatch):
+    import base64
+    import creator
+    monkeypatch.setattr(creator, 'MEDIA_ROOT', tmp_path)
+    register_creator(client, 'private-owner@example.com')
+    png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jE9sAAAAASUVORK5CYII=')
+    media = client.post('/api/creator/media', content=png, headers={'content-type': 'image/png'}).json()
+    item = client.post('/api/creator/items', json={'title': 'Private profile post', 'media_id': media['id'], 'visibility': 'published'}).json()
+    controls = client.get('/api/account/privacy').json()
+    controls['profile_visibility'] = 'private'
+    assert client.post('/api/account/privacy', json=controls).status_code == 200
+    client.cookies.clear()
+    register_creator(client, 'privacy-viewer@example.com')
+    assert not any(row['id'] == item['id'] for row in client.get('/api/creator/bootstrap').json()['items'])
+    assert client.get(f"/api/creator/media/{media['id']}").status_code == 404

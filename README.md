@@ -1,9 +1,10 @@
 # Ziipa local website and portal
 
-The complete monorepo is now configured for Render through `render.yaml`. See
-[RENDER.md](RENDER.md) for the Blueprint resources, first-deploy steps, costs,
-custom-domain setup, persistent storage, contract handoff, and mobile release
-boundaries.
+The production demo path uses Cloudflare Workers, Koyeb, Neon, Upstash, private
+Cloudflare R2 storage, Pinata, and Base Sepolia. See
+[HYBRID-DEPLOYMENT.md](HYBRID-DEPLOYMENT.md) for the provider setup, secret map,
+custom domains, testnet deployment, monitoring, and launch gates. The older
+Render Blueprint remains available as an alternative deployment path.
 
 A new Ziipa website and member portal, in a standalone folder. The visual direction draws on the existing site's Web3 / beta waitlist positioning; all new marketing copy is a proposed direction, not a claim that wallet or metaverse features exist.
 
@@ -87,14 +88,7 @@ The frontend forwards `/api` to FastAPI on port 8018 during development. No emai
 
 ## Before public deployment
 
-This is a local foundation, not a production launch. No changes were made to the live ziipa.com website or domain.
-
-- Choose production hosting for the Python API, PostgreSQL, Redis, and frontend; the current development API proxy is not a production reverse proxy.
-- Replace local credentials, configure production origins and HTTPS, and enable `SECURE_COOKIES=true`.
-- Add reviewed schema migrations (local startup currently creates initial tables), backups, monitoring, retention/deletion policies, and operational secrets management.
-- Add email verification, password reset, and appropriate account abuse protections. Review privacy/terms and branding before publishing.
-- Replace localhost metadata URLs with the verified deployment origin.
-- Web3 wallets, transactions, NFT minting, federated feeds, broadcasting, automatic AI editing, and beta invitation emails are not implemented. Portal account details are currently read-only.
+The provider adapters, signed uploads, versioned database baseline, email verification, password recovery, privacy controls, account export/deletion, session revocation, request logging, optional Sentry monitoring, and testnet wallet flows are implemented. External provider accounts, secrets, DNS records, production policy review, store signing identities, social-network app approvals, and funded Base Sepolia deployment still require operator-controlled setup. Follow the launch gates in `HYBRID-DEPLOYMENT.md`; do not treat a free-tier demo as an unrestricted production launch.
 
 ## Native iOS and Android app
 
@@ -106,7 +100,7 @@ Restart the backend after this update. New API tables are added without replacin
 
 The portal now opens a responsive creator workspace based on the supplied Ziipa Figma design. It includes media discovery, a studio, local uploads/publication, manual caption and trim previews, comments, bookmarks, custom feed rules with local sharing, and personal content filters. Demo content is explicitly labeled; only the sample film and uploaded audio/video are playable. Store listings are local concepts with no checkout; live streams and NFT collections remain drafts until providers are integrated.
 
-Media is stored in `backend/uploads/` (ignored by Git), with owner metadata in PostgreSQL. Keep files and database backups together. The API limits uploads to 100 MB each and 1 GB per local account; the existing desktop portal keeps its more conservative 50 MB picker limit. Media is protected by the API; publishing makes it visible to other signed-in local users.
+Local media is stored in `backend/uploads/` (ignored by Git). Hosted creator media uses a private R2 bucket through short-lived signed upload and authorized download URLs, while PostgreSQL keeps ownership metadata. The API limits uploads to 100 MB each and 1 GB per account; the desktop portal keeps its more conservative 50 MB picker limit. Publishing makes media visible only when the creator's profile and post privacy allow it.
 
 See [CREATOR-PRODUCTION.md](CREATOR-PRODUCTION.md) for the exact implementation boundaries, verified integration references, and production delivery sequence. The automated backend suite covers auth, private draft/media access, local publication, shared feed rules, filter persistence, upload rejection and range requests. Browser visual and end-to-end tests have not been run in this iteration.
 

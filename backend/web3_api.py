@@ -220,10 +220,18 @@ def metadata(data: MetadataInput, user: User = Depends(current_user), session: S
     media_type = 'image'
     if data.media_id:
         media = owned(session, creator.CreatorMedia, data.media_id, user)
-        path = creator.MEDIA_ROOT / str(data.media_id)
-        if not path.is_file():
-            raise HTTPException(404, 'Upload file no longer available')
-        uri = svc.pin(path.read_bytes(), media.id)
+        from storage_services import LocalStorage, storage
+        provider = storage()
+        if isinstance(provider, LocalStorage):
+            path = creator.MEDIA_ROOT / str(data.media_id)
+            if not path.is_file():
+                raise HTTPException(404, 'Upload file no longer available')
+            media_bytes = path.read_bytes()
+        else:
+            media_bytes = provider.read_bytes(user.id, str(data.media_id))
+        if len(media_bytes) > 100 * 1024 * 1024:
+            raise HTTPException(413, 'NFT media is too large for the configured pinning workflow.')
+        uri = svc.pin(media_bytes, media.id)
         media_type = media.content_type.split('/')[0]
     elif data.image_uri:
         uri = svc.content_uri(data.image_uri)
@@ -313,7 +321,7 @@ def prepare(data: IntentInput, user: User = Depends(current_user), session: Sess
             raise HTTPException(409, 'Transaction request ID already used with different details')
         return intent_json(existing)
     wallet = owned(session, WalletLink, data.wallet_id, user)
-    if data.kind in ('mint_nft', 'create_token') and wallet.chain_id != 31337 and not svc.config.ipfs_public:
+    if data.kind in ('mint_nft', 'create_token') and wallet.chain_id != 31337 and not (svc.config.ipfs_public or svc.config.pinata_jwt):
         raise HTTPException(503, 'Public testnet minting requires public IPFS pinning; this server is configured for offline local storage.')
     w3 = svc.rpc(wallet.chain_id)
     try:

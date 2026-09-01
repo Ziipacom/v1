@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Linking, ScrollView, Switch, Text, View } from "react-native";
+import { Alert, Linking, ScrollView, Share, Switch, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LogOut, ShieldCheck, Trash2 } from "lucide-react-native";
 import { Action, Field, Notice } from "../components/ui";
@@ -21,6 +21,18 @@ export function SettingsScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [privacy, setPrivacy] = useState({
+    profile_visibility: "public",
+    discoverable: true,
+    personalized_feeds: true,
+    marketing_emails: false,
+  });
+  useEffect(() => {
+    if (!session) return;
+    void api<typeof privacy>("/api/account/privacy")
+      .then(setPrivacy)
+      .catch((e) => setError((e as Error).message));
+  }, [session?.access_token]);
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -155,6 +167,56 @@ export function SettingsScreen({
             }
           />
         ))}
+      </View>
+      <View style={styles.panel}>
+        <Text style={styles.heading}>Privacy controls</Text>
+        <Text style={styles.small}>
+          Choose who can view your profile and whether Ziipa can use your activity for discovery.
+        </Text>
+        <Action
+          secondary
+          title={`Profile visibility · ${privacy.profile_visibility}`}
+          disabled={busy}
+          onPress={() => {
+            const values = ["public", "members", "private"];
+            const next = values[(values.indexOf(privacy.profile_visibility) + 1) % values.length];
+            setPrivacy({ ...privacy, profile_visibility: next });
+          }}
+        />
+        {([
+          ["discoverable", "Appear in creator discovery"],
+          ["personalized_feeds", "Personalize my feeds"],
+          ["marketing_emails", "Product and creator emails"],
+        ] as const).map(([key, label]) => (
+          <View style={styles.between} key={key}>
+            <Text style={[styles.body, { flex: 1 }]}>{label}</Text>
+            <Switch
+              accessibilityLabel={label}
+              value={privacy[key]}
+              onValueChange={(value) => setPrivacy({ ...privacy, [key]: value })}
+              trackColor={{ true: color.purple }}
+              disabled={busy}
+            />
+          </View>
+        ))}
+        <Action
+          title="Save privacy controls"
+          icon={ShieldCheck}
+          busy={busy}
+          onPress={() => void run(async () => {
+            setPrivacy(await api<typeof privacy>("/api/account/privacy", privacy));
+            setMessage("Your privacy controls are saved.");
+          })}
+        />
+        <Action
+          secondary
+          title="Export my Ziipa data"
+          disabled={busy}
+          onPress={() => void run(async () => {
+            const exported = await api<Record<string, unknown>>("/api/account/export");
+            await Share.share({ title: "My Ziipa data export", message: JSON.stringify(exported, null, 2) });
+          })}
+        />
       </View>
       {!!error && <Notice error text={error} />}
       {!!message && <Notice text={message} />}

@@ -122,28 +122,43 @@ export async function uploadMedia(
   onProgress(0);
   const blob = await (await fetch(file.uri)).blob();
   if (blob.size > uploadLimit) throw new Error("File exceeds 100 MB.");
+  const reservation = await request<{
+    id?: string;
+    mode: "api" | "direct";
+    url: string;
+    method: "POST" | "PUT";
+    headers: Record<string, string>;
+  }>("/api/creator/media/presign", token, {
+    filename: file.name,
+    content_type: file.mimeType,
+    size: file.size,
+  });
+  const direct = reservation.mode === "direct";
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 180000);
   try {
-    const response = await fetch(validateOrigin() + "/api/creator/media", {
-      method: "POST",
+    const response = await fetch(direct ? reservation.url : validateOrigin() + "/api/creator/media", {
+      method: direct ? "PUT" : "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": file.mimeType,
+        ...(direct ? reservation.headers : { Authorization: `Bearer ${token}`, "Content-Type": file.mimeType }),
       },
       body: blob,
       credentials: "omit",
       redirect: "error",
       signal: controller.signal,
     });
-    const body = await response.json();
+    const body = await response.json().catch(() => null);
     if (!response.ok)
       throw new ApiError(
         typeof body.detail === "string" ? body.detail : "Upload failed",
         response.status,
       );
     onProgress(100);
-    return body;
+    return direct
+      ? await request<{ id: string; url: string; content_type: string }>(
+          `/api/creator/media/${reservation.id}/complete`, token, {},
+        )
+      : (body as { id: string; url: string; content_type: string });
   } finally {
     clearTimeout(timer);
   }
