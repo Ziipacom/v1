@@ -1,9 +1,6 @@
 # yaml-language-server: $schema=https://render.com/schema/render.yaml.json
 # Free demo API for the Ziipa hybrid stack. Durable state lives in the
 # externally managed Neon, Upstash, Cloudflare R2, and Pinata services.
-previews:
-  generation: manual
-
 services:
   - type: web
     name: ziipa-api
