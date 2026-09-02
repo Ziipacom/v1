@@ -1,133 +1,68 @@
 # yaml-language-server: $schema=https://render.com/schema/render.yaml.json
-# Render Blueprint for the Ziipa monorepo.
-# Paid persistent resources are intentional: uploads, sessions, and IPFS pins
-# must survive deploys and restarts. Review the estimated cost before applying.
+# Free demo API for the Ziipa hybrid stack. Durable state lives in the
+# externally managed Neon, Upstash, Cloudflare R2, and Pinata services.
 previews:
   generation: manual
 
 services:
   - type: web
-    name: ziipa-v1-web
-    runtime: node
-    plan: 0.5c-512mb
-    region: virginia
-    rootDir: frontend
-    buildCommand: npm ci && npm run build
-    startCommand: npm run start:render
-    healthCheckPath: /healthz
-    autoDeployTrigger: commit
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: BACKEND_HOSTPORT
-        fromService:
-          type: web
-          name: ziipa-v1-api
-          property: hostport
-
-  - type: web
-    name: ziipa-v1-api
-    runtime: python
-    plan: 0.5c-512mb
+    name: ziipa-api
+    runtime: docker
+    plan: free
     region: virginia
     rootDir: backend
-    buildCommand: pip install --upgrade pip && pip install -r requirements.lock.txt
-    preDeployCommand: python render_migrate.py
-    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /api/health
     autoDeployTrigger: commit
-    disk:
-      name: ziipa-media
-      mountPath: /opt/render/project/src/backend/uploads
-      sizeGB: 10
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: ziipa-v1-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: ziipa-v1-cache
-          property: connectionString
-      - key: IPFS_API_URL
-        fromService:
-          type: pserv
-          name: ziipa-v1-ipfs
-          property: hostport
+      - key: ENVIRONMENT
+        value: demo
       - key: FRONTEND_ORIGIN
-        value: https://ziipa-v1-web.onrender.com,https://ziipa.com,https://www.ziipa.com
+        value: https://ziipa.com,https://www.ziipa.com
       - key: MOBILE_WEB_ORIGIN
-        value: https://ziipa-v1-mobile.onrender.com
-      - key: WEB3_PUBLIC_ORIGIN
-        value: https://ziipa-v1-mobile.onrender.com
-      - key: UPLOADS_DIR
-        value: /opt/render/project/src/backend/uploads
+        value: https://app.ziipa.com
+      - key: API_PUBLIC_ORIGIN
+        value: https://api.ziipa.com
+      - key: PUBLIC_APP_URL
+        value: https://ziipa.com
+      - key: EMAIL_FROM
+        value: Ziipa <accounts@ziipa.com>
       - key: SECURE_COOKIES
+        value: "true"
+      - key: REQUIRE_EMAIL_VERIFICATION
         value: "true"
       - key: ENABLE_DEMO_CATALOG
         value: "false"
+      - key: MEDIA_STORAGE_BACKEND
+        value: r2
+      - key: R2_BUCKET_NAME
+        value: ziipa-media
       - key: WEB3_ENABLE_LOCAL
         value: "false"
+      - key: WEB3_BASE_RPC
+        value: https://sepolia.base.org
+      - key: WEB3_PUBLIC_ORIGIN
+        value: https://app.ziipa.com
       - key: IPFS_PUBLIC
         value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: R2_ENDPOINT_URL
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: PINATA_JWT
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: WEB3_REGISTRY_JSON
+        sync: false
       - key: MODERATOR_EMAILS
         sync: false
-
-  - type: web
-    name: ziipa-v1-mobile
-    runtime: node
-    plan: 0.5c-512mb
-    region: virginia
-    rootDir: mobile
-    buildCommand: npm ci && npm run render:build
-    startCommand: npm run render:start
-    healthCheckPath: /healthz
-    autoDeployTrigger: commit
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: APP_VARIANT
-        value: preview
-      - key: EXPO_PUBLIC_ENABLE_DEMO
-        value: "false"
-      - key: EXPO_PUBLIC_ENABLE_CONCEPTS
-        value: "false"
-      - key: BACKEND_HOSTPORT
-        fromService:
-          type: web
-          name: ziipa-v1-api
-          property: hostport
-
-  - type: pserv
-    name: ziipa-v1-ipfs
-    runtime: docker
-    plan: 0.5c-512mb
-    region: virginia
-    rootDir: ipfs
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    autoDeployTrigger: commit
-    disk:
-      name: ziipa-ipfs-data
-      mountPath: /data/ipfs
-      sizeGB: 10
-
-  - type: keyvalue
-    name: ziipa-v1-cache
-    plan: 256mb
-    region: virginia
-    ipAllowList: []
-    maxmemoryPolicy: noeviction
-    persistenceMode: journal-snapshot
-
-databases:
-  - name: ziipa-v1-db
-    plan: 0.5c-1g
-    region: virginia
-    postgresMajorVersion: "17"
-    databaseName: ziipa
-    user: ziipa
-    diskSizeGB: 15
-    storageAutoscalingEnabled: true
-    ipAllowList: []
