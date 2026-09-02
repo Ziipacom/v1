@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   description:
     'Discover video, music, gaming, and creator tools in Ziipa. Explore the interactive demo, try the creator web preview, and join the mobile app waitlist.',
   icons: { icon: '/brand/ziipa-logo.png' },
-  metadataBase: new URL('http://localhost:5178'),
+  metadataBase: new URL('https://ziipa.com'),
   openGraph: {
     title: 'Ziipa — More than a feed. A world of yours.',
     description:
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     type: 'website',
     images: [
       {
-        url: 'http://localhost:5178/brand/ziipa-logo.png',
+        url: '/brand/ziipa-logo.png',
         width: 9446,
         height: 3104,
       },
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     title: 'Ziipa — More than a feed. A world of yours.',
     description:
       'Explore media discovery, creator tools, and the Ziipa web preview.',
-    images: ['http://localhost:5178/brand/ziipa-logo.png'],
+    images: ['/brand/ziipa-logo.png'],
   },
 };
 export default function RootLayout({
