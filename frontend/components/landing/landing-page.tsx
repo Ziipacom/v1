@@ -55,11 +55,11 @@ const worlds = [
 const faqs = [
   [
     'What is Ziipa?',
-    'Ziipa brings media discovery and creator tools into one space. The web preview lets you browse collections, upload and publish locally, create custom feeds, and choose personal content filters. Gaming, live, NFT, and marketplace experiences are part of the wider product vision.',
+    'Ziipa brings media discovery and creator tools into one space. The web preview lets you browse collections, upload and publish to Ziipa, create custom feeds, and choose personal content filters. Gaming, live, NFT, and marketplace experiences are part of the wider product vision.',
   ],
   [
     'Can I use Ziipa today?',
-    'Yes. Open the web app and create a local Ziipa account. You can upload media, save drafts, add a manual caption, set playback trims, publish to signed-in local members, leave comments, and build custom feeds. This is a local development preview, not a public production network.',
+    'Yes. Open the web app and create a Ziipa account. You can upload media, save drafts, add a manual caption, set playback trims, publish to signed-in Ziipa members, leave comments, and build custom feeds. This is an early-access web demo, not an unrestricted public launch.',
   ],
   [
     'Is Ziipa available on iOS and Android?',
@@ -67,11 +67,11 @@ const faqs = [
   ],
   [
     'Which features are still coming?',
-    'AT Protocol identity and federation, live broadcasting, adaptive streaming, AI editing, licensed sound libraries, wallet payments, creator subscriptions, NFT minting, and marketplace checkout still require production integrations. They are not active in the local preview.',
+    'AT Protocol identity and federation, live broadcasting, adaptive streaming, AI editing, licensed sound libraries, wallet payments, creator subscriptions, NFT minting, and marketplace checkout still require production integrations. They are not active in the current web demo.',
   ],
   [
     'What does “your feed, your rules” mean?',
-    'The current feed builder lets you combine a content category with tag, creator-name, and declared-city filters. You can preview matching creations, save the rules, and share them with members on this local installation. Personal safety filters still apply.',
+    'The current feed builder lets you combine a content category with tag, creator-name, and declared-city filters. You can preview matching creations, save the rules, and share them with Ziipa members in the web demo. Personal safety filters still apply.',
   ],
 ];
 
@@ -194,7 +194,7 @@ export default function LandingPage() {
             <span>iOS & Android coming soon</span>
           </div>
           <p className="zl-hero-disclosure">
-            Creator tools available locally. Live broadcasts, wallets, and
+            Creator tools are available in the web demo. Live broadcasts, wallets, and
             on-chain features are in development.
           </p>
         </div>
@@ -243,7 +243,7 @@ export default function LandingPage() {
             </h3>
             <p>
               Discover video and visual collections. Save the things you love,
-              join the conversation, and publish your own local creations.
+              join the conversation, and publish your own Ziipa creations.
             </p>
             <Link href="/portal">
               Explore video <ArrowUpRight size={16} />
@@ -378,7 +378,7 @@ export default function LandingPage() {
             </div>
             <h3>Make room for your brand.</h3>
             <p>
-              Create a local product listing and shape your storefront.
+              Create a product listing and shape your storefront.
               Checkout, inventory, and seller payouts are still to come.
             </p>
             <Link href="/portal">
@@ -435,7 +435,7 @@ export default function LandingPage() {
               <h3>From upload to your next post.</h3>
               <p>
                 Upload video, audio, or images. Save a private draft, add a
-                manual caption, set a playback trim, and publish to the local
+                manual caption, set a playback trim, and publish to the Ziipa
                 community.
               </p>
               <div className="zl-capability-tags">
@@ -459,7 +459,7 @@ export default function LandingPage() {
               <h3>Your feed. Your rules.</h3>
               <p>
                 Curate by category, tags, creator, and declared city. Preview
-                the results and share your feed rules with other local members.
+                the results and share your feed rules with other Ziipa members.
               </p>
               <div className="zl-capability-tags">
                 <span>#music</span>
@@ -476,7 +476,7 @@ export default function LandingPage() {
               <h3>Space to set your boundaries.</h3>
               <p>
                 Save what you love. Mute words and hide creators you don’t want
-                in discovery. Your personal filters travel across your local
+                in discovery. Your personal filters travel across your Ziipa
                 feeds.
               </p>
               <Link href="/portal">
@@ -532,7 +532,7 @@ export default function LandingPage() {
           </div>
           <small>
             Our direction for Ziipa. Federation and financial services are not
-            enabled in this local preview.
+            enabled in the current web demo.
           </small>
         </div>
       </section>

@@ -42,6 +42,15 @@ def prepare(client,headers,wallet,kind,**kwargs):
     assert result.status_code==200,result.text
     return result.json()
 
+def test_config_reports_the_active_metadata_storage(client, monkeypatch):
+    monkeypatch.setattr(svc.config, 'ipfs_public', False)
+    monkeypatch.setattr(svc.config, 'pinata_jwt', 'configured-for-test')
+    assert client.get('/api/web3/config').json()['storage'] == 'pinata_ipfs'
+    monkeypatch.setattr(svc.config, 'pinata_jwt', '')
+    assert client.get('/api/web3/config').json()['storage'] == 'local_ipfs'
+    monkeypatch.setattr(svc.config, 'ipfs_public', True)
+    assert client.get('/api/web3/config').json()['storage'] == 'public_ipfs'
+
 def submit(client,headers,intent,tx_hash):
     result=client.post(f"/api/web3/intents/{intent['id']}/submit",headers=headers,json={'tx_hash':tx_hash})
     assert result.status_code==200,result.text

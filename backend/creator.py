@@ -308,7 +308,7 @@ def save_item(data, session, user, row=None):
         if data.category in ('live', 'nft'):
             raise HTTPException(409, 'Broadcasting and minting are not connected; save this as a draft.')
         if not data.media_id:
-            raise HTTPException(422, 'Upload media before publishing locally.')
+            raise HTTPException(422, 'Upload media before publishing.')
     if data.remix_of:
         assert_visible(data.remix_of, session, user)
     if row is None:

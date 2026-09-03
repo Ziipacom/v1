@@ -127,7 +127,9 @@ def intent_json(row):
 
 @router.get('/config')
 def configuration():
-    return {'testnet_only': True, 'storage': 'public_ipfs' if svc.config.ipfs_public else 'local_ipfs',
+    storage = ('public_ipfs' if svc.config.ipfs_public else
+               'pinata_ipfs' if svc.config.pinata_jwt else 'local_ipfs')
+    return {'testnet_only': True, 'storage': storage,
             'chains': [{**c, 'deployed': all(k in svc.registry(c['id']) for k in ('collectibles','factory','tips')),
                         'contracts': {k:v['address'] for k,v in svc.registry(c['id']).items()}} for c in svc.chains()],
             'wallet_types': ['EVM externally owned accounts'], 'inventory_scope':'Ziipa collection and tracked factory tokens'}

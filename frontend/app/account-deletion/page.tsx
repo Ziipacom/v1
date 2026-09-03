@@ -125,10 +125,9 @@ export default function AccountDeletion() {
                   </p>
                 )}
                 <p className="form-note">
-                  Local preview. This page must be deployed on the production
-                  website and connected to the production API before it can
-                  serve as the store-listed deletion URL. No changes are made to
-                  accounts on the live ziipa.com website.
+                  This form calls Ziipa&apos;s live account-deletion API. Public
+                  blockchain transactions and content already published to IPFS
+                  cannot be erased from those networks.
                 </p>
               </form>
             </>

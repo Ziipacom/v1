@@ -272,12 +272,12 @@ const steps = [
   },
   {
     title: 'Make it your own',
-    text: 'Bring in your media, set a playback trim, add a caption, and take your creation from draft to local post.',
+    text: 'Bring in your media, set a playback trim, add a caption, and take your creation from draft to Ziipa post.',
     icon: Scissors,
   },
   {
     title: 'Curate your corner',
-    text: 'Choose a category, tag, or city. See your results, save the feed, and share the rules with local members.',
+    text: 'Choose a category, tag, or city. See your results, save the feed, and share the rules with Ziipa members.',
     icon: SlidersHorizontal,
   },
 ];
