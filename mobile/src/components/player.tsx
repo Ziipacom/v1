@@ -1,11 +1,11 @@
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { AppState, Text, View } from "react-native";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { useEvent } from "expo";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { useIsFocused } from "@react-navigation/native";
 import { Pause, Play } from "lucide-react-native";
-import { playbackSource } from "../lib/assets";
+import { usePlaybackSource } from "../lib/media-playback";
 import { visibleCaption } from "../lib/domain";
 import type { Item } from "../lib/types";
 import { useZiipa } from "../provider";
@@ -14,14 +14,22 @@ import { color, styles } from "../theme";
 
 export function MediaPlayer({ item }: { item: Item }) {
   const { session } = useZiipa();
-  const source = useMemo(
-    () => playbackSource(item.media_url, session?.access_token),
-    [item.media_url, session?.access_token],
+  const focused = useIsFocused();
+  const { source, loading, error } = usePlaybackSource(
+    item.media_url,
+    session?.access_token,
+    !!item.demo,
+    focused,
   );
   if (!source)
     return (
       <View style={{ gap: 12 }}>
         <Cover item={item} style={{ height: 390, borderRadius: 24 }} />
+        {(loading || error) && (
+          <Text style={error ? styles.error : styles.small}>
+            {error || "Loading media…"}
+          </Text>
+        )}
         {item.demo && (
           <Text style={styles.small}>
             {item.label}. This card is a visual collection, not a playing video
@@ -37,7 +45,7 @@ export function MediaPlayer({ item }: { item: Item }) {
   );
 }
 type Props = {
-  source: NonNullable<ReturnType<typeof playbackSource>>;
+  source: NonNullable<ReturnType<typeof usePlaybackSource>["source"]>;
   item: Item;
 };
 function VideoPlayer({ source, item }: Props) {

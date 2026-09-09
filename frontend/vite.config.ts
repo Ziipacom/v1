@@ -15,6 +15,16 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
 const localBindingConfig = {
   main: 'vinext/server/fetch-handler',
   compatibility_flags: ['nodejs_compat'],
+  // Operators manage runtime API settings in Cloudflare; do not erase them
+  // when this generated Worker config is deployed. Secrets stay dashboard-only.
+  keep_vars: true,
+  // OAuth codes and signed media capabilities travel in request URLs. Do not
+  // persist raw invocation URLs or traces; API health/Sentry remain separate.
+  observability: {
+    enabled: false,
+    logs: { enabled: false, invocation_logs: false },
+    traces: { enabled: false },
+  },
   d1_databases: d1
     ? [
         {
@@ -47,8 +57,8 @@ export default defineConfig(async () => {
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
     server: {
-      host: '127.0.0.1', port: 5178, strictPort: true,
-      proxy: { '/api': { target: 'http://127.0.0.1:8018', changeOrigin: false } },
+      host: process.env.ZIIPA_DEV_HOST || '127.0.0.1', port: 5178, strictPort: true,
+      proxy: { '/api': { target: process.env.ZIIPA_API_PROXY || 'http://127.0.0.1:8018', changeOrigin: false } },
       ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
     },
     plugins: [

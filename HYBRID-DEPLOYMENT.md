@@ -82,11 +82,13 @@ Attach `api.ziipa.com` to the Render service, then add the exact CNAME target Re
 
 ## 7. Cloudflare website and portal
 
-In Cloudflare Workers Builds, connect `Ziipacom/v1`, choose `frontend` as the root directory, use `npm ci && npm run build` as the build command, and use `npx wrangler deploy --config dist/server/wrangler.json` as the deploy command. Add the non-secret build variable:
+In Cloudflare Workers Builds, connect `Ziipacom/v1`, choose `frontend` as the root directory, use `npm ci && npm run build` as the build command, and use `npx wrangler deploy --config dist/server/wrangler.json` as the deploy command. The full repository, including the sibling `mobile` directory, must be checked out: the build exports the shared Studio into the website. Add this non-secret **runtime** variable on the Worker:
 
 ```text
-VITE_API_ORIGIN=https://api.ziipa.com
+ZIIPA_BACKEND_ORIGIN=https://api.ziipa.com
 ```
+
+The website and embedded Studio both call same-origin `/api`, proxied to FastAPI, so their host-only HttpOnly cookie is shared safely. Remove the old `VITE_API_ORIGIN` build setting; it is no longer used. Existing website users may need to sign in again after the switch, but accounts and drafts remain in the same database. OAuth callbacks for publishing must use the canonical website origin (for example `https://ziipa.com/api/publishing/oauth/youtube/callback`), not the separate API hostname. See `PORTAL-PARITY.md` and `SOCIAL-PUBLISHING.md` before enabling a provider.
 
 Attach `ziipa.com` and `www.ziipa.com` after the generated `workers.dev` preview passes login, upload, portal, deletion, and password-reset tests.
 

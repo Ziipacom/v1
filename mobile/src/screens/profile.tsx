@@ -358,7 +358,16 @@ export function ProfileScreen({
               </View>
             </>
           ) : sheet === "social" ? (
-            <Notice text="The follower graph is not connected yet. These values remain empty rather than showing fictional follower counts." />
+            <>
+              <Notice text="Find your public following and supported network feeds in Networks. Importing a profile never invents Ziipa followers or sends invitations automatically." />
+              <Action
+                title="Open people & networks"
+                onPress={() => {
+                  setSheet(null);
+                  navigation.navigate("Connections", { tab: "people" });
+                }}
+              />
+            </>
           ) : (
             <>
               <Text style={styles.body}>
@@ -398,9 +407,7 @@ export function ProfileScreen({
                 }}
               />
               <Pill
-                title={
-                  guest ? "Sign in on a native device" : "Account settings"
-                }
+                title={guest ? "Sign in to Ziipa" : "Account settings"}
                 onPress={() => {
                   setSheet(null);
                   navigation.navigate(guest ? "Login" : "Settings");

@@ -85,7 +85,10 @@ async function walletConnect() {
       metadata: {
         name: "Ziipa Studio",
         description: "Ziipa creator wallet · test networks only",
-        url: process.env.EXPO_PUBLIC_WALLET_ORIGIN || "http://localhost:8082",
+        url:
+          Platform.OS === "web" && typeof location !== "undefined"
+            ? location.origin
+            : process.env.EXPO_PUBLIC_WALLET_ORIGIN || "https://ziipa.com",
         icons: [],
         redirect: { native: __DEV__ ? "ziipa-preview://" : "ziipa://" },
       },

@@ -21,7 +21,10 @@ export function Composer({item,remix,onSaved}:{item?:Item;remix?:Item;onSaved:()
  const [caption,setCaption]=useState(item?.captions?.[0]?.text||'');
  const [price,setPrice]=useState(item?.price_cents!=null?(item.price_cents/100).toString():'');
  const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
- const captions=caption.trim()?[{start,end:Number(end)||Math.max(start+5,5),text:caption}]:[];
+ const captionUnchanged = !!item && caption === (item.captions?.[0]?.text || '');
+ // Older portal code must not replace an untouched multi-cue mobile caption
+ // track with the first cue shown in its legacy single-caption field.
+ const captions=captionUnchanged ? (item.captions || []) : caption.trim()?[{start,end:Number(end)||Math.max(start+5,5),text:caption}]:[];
  const preview:Item={id:'preview',title:title||'Your preview',description,category,creator:'You',city,tags:[],cover:media?.content_type.startsWith('image/')?media.url:'/brand/ziipa-background.png',media_url:media&&!media.content_type.startsWith('image/')?media.url:null,content_type:media?.content_type,label:'Your upload',demo:false,trim_start:start,trim_end:Number(end)||null,captions};
  async function upload(file:File) {
   setBusy(true);setError('');setNotice('Uploading to your Ziipa workspace…');

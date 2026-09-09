@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -11,9 +11,8 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import * as DocumentPicker from "expo-document-picker";
-import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import { usePreventRemove } from "@react-navigation/native";
+import { useIsFocused, usePreventRemove } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   Camera,
@@ -38,6 +37,7 @@ import {
 import { Action, Cover, Field, Notice, Pill } from "../components/ui";
 import { FloatButton, worlds } from "../components/floating";
 import { ReelMedia } from "../components/reel-media";
+import { Recorder } from "../components/recorder";
 import { color, font, styles } from "../theme";
 import { useZiipa } from "../provider";
 import {
@@ -47,6 +47,7 @@ import {
   type UploadFile,
 } from "../lib/api";
 import { inCreativeWorld, parseEditing, parsePrice } from "../lib/domain";
+import { rememberLocalMedia, forgetLocalMedia } from "../lib/local-media";
 import {
   providerSupports,
   socialProvider,
@@ -102,6 +103,46 @@ export function ComposerScreen({
       : "",
   );
   const [file, setFile] = useState<UploadFile | null>(null);
+  const [recorderMode, setRecorderMode] = useState<"record" | "live" | null>(
+    null,
+  );
+  const capturedUris = useRef(new Set<string>());
+  const selectedUris = useRef(new Set<string>());
+  const retainedCaptureUris = useRef(new Set<string>());
+  const focused = useIsFocused();
+  useEffect(() => {
+    if (!focused) setRecorderMode(null);
+  }, [focused]);
+  useEffect(
+    () => () => {
+      for (const uri of selectedUris.current) {
+        if (!retainedCaptureUris.current.has(uri)) forgetLocalMedia(uri);
+      }
+      for (const uri of capturedUris.current) {
+        if (retainedCaptureUris.current.has(uri)) continue;
+        if (Platform.OS === "web") URL.revokeObjectURL(uri);
+        else
+          void FileSystem.deleteAsync(uri, { idempotent: true }).catch(
+            () => {},
+          );
+      }
+    },
+    [],
+  );
+  useEffect(() => {
+    for (const uri of selectedUris.current) {
+      if (uri === file?.uri || retainedCaptureUris.current.has(uri)) continue;
+      forgetLocalMedia(uri);
+      selectedUris.current.delete(uri);
+    }
+    for (const uri of capturedUris.current) {
+      if (uri === file?.uri || retainedCaptureUris.current.has(uri)) continue;
+      if (Platform.OS === "web") URL.revokeObjectURL(uri);
+      else
+        void FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+      capturedUris.current.delete(uri);
+    }
+  }, [file]);
   const [mediaId, setMediaId] = useState(existing?.media_id || null);
   const [soundtrackFile, setSoundtrackFile] = useState<UploadFile | null>(null);
   const [soundtrackId, setSoundtrackId] = useState(
@@ -219,6 +260,8 @@ export function ComposerScreen({
         setSoundtrackId(null);
         setSoundtrackName(selected.name.replace(/\.[^.]+$/, ""));
       } else {
+        rememberLocalMedia(selected.uri);
+        selectedUris.current.add(selected.uri);
         setFile(selected);
         setMediaId(null);
         if (selected.mimeType.startsWith("video/")) setCategory("video");
@@ -229,43 +272,20 @@ export function ComposerScreen({
       setError((e as Error).message);
     }
   }
-  async function camera() {
+  function useRecording(cameraFile: UploadFile) {
+    rememberLocalMedia(cameraFile.uri);
+    selectedUris.current.add(cameraFile.uri);
+    capturedUris.current.add(cameraFile.uri);
+    setFile(cameraFile);
+    setMediaId(null);
+    setCategory("video");
+    setSaved(null);
     setError("");
-    try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted)
-        throw new Error(
-          "Camera access was not granted. You can choose a file instead.",
-        );
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ["images", "videos"],
-        quality: 0.85,
-      });
-      if (result.canceled) return;
-      const asset = result.assets[0];
-      const info =
-        Platform.OS === "web" ? null : await FileSystem.getInfoAsync(asset.uri);
-      const size =
-        asset.fileSize || (info?.exists && !info.isDirectory ? info.size : 0);
-      if (!size || size > uploadLimit)
-        throw new Error("Choose a photo no larger than 100 MB.");
-      const cameraFile = {
-        uri: asset.uri,
-        name:
-          asset.fileName ||
-          (asset.type === "video" ? "ziipa-video.mp4" : "ziipa-photo.jpg"),
-        mimeType:
-          asset.mimeType ||
-          (asset.type === "video" ? "video/mp4" : "image/jpeg"),
-        size,
-      } satisfies UploadFile;
-      setFile(cameraFile);
-      setMediaId(null);
-      setCategory(cameraFile.mimeType.startsWith("video/") ? "video" : "music");
-      setSaved(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    setStart("0");
+    setEnd("");
+    setPaused(true);
+    setRecorderMode(null);
+    setTab("Edit");
   }
   async function save(visibility: "draft" | "published") {
     setError("");
@@ -313,6 +333,8 @@ export function ComposerScreen({
           title: title.trim(),
           description,
           category,
+          media_url: file?.uri || base.media_url,
+          content_type: file?.mimeType || base.content_type,
           tags: parsedTags,
           city: city.trim(),
           price_cents,
@@ -344,8 +366,12 @@ export function ComposerScreen({
           })),
           visibility: "draft",
           demo: true,
-          label: "Sample draft",
+          label:
+            file || base.label === "Local draft"
+              ? "Local draft"
+              : "Sample draft",
         };
+        if (file) retainedCaptureUris.current.add(file.uri);
         savePreviewDraft(draft);
         setSaved(draft);
       } else {
@@ -577,6 +603,8 @@ export function ComposerScreen({
                         accessibilityRole="button"
                         accessibilityLabel={`Use sample ${i.title}`}
                         onPress={() => {
+                          setFile(null);
+                          setMediaId(null);
                           setSample(i);
                           if (!title) setTitle(i.title);
                           setSaved(null);
@@ -634,16 +662,20 @@ export function ComposerScreen({
                       icon={Camera}
                       secondary
                       disabled={busy}
-                      onPress={() => void camera()}
+                      onPress={() => {
+                        setPaused(true);
+                        setRecorderMode("record");
+                      }}
                     />
                   </View>
                 </View>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Set up a live broadcast"
+                  disabled={busy}
                   onPress={() => {
-                    setCategory("live");
-                    setTab("Share");
+                    setPaused(true);
+                    navigation.navigate("Live", { tab: "broadcast" });
                   }}
                   style={[styles.row, { justifyContent: "center", padding: 8 }]}
                 >
@@ -877,8 +909,8 @@ export function ComposerScreen({
                     Publish to
                   </Text>
                   <Text style={styles.small}>
-                    Ziipa is always the source. Choose every compatible
-                    connected channel.
+                    Save the source in Ziipa and choose destinations. External
+                    delivery requires each provider’s approved integration.
                   </Text>
                 </View>
                 <Pressable
@@ -966,7 +998,9 @@ export function ComposerScreen({
                             ? "Not available for this media type"
                             : connected
                               ? connection.handle || provider.formats
-                              : `Select now · connect before delivery`}
+                              : connection?.status === "linked"
+                                ? "Profile linked · posting not authorized"
+                                : "Select destination · setup required"}
                         </Text>
                       </View>
                       <View
@@ -1016,7 +1050,7 @@ export function ComposerScreen({
               <Notice
                 text={
                   guest
-                    ? "Sample draft saved for this session. Restarting clears sample edits; nothing is published."
+                    ? `${saved.label === "Local draft" ? "Local" : "Sample"} draft saved for this session. Restarting clears it; nothing is uploaded or published.`
                     : saved.visibility === "draft"
                       ? "Private draft saved to your account."
                       : "Creation published to this Ziipa server."
@@ -1033,6 +1067,24 @@ export function ComposerScreen({
                   })
                 }
               />
+              <Action
+                title="Share media & manage destinations"
+                icon={Share2}
+                secondary
+                onPress={() =>
+                  navigation.navigate("Connections", { tab: "outbox" })
+                }
+              />
+              {!guest && saved.media_id && <Action title="Render & export saved edit" icon={Share2} onPress={()=>navigation.navigate('Exports',{itemId:saved.id})}/>}
+              {!guest && saved.visibility === "published" && saved.media_id && (
+                <Action
+                  title="Publish directly to authorized networks"
+                  icon={Share2}
+                  onPress={() =>
+                    navigation.navigate("Publishing", { itemId: saved.id })
+                  }
+                />
+              )}
               {!!saved.distribution?.length &&
                 saved.distribution.map((job) => (
                   <Notice
@@ -1061,7 +1113,9 @@ export function ComposerScreen({
                   guest
                     ? targets.length
                       ? "Save & preview distribution"
-                      : "Save sample draft"
+                      : file || base.label === "Local draft"
+                        ? "Save local draft"
+                        : "Save sample draft"
                     : "Save private draft"
                 }
                 icon={Save}
@@ -1104,6 +1158,17 @@ export function ComposerScreen({
           </Text>
         </View>
       </ScrollView>
+      {recorderMode && focused && (
+        <Recorder
+          mode={recorderMode}
+          onClose={() => setRecorderMode(null)}
+          onCapture={useRecording}
+          onNetworks={() => {
+            setRecorderMode(null);
+            navigation.navigate("Connections");
+          }}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }

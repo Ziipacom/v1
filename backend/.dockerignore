@@ -5,3 +5,5 @@ __pycache__
 uploads
 test_*.py
 *.pyc
+atproto_bridge/node_modules
+.render-work

@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+# OPT-IN PAID SERVICE. Creating/syncing this separate blueprint provisions a
+# $25/month 1 CPU / 2 GB worker (1c-2g, formerly Standard), billed by Render.
+# Do not import it until its cost is approved and the existing ziipa-api service
+# has reviewed Neon, Upstash and private R2 settings. No databases/disks are created.
+services:
+  - type: worker
+    name: ziipa-render-worker
+    runtime: docker
+    plan: 1c-2g
+    numInstances: 1
+    region: virginia
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    preDeployCommand: python render_migrate.py
+    dockerCommand: python render_worker.py --require-hosted
+    autoDeployTrigger: checksPass
+    maxShutdownDelaySeconds: 300
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SECURE_COOKIES
+        value: "true"
+      - key: ENABLE_DEMO_CATALOG
+        value: "false"
+      - key: WEB3_ENABLE_LOCAL
+        value: "false"
+      - key: RENDER_ENABLED
+        value: "true"
+      - key: RENDER_TIMEOUT_SECONDS
+        value: "180"
+      - key: RENDER_WORK_DIR
+        value: /tmp/ziipa-render
+      - key: RENDER_POLL_SECONDS
+        value: "30"
+      - key: RENDER_RECONCILE_SECONDS
+        value: "1800"
+      # References may point to an existing service outside this blueprint.
+      # They refresh on blueprint sync, not immediately on secret rotation.
+      # Only storage/coordination credentials are shared; no social, email,
+      # wallet, Livepeer or IPFS publishing credentials are given to this worker.
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: ziipa-api
+          envVarKey: DATABASE_URL
+      - key: REDIS_URL
+        fromService:
+          type: web
+          name: ziipa-api
+          envVarKey: REDIS_URL
+      - key: MEDIA_STORAGE_BACKEND
+        fromService:
+          type: web
+          name: ziipa-api
+          envVarKey: MEDIA_STORAGE_BACKEND
+      - key: R2_BUCKET_NAME
+        fromService:
+          type: web
+          name: ziipa-api
+          envVarKey: R2_BUCKET_NAME
+      - key: R2_ENDPOINT_URL
+        fromService:
+          type: web
+          name: ziipa-api
+          envVarKey: R2_ENDPOINT_URL
+      - key: R2_ACCESS_KEY_ID
+        fromService:
+          type: web
+          name: ziipa-api
+          envVarKey: R2_ACCESS_KEY_ID
+      - key: R2_SECRET_ACCESS_KEY
+        fromService:
+          type: web
+          name: ziipa-api
+          envVarKey: R2_SECRET_ACCESS_KEY
+      - key: SENTRY_DSN
+        fromService:
+          type: web
+          name: ziipa-api
+          envVarKey: SENTRY_DSN

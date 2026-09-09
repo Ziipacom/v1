@@ -328,15 +328,15 @@ const policies = {
     sections: [
       [
         "What this build stores",
-        "Ziipa stores your name, email, password hash, uploaded media, posts, comments, feed rules, likes, bookmarks, safety preferences, and reports on the configured Ziipa server. Passwords are never saved as plain text.",
+        "Ziipa stores your name, email, password hash, uploaded media, posts, comments, feed rules, likes, bookmarks, safety preferences, and reports on the configured Ziipa server. Live-session records, saved edits and export jobs are stored when you use those features. Connected-network authorizations are encrypted on the server alongside selected destinations and publishing receipts. Passwords are never saved as plain text.",
       ],
       [
         "On your device",
-        "Your session is kept in iOS Keychain or Android encrypted storage. Selected files may be temporarily copied into the app cache for upload. Private media is requested with your session; it is not intentionally cached for offline playback.",
+        "The native app keeps your session in iOS Keychain or Android encrypted storage. The web portal uses its HttpOnly session cookie; the standalone browser preview keeps its session in memory. Selected or recorded files and prepared exports may be temporarily copied into the app cache. Private media requires your session; it is not intentionally cached for offline playback.",
       ],
       [
         "Your choices",
-        "Camera access is optional and requested only when you take a photo. File selection uses the operating system picker. WalletConnect uses a third-party relay when you connect. Ziipa stores linked public wallet addresses, chain IDs, metadata and transaction history; it never collects seed phrases or private keys. No contacts, precise location or advertising access is requested.",
+        "Camera and microphone access are optional and requested when you open capture or enable a live preview. A private preview is not a broadcast; Go live requires confirmation before media is sent to the configured streaming provider. Connecting a social account does not automatically publish media: each post and live relay needs your approval. File selection uses the operating system picker. WalletConnect uses a third-party relay when you connect. Ziipa stores linked public wallet addresses, chain IDs, metadata and transaction history; it never collects seed phrases or private keys. No contacts, precise location or advertising access is requested.",
       ],
       [
         "Deletion and support",
@@ -361,7 +361,7 @@ const policies = {
       ],
       [
         "Preview limitations",
-        "Wallet connections, metadata storage, collectible minting, fixed-supply creator tokens, transfers and tips operate on configured test networks only. Assets have no promised value. IPFS and on-chain records may be permanent; Ziipa does not hold private keys. Broadcasting, federation, subscriptions and checkout are not implemented. Full commercial terms require owner and legal review before public distribution.",
+        "Wallet connections, metadata storage, collectible minting, fixed-supply creator tokens, transfers and tips operate on configured test networks only. Assets have no promised value. IPFS and on-chain records may be permanent; Ziipa does not hold private keys. Live broadcasting, supported social publishing and video rendering require configured provider services and any required approvals. Bluesky support covers supported AT Protocol accounts and posts, not unrestricted federation or every network's private feeds. Twitch supports live relay, not finished-video uploads. Subscriptions and checkout remain unavailable. Full commercial terms require owner and legal review before public distribution.",
       ],
     ],
   },

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, ScrollView, Text, View } from "react-native";
 import {
   SafeAreaView,
@@ -7,10 +7,10 @@ import {
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   ChevronDown,
-  ChevronUp,
   LayoutGrid,
   Megaphone,
   Menu,
+  Network,
   Pencil,
   Plus,
   SquarePlus,
@@ -23,9 +23,10 @@ import {
   worlds,
 } from "../components/floating";
 import { Cover, Logo } from "../components/ui";
+import { StudioFeed } from "../components/studio-feed";
 import { color, font, styles } from "../theme";
 import { useZiipa } from "../provider";
-import { inCreativeWorld } from "../lib/domain";
+import { inCreativeWorld, studioDiscoverItems } from "../lib/domain";
 import type { Category, RootStack } from "../lib/types";
 
 const menuOrder: Category[] = ["nft", "games", "live", "music", "store"];
@@ -59,6 +60,10 @@ export function StudioScreen({
     (i) => inCreativeWorld(i, selected) && i.visibility !== "hidden",
   );
   const world = worlds.find((w) => w.id === selected);
+  const discoverItems = useMemo(
+    () => studioDiscoverItems(data.items),
+    [data.items],
+  );
   const dockHeight = 76 + Math.max(insets.bottom, 10);
   const edit = () => setEditing((value) => !value);
   const add = () => navigation.navigate("Composer", { category: selected });
@@ -84,72 +89,108 @@ export function StudioScreen({
           onPress={() => navigation.navigate("Profile")}
         />
       </View>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          alignItems: "flex-end",
-          gap: 15,
-          paddingTop: 17,
-          paddingRight: 23,
-          paddingBottom: 22,
-        }}
-        style={{ flex: 1, marginBottom: dockHeight + (editing ? 206 : 0) }}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Create new creation"
-          onPress={add}
-          style={s.menuRow}
+      <View style={{ flex: 1, marginBottom: dockHeight, overflow: "hidden" }}>
+        <StudioFeed
+          items={discoverItems}
+          editing={editing}
+          onOpen={(item) =>
+            navigation.navigate("Watch", {
+              itemId: item.id,
+              category: item.category,
+            })
+          }
+        />
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            alignItems: "flex-end",
+            gap: 12,
+            paddingTop: 17,
+            paddingRight: 20,
+            paddingBottom: 22,
+          }}
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            width: 172,
+            maxWidth: "52%",
+            bottom: editing ? 240 : 178,
+          }}
         >
-          <Text style={s.menuText}>Create</Text>
-          <View style={s.circleSlot}>
-            <SquarePlus size={25} color={color.text} strokeWidth={1.5} />
-          </View>
-        </Pressable>
-        {menuOrder
-          .map((id) => worlds.find((w) => w.id === id))
-          .filter((w) => !!w)
-          .map((w) => (
-            <Pressable
-              key={w.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Edit ${w.title}`}
-              accessibilityState={{ selected: editing && selected === w.id }}
-              onPress={() => {
-                setSelected(w.id);
-                setPage(0);
-                setEditing(true);
-              }}
-              style={s.menuRow}
-            >
-              <Text style={s.menuText}>{w.title}</Text>
-              <View
-                style={[
-                  s.circleSlot,
-                  s.circle,
-                  editing &&
-                    selected === w.id && {
-                      borderColor: "#B28CDD",
-                      backgroundColor: "#32145A",
-                    },
-                ]}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Create new creation"
+            onPress={add}
+            style={s.menuRow}
+          >
+            <Text style={s.menuText}>Create</Text>
+            <View style={s.circleSlot}>
+              <SquarePlus size={25} color={color.text} strokeWidth={1.5} />
+            </View>
+          </Pressable>
+          {menuOrder
+            .map((id) => worlds.find((w) => w.id === id))
+            .filter((w) => !!w)
+            .map((w) => (
+              <Pressable
+                key={w.id}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  w.id === "live" ? "Open live broadcasts" : `Edit ${w.title}`
+                }
+                accessibilityState={{ selected: editing && selected === w.id }}
+                onPress={() => {
+                  if (w.id === "live") {
+                    navigation.navigate("Live");
+                    return;
+                  }
+                  setSelected(w.id);
+                  setPage(0);
+                  setEditing(true);
+                }}
+                style={s.menuRow}
               >
-                <WorldGlyph id={w.id} size={25} />
-              </View>
-            </Pressable>
-          ))}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Close Studio"
-          onPress={() => navigation.navigate("Profile")}
-          style={s.menuRow}
-        >
-          <Text style={s.menuText}>Close</Text>
-          <View style={s.circleSlot}>
-            <ChevronDown size={29} color={color.text} strokeWidth={1.5} />
-          </View>
-        </Pressable>
-      </ScrollView>
+                <Text style={s.menuText}>{w.title}</Text>
+                <View
+                  style={[
+                    s.circleSlot,
+                    s.circle,
+                    editing &&
+                      selected === w.id && {
+                        borderColor: "#B28CDD",
+                        backgroundColor: "#32145A",
+                      },
+                  ]}
+                >
+                  <WorldGlyph id={w.id} size={25} />
+                </View>
+              </Pressable>
+            ))}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open connected networks"
+            onPress={() => navigation.navigate("Connections")}
+            style={s.menuRow}
+          >
+            <Text style={s.menuText}>Networks</Text>
+            <View style={[s.circleSlot, s.circle]}>
+              <Network size={25} color={color.text} strokeWidth={1.5} />
+            </View>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close Studio"
+            onPress={() => navigation.navigate("Profile")}
+            style={s.menuRow}
+          >
+            <Text style={s.menuText}>Close</Text>
+            <View style={s.circleSlot}>
+              <ChevronDown size={29} color={color.text} strokeWidth={1.5} />
+            </View>
+          </Pressable>
+        </ScrollView>
+      </View>
       {editing && (
         <Animated.View
           style={{
@@ -325,34 +366,6 @@ export function StudioScreen({
           </View>
         </Animated.View>
       )}
-      {!editing && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Expand editing tray"
-          onPress={edit}
-          style={{
-            position: "absolute",
-            bottom: dockHeight + 13,
-            alignSelf: "center",
-            alignItems: "center",
-            padding: 12,
-            gap: 5,
-          }}
-        >
-          <ChevronUp size={22} color={color.muted} />
-          <Text
-            style={{
-              color: color.faint,
-              fontFamily: font.regular,
-              fontSize: 11,
-            }}
-          >
-            {guest
-              ? "Sample Studio · tap Edit to explore"
-              : "Your creator workspace"}
-          </Text>
-        </Pressable>
-      )}
       <View
         style={{
           position: "absolute",
@@ -433,13 +446,24 @@ const s = {
     gap: 13,
     minHeight: 45,
   },
-  menuText: { color: "#EAE4F1", fontFamily: font.regular, fontSize: 14 },
+  menuText: {
+    color: "#FAF7FF",
+    fontFamily: font.medium,
+    fontSize: 14,
+    textShadowColor: "#000",
+    textShadowRadius: 8,
+  },
   circleSlot: {
     width: 48,
     height: 48,
     justifyContent: "center" as const,
     alignItems: "center" as const,
   },
-  circle: { borderRadius: 25, borderWidth: 1, borderColor: "#B5ADBF" },
+  circle: {
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: "#B5ADBF",
+    backgroundColor: "#120D1F80",
+  },
   trayText: { color: "#E9E0F5", fontFamily: font.regular, fontSize: 12 },
 };

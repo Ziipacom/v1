@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useZiipa } from "./provider";
 import { color, font, styles } from "./theme";
+import { portalMode } from "./lib/config";
 import { Action, Logo, Notice } from "./components/ui";
 import type { RootStack } from "./lib/types";
 import { WelcomeScreen, LoginScreen } from "./screens/auth";
@@ -15,6 +16,9 @@ import { UtilityScreen } from "./screens/utility";
 import { FeedsScreen } from "./screens/feeds";
 import { ComposerScreen } from "./screens/editor";
 import { ConnectionsScreen } from "./screens/connections";
+import { PublishingScreen } from "./screens/publishing";
+import { ExportsScreen } from './screens/exports';
+import { LiveScreen } from "./screens/live";
 import { PostScreen } from "./screens/post";
 import {
   LegalScreen,
@@ -53,6 +57,32 @@ export function Navigation() {
         />
       </SafeAreaView>
     );
+  if (portalMode && !session)
+    return (
+      <SafeAreaView
+        style={[
+          styles.screen,
+          styles.page,
+          { justifyContent: "center", gap: 20 },
+        ]}
+      >
+        <Logo width={145} />
+        <Text style={styles.title}>Sign in to your Studio</Text>
+        <Text style={styles.small}>
+          Your website session has ended. Sign in again to continue.
+        </Text>
+        <Action
+          title="Return to portal sign in"
+          onPress={() => {
+            window.parent.postMessage(
+              { source: "ziipa-studio", type: "signed-out" },
+              window.location.origin,
+            );
+            if (window.parent === window) window.location.assign("/portal");
+          }}
+        />
+      </SafeAreaView>
+    );
   return (
     <NavigationContainer
       key={
@@ -72,6 +102,7 @@ export function Navigation() {
       }}
     >
       <Stack.Navigator
+        initialRouteName={portalMode ? "Studio" : undefined}
         screenOptions={{
           headerStyle: { backgroundColor: color.bg },
           headerTintColor: color.text,
@@ -124,7 +155,18 @@ export function Navigation() {
             <Stack.Screen
               name="Connections"
               component={ConnectionsScreen}
-              options={{ title: "Connected networks" }}
+              options={{ title: "Your networks" }}
+            />
+            <Stack.Screen name="Exports" component={ExportsScreen} options={{title:'Rendered exports'}} />
+            <Stack.Screen
+              name="Publishing"
+              component={PublishingScreen}
+              options={{ title: "Publish to your networks" }}
+            />
+            <Stack.Screen
+              name="Live"
+              component={LiveScreen}
+              options={{ title: "Live broadcasts" }}
             />
           </>
         ) : (

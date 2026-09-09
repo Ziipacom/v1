@@ -213,11 +213,17 @@ def drain_media_deletions(session):
 
 
 @router.post('/api/account/delete', dependencies=[Depends(guard)])
-def delete_account(data: DeleteAccount, user: User = Depends(current_user), session: Session = Depends(db)):
+async def delete_account(data: DeleteAccount, user: User = Depends(current_user), session: Session = Depends(db)):
     if not passwords.verify(data.password, user.password_hash):
         raise HTTPException(401, 'Password is incorrect')
     # Lock the account against uploads while removing dependent data.
     session.execute(select(User).where(User.id == user.id).with_for_update())
+    from live_api import delete_live_account
+    from social_publishing import delete_publishing_account
+    await delete_live_account(user.id, session)
+    await delete_publishing_account(user.id, session)
+    from render_services import delete_render_jobs
+    delete_render_jobs(user.id, session)
     item_ids = list(session.scalars(select(CreatorItem.id).where(CreatorItem.owner_id == user.id)))
     media_ids = list(session.scalars(select(CreatorMedia.id).where(CreatorMedia.owner_id == user.id)))
     provider = storage()

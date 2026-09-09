@@ -25,11 +25,13 @@
     },
     "production": {
       "distribution": "store",
+      "credentialsSource": "remote",
       "environment": "production",
       "autoIncrement": true,
       "android": { "buildType": "app-bundle" },
       "env": {
         "APP_VARIANT": "production",
+        "EXPO_PUBLIC_PORTAL_MODE": "false",
         "EXPO_PUBLIC_API_URL": "https://api.ziipa.com",
         "EXPO_PUBLIC_ENABLE_DEMO": "false",
         "EXPO_PUBLIC_ENABLE_CONCEPTS": "false"

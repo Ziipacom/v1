@@ -14,7 +14,7 @@ import {
   request,
   writeSession,
 } from "./lib/api";
-import { demoEnabled, policyVersion } from "./lib/config";
+import { demoEnabled, policyVersion, portalMode } from "./lib/config";
 import {
   emptyPreferences,
   type Bootstrap,
@@ -26,6 +26,7 @@ import {
 } from "./lib/types";
 import demo from "./lib/demo.json";
 import { disconnectWallet } from "./lib/wallet-connector";
+import { emptyNetworkHub, type NetworkHub } from "./lib/network-hub";
 
 const empty: Bootstrap = {
   items: [],
@@ -69,25 +70,25 @@ function previewData(): Bootstrap {
         provider: "bluesky",
         name: "Bluesky / AT Protocol",
         capability: "Posts and portable identity",
-        status: "connected",
-        handle: "ziipa.studio",
-        configured: true,
+        status: "disconnected",
+        handle: "",
+        configured: false,
       },
       {
         provider: "instagram",
         name: "Instagram",
         capability: "Professional account posts and Reels",
-        status: "connected",
-        handle: "@ziipa.studio",
-        configured: true,
+        status: "disconnected",
+        handle: "",
+        configured: false,
       },
       {
         provider: "tiktok",
         name: "TikTok",
         capability: "Video and photo publishing",
-        status: "connected",
-        handle: "@ziipa",
-        configured: true,
+        status: "disconnected",
+        handle: "",
+        configured: false,
       },
       ...(
         [
@@ -128,6 +129,8 @@ type State = {
   toggle: (key: "liked" | "saved", id: string) => Promise<void>;
   savePreviewDraft: (item: Item) => void;
   savePreviewFeed: (rule: FeedInput) => void;
+  previewNetworks: NetworkHub;
+  savePreviewNetworks: (hub: NetworkHub) => void;
 };
 const Context = createContext<State | null>(null);
 export function useZiipa() {
@@ -137,11 +140,13 @@ export function useZiipa() {
 }
 export function ZiipaProvider({ children }: React.PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
-  const browserPreview = Platform.OS === "web" && demoEnabled;
+  const browserPreview = Platform.OS === "web" && demoEnabled && !portalMode;
   const [guest, setGuest] = useState(browserPreview);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [previewNetworks, setPreviewNetworks] =
+    useState<NetworkHub>(emptyNetworkHub);
   const [data, setData] = useState<Bootstrap>(() =>
     browserPreview ? previewData() : empty,
   );
@@ -162,6 +167,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
       setSession(null);
       setGuest(false);
       putData(empty);
+      setPreviewNetworks(emptyNetworkHub());
       setError("");
     }
   }, [putData]);
@@ -210,6 +216,30 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
   useEffect(() => {
     void restore();
   }, [restore]);
+  useEffect(() => {
+    if (!portalMode || !session) return;
+    // A different browser tab may change the HttpOnly account cookie. The
+    // expected-user header also makes server-side writes fail closed during
+    // the interval before this visibility check runs.
+    let checking = false;
+    const check = () => {
+      if (checking || document.visibilityState !== "visible") return;
+      checking = true;
+      void api<User>("/api/me")
+        .catch(() => {})
+        .finally(() => {
+          checking = false;
+        });
+    };
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    const interval = setInterval(check, 60000);
+    return () => {
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+      clearInterval(interval);
+    };
+  }, [session, api]);
   const refresh = useCallback(async () => {
     if (!session) return;
     setRefreshing(true);
@@ -224,7 +254,9 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     }
   }, [session, api, putData]);
   async function authenticate(email: string, password: string, name?: string) {
-    const result = await request<Session | { verification_required: true; message: string }>(
+    const result = await request<
+      Session | { verification_required: true; message: string }
+    >(
       `/api/mobile/auth/${name === undefined ? "login" : "register"}`,
       undefined,
       {
@@ -240,7 +272,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
             }),
       },
     );
-    if ('verification_required' in result) throw new Error(result.message);
+    if ("verification_required" in result) throw new Error(result.message);
     await writeSession(result);
     const user = await request<User>("/api/me", result.access_token);
     activeToken.current = result.access_token;
@@ -268,6 +300,11 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     setGuest(true);
     setError("");
     putData(previewData());
+    setPreviewNetworks(emptyNetworkHub());
+  }
+  function savePreviewNetworks(hub: NetworkHub) {
+    if (!guest || !demoEnabled) throw new Error("Sample mode is required.");
+    setPreviewNetworks(hub);
   }
   function savePreviewDraft(item: Item) {
     if (!guest || !demoEnabled)
@@ -348,6 +385,8 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
         toggle,
         savePreviewDraft,
         savePreviewFeed,
+        previewNetworks,
+        savePreviewNetworks,
       }}
     >
       {children}

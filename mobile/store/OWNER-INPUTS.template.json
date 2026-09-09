@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "status": "owner_review_required",
+  "instructions": "Copy to mobile/store-owner-inputs.local.json (ignored). Non-secret references only. Keep private keys, passwords, service-account JSON, tokens and reviewer credentials in the owner secret manager/console. Null means unknown, not no.",
+  "operator": {
+    "legal_seller_name": null,
+    "support_email": null,
+    "marketing_url": null,
+    "privacy_url": null,
+    "terms_url": null,
+    "community_url": null,
+    "outside_app_account_deletion_url": null,
+    "retention_and_processor_review_reference": null,
+    "moderation_operation_reference": null
+  },
+  "expo": {
+    "owner": null,
+    "project_id": null,
+    "access_verified": false
+  },
+  "android": {
+    "production_application_id": null,
+    "existing_play_app": null,
+    "play_account_type": null,
+    "upload_certificate_sha256": null,
+    "play_app_signing_certificate_sha256": null,
+    "signing_secret_manager_reference": null,
+    "submission_credential_reference": null,
+    "next_version_code_confirmed": null,
+    "required_testing_track_and_evidence": null
+  },
+  "ios": {
+    "production_bundle_id": null,
+    "apple_team_id": null,
+    "asc_app_id": null,
+    "distribution_certificate_reference": null,
+    "provisioning_profile_reference": null,
+    "submission_credential_reference": null,
+    "uses_non_exempt_encryption": null,
+    "export_review_reference": null,
+    "apple_export_compliance_code_if_supplied": null
+  },
+  "release": {
+    "git_commit": null,
+    "approved_countries": null,
+    "content_age_questionnaire_reference": null,
+    "financial_blockchain_policy_reference": null,
+    "api_and_provider_acceptance_reference": null,
+    "android_device_acceptance_reference": null,
+    "ios_device_acceptance_reference": null,
+    "reviewer_access_secret_reference": null,
+    "approved_screenshot_directory": null,
+    "approved_artifact_hashes": null,
+    "final_review_complete": false
+  }
+}

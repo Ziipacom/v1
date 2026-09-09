@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import ForeignKey, String, JSON, DateTime, select, func, delete, UniqueConstraint
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Mapped, mapped_column, Session
@@ -61,7 +61,7 @@ class CreatorConnection(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     owner_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
     provider: Mapped[str] = mapped_column(String(20))
-    status: Mapped[str] = mapped_column(String(24), default='connected')
+    status: Mapped[str] = mapped_column(String(24), default='linked')
     data: Mapped[dict] = mapped_column(JSON, default=dict)
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
@@ -247,13 +247,8 @@ def provider_connection(provider, user, session):
 
 
 def connections_for(user, session):
-    rows = {r.provider: r for r in session.scalars(select(CreatorConnection).where(CreatorConnection.owner_id == user.id)).all()}
-    result = []
-    for provider, (name, capability) in PROVIDERS.items():
-        row = rows.get(provider)
-        configured = bool(getattr(settings, f'social_{provider}_client_id', ''))
-        result.append({'provider': provider, 'name': name, 'capability': capability, 'status': row.status if row else 'disconnected', 'handle': row.data.get('handle', '') if row else '', 'configured': configured})
-    return result
+    from social_api import providers_for
+    return providers_for(user, session)
 
 
 def assert_visible(item_id, session, user):
@@ -296,6 +291,17 @@ def bootstrap(user: User = Depends(current_user), session: Session = Depends(db)
 def save_item(data, session, user, row=None):
     if row is not None and row.visibility == 'hidden':
         raise HTTPException(403, 'This post was removed by moderation. Contact support to appeal.')
+    if row is not None:
+        # Older clients do not know every studio field. Preserve omitted fields,
+        # including complete caption arrays, while honoring explicit null/[]
+        # for fields that permit clearing. Visibility in the column is canonical.
+        merged = {**row.data, 'visibility': row.visibility,
+                  **data.model_dump(include=data.model_fields_set)}
+        try:
+            data = ItemInput.model_validate(merged)
+        except ValidationError as exc:
+            issue = exc.errors(include_url=False, include_context=False, include_input=False)[0]
+            raise HTTPException(422, f'The saved draft and these changes are invalid: {issue["msg"]}') from exc
     if data.media_id:
         media = session.get(CreatorMedia, data.media_id)
         if not media or media.owner_id != user.id:
@@ -328,8 +334,11 @@ def create_item(data: ItemInput, user: User = Depends(current_user), session: Se
 
 @router.post('/items/{item_id}', dependencies=[Depends(guard)])
 def edit_item(item_id: str, data: ItemInput, user: User = Depends(current_user), session: Session = Depends(db)):
-    row = session.get(CreatorItem, item_id)
-    if not row or row.owner_id != user.id:
+    # Serialize updates before merging so simultaneous clients cannot overwrite
+    # one another's omitted fields with an earlier snapshot of the JSON record.
+    row = session.scalar(select(CreatorItem).where(CreatorItem.id == item_id,
+                         CreatorItem.owner_id == user.id).with_for_update())
+    if not row:
         raise HTTPException(404, 'Draft not found')
     return save_item(data, session, user, row)
 
@@ -341,12 +350,9 @@ def list_connections(user: User = Depends(current_user), session: Session = Depe
 
 @router.post('/connections/{provider}', dependencies=[Depends(guard)])
 def change_connection(provider: SocialProvider, data: ConnectionInput, user: User = Depends(current_user), session: Session = Depends(db)):
-    row = provider_connection(provider, user, session)
     if data.action == 'disconnect':
-        if row:
-            session.delete(row)
-            session.commit()
-        return next(c for c in connections_for(user, session) if c['provider'] == provider)
+        from social_api import disconnect_for
+        return disconnect_for(provider, user, session)
     if not getattr(settings, f'social_{provider}_client_id', ''):
         raise HTTPException(409, f'{PROVIDERS[provider][0]} requires an approved developer app and OAuth credentials on this Ziipa environment.')
     raise HTTPException(501, f'{PROVIDERS[provider][0]} OAuth callback setup is required before accounts can be connected.')
@@ -368,8 +374,9 @@ def distribute_item(item_id: str, data: DistributionInput, user: User = Depends(
         connection = provider_connection(provider, user, session)
         if provider == 'twitch' and item.data.get('category') != 'live':
             row.status, row.detail = 'unsupported_media', 'Twitch distribution is available for a configured live broadcast.'
-        elif not connection:
-            row.status, row.detail = 'connection_required', f'Connect {PROVIDERS[provider][0]} before delivery.'
+        elif not connection or connection.status != 'connected' or connection.data.get('auth_type') != 'oauth':
+            row.status, row.detail = 'connection_required', (f'Authorize {PROVIDERS[provider][0]} before automatic delivery. '
+                                                          'A public profile link does not grant posting access. Use the share/export handoff in Ziipa meanwhile.')
         else:
             row.status, row.detail = 'provider_setup_required', 'The provider delivery adapter must be enabled and reviewed by the Ziipa operator.'
         row.updated_at = datetime.now(timezone.utc)

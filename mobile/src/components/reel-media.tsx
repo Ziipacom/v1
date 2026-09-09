@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppState, StyleSheet, Text, View } from "react-native";
 import { VideoView, useVideoPlayer, type VideoSource } from "expo-video";
 import { useEvent } from "expo";
@@ -9,7 +9,7 @@ import {
 } from "expo-audio";
 import { useIsFocused } from "@react-navigation/native";
 import { Cover } from "./ui";
-import { playbackSource } from "../lib/assets";
+import { usePlaybackSource } from "../lib/media-playback";
 import { visibleCaption } from "../lib/domain";
 import { useZiipa } from "../provider";
 import type { Item } from "../lib/types";
@@ -29,16 +29,20 @@ export function ReelMedia({
   localUri?: string;
 }) {
   const { session } = useZiipa();
-  const source = useMemo(
-    () =>
-      localUri && /^(file|content|blob):/.test(localUri)
-        ? { uri: localUri }
-        : playbackSource(item.media_url, session?.access_token),
-    [item.media_url, session?.access_token, localUri],
+  const focused = useIsFocused();
+  const { source, loading, error } = usePlaybackSource(
+    item.media_url,
+    session?.access_token,
+    !!item.demo,
+    active && focused,
+    localUri,
   );
   return (
     <View style={StyleSheet.absoluteFill}>
       <Cover item={item} style={{ flex: 1 }} />
+      {active && (loading || error) && (
+        <Text style={r.caption}>{error || "Loading media…"}</Text>
+      )}
       {active &&
         source &&
         (item.content_type?.startsWith("audio/") ? (
@@ -172,9 +176,12 @@ function ReelVideo({
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <VideoView
         player={player}
-        style={StyleSheet.absoluteFill}
+        // Web renders a replaced <video> element; inset alone preserves its
+        // intrinsic size instead of filling the portrait feed viewport.
+        style={[StyleSheet.absoluteFill, { width: "100%", height: "100%" }]}
         contentFit="cover"
         nativeControls={false}
+        playsInline
         allowsPictureInPicture={false}
         surfaceType="textureView"
       />

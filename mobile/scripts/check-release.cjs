@@ -1,6 +1,7 @@
 const strict =
   process.argv.includes("--strict") ||
-  process.env.EAS_BUILD_PROFILE === "production";
+  process.env.EAS_BUILD_PROFILE === "production" ||
+  process.env.APP_VARIANT === "production";
 if (!strict) {
   console.log("Preview build: production release checks are not required.");
   process.exit(0);
@@ -24,7 +25,7 @@ for (const name of [
       !url.hostname.includes(".") ||
       url.hostname.includes(":") ||
       /^\d{1,3}(\.\d{1,3}){3}$/.test(url.hostname) ||
-      /localhost|127\.0\.0\.1|10\.0\.2\.2|example|YOUR-|\.local$/i.test(
+      /localhost|127\.0\.0\.1|10\.0\.2\.2|example|YOUR-|\.(local|test|invalid)$/i.test(
         url.hostname,
       )
     )
@@ -54,6 +55,28 @@ if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$/i.test(env.ZIIPA_APP_ID || ""))
   );
 if (env.APP_VARIANT !== "production")
   errors.push("APP_VARIANT must be production.");
+if (env.EXPO_PUBLIC_PORTAL_MODE === "true")
+  errors.push(
+    "EXPO_PUBLIC_PORTAL_MODE must not enable a web-only store build.",
+  );
+if (
+  env.ZIIPA_APP_ID_CONFIRMED !== "true" ||
+  /\.preview$/i.test(env.ZIIPA_APP_ID || "")
+)
+  errors.push(
+    "Confirm ownership of the production app identifier in both stores; preview identifiers cannot be submitted.",
+  );
+if (env.ZIIPA_SIGNING_REVIEWED !== "true")
+  errors.push(
+    "Verify owner-controlled signing credentials and existing store upload certificate before setting ZIIPA_SIGNING_REVIEWED=true. Never use the preview/debug key.",
+  );
+if (
+  env.ZIIPA_ENCRYPTION_REVIEWED !== "true" ||
+  !["true", "false"].includes(env.ZIIPA_USES_NON_EXEMPT_ENCRYPTION || "")
+)
+  errors.push(
+    "Complete the Apple export-compliance review and explicitly configure ZIIPA_USES_NON_EXEMPT_ENCRYPTION=true or false; no exemption is assumed.",
+  );
 if (
   env.EXPO_PUBLIC_ENABLE_DEMO !== "false" ||
   env.EXPO_PUBLIC_ENABLE_CONCEPTS !== "false"
@@ -78,5 +101,5 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(
-  "Release configuration checks passed. This does not guarantee store approval or replace the manual release review.",
+  "Release configuration checks passed. These acknowledgments do not verify signing credentials, deployed services, device results or store approval; inspect the final signed artifact and owner consoles.",
 );

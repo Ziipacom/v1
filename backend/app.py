@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import hashlib
+import ipaddress
 import logging
 from pathlib import Path
 import secrets
@@ -27,6 +28,7 @@ class Settings(BaseSettings):
     mobile_web_origin: str = 'http://localhost:8082'
     uploads_dir: str = str(Path(__file__).resolve().parent / 'uploads')
     secure_cookies: bool = False
+    ziipa_proxy_secret: str = Field(default='', repr=False)
     moderator_emails: str = ''
     enable_demo_catalog: bool = True
     social_bluesky_client_id: str = ''
@@ -35,6 +37,8 @@ class Settings(BaseSettings):
     social_tiktok_client_id: str = ''
     social_twitch_client_id: str = ''
     social_youtube_client_id: str = ''
+    social_public_sync_enabled: bool = True
+    social_invite_url: str = 'https://ziipa.com'
     environment: str = 'development'
     release: str = 'local'
     api_public_origin: str = 'http://localhost:8018'
@@ -63,6 +67,20 @@ if settings.sentry_dsn:
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger('ziipa.api')
+
+class QueryRedactionFilter(logging.Filter):
+    def filter(self, record):
+        # Uvicorn includes the raw query in its third access-log argument.
+        # OAuth codes, signed media URLs and one-time tickets must stay out of logs.
+        if isinstance(record.args, tuple) and len(record.args) == 5:
+            args = list(record.args)
+            args[2] = str(args[2]).split('?', 1)[0]
+            record.args = tuple(args)
+        return True
+
+logging.getLogger('uvicorn.access').addFilter(QueryRedactionFilter())
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
 
 
 def configured_origins():
@@ -115,16 +133,20 @@ class Waitlist(Base):
 
 @asynccontextmanager
 async def lifespan(app):
-    Base.metadata.create_all(engine)  # Local bootstrap; use migrations before production.
-    yield
-    cache.close()
-    engine.dispose()
+    # Hosted demos and production must use the versioned startup migrations.
+    if settings.environment.lower() in {'development', 'test'}:
+        Base.metadata.create_all(engine)
+    try:
+        yield
+    finally:
+        cache.close()
+        engine.dispose()
 
 
 app = FastAPI(title='Ziipa API', version='0.1.0', lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=list(TRUSTED_ORIGINS), allow_credentials=True,
                    allow_methods=['GET', 'POST', 'PUT', 'OPTIONS'],
-                   allow_headers=['Content-Type', 'Authorization', 'X-Request-ID'],
+                   allow_headers=['Content-Type', 'Authorization', 'X-Request-ID', 'X-Ziipa-User'],
                    expose_headers=['X-Request-ID'])
 
 
@@ -153,6 +175,13 @@ def guard(request: Request):
     if origin and origin not in TRUSTED_ORIGINS:
         raise HTTPException(403, 'Untrusted origin')
     ip = request.client.host if request.client else 'unknown'
+    if len(settings.ziipa_proxy_secret) >= 32 and secrets.compare_digest(
+        request.headers.get('x-ziipa-proxy-secret', ''), settings.ziipa_proxy_secret
+    ):
+        try:
+            ip = str(ipaddress.ip_address(request.headers.get('x-ziipa-client-ip', '')))
+        except ValueError:
+            raise HTTPException(400, 'Invalid proxy client address')
     key = 'rate:' + hashlib.sha256((ip + request.url.path).encode()).hexdigest()
     try:
         count = cache.eval("local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],60) end; return n", 1, key)
@@ -181,6 +210,9 @@ def current_user(request: Request, session: Session = Depends(db)):
     user = session.get(User, int(uid)) if uid else None
     if not user:
         raise HTTPException(401, 'Please sign in')
+    expected_user = request.headers.get('x-ziipa-user')
+    if expected_user is not None and expected_user != str(user.id):
+        raise HTTPException(401, 'The signed-in account changed. Reopen your portal before continuing.')
     return user
 
 
@@ -272,7 +304,9 @@ def login(data: Login, response: Response, session: Session = Depends(db)):
 
 
 @app.post('/api/auth/logout', dependencies=[Depends(guard)])
-def logout(request: Request, response: Response):
+def logout(request: Request, response: Response, session: Session = Depends(db)):
+    if request.headers.get('x-ziipa-user') is not None:
+        current_user(request, session)
     token = request.cookies.get('ziipa_session', '')
     from account_services import forget_session, session_key
     key = session_key('session:', token)
@@ -301,3 +335,11 @@ from web3_api import router as web3_router
 app.include_router(web3_router)
 from account_services import router as account_router
 app.include_router(account_router)
+from social_api import router as social_router
+app.include_router(social_router)
+from live_api import router as live_router
+app.include_router(live_router)
+from social_publishing import router as publishing_router
+app.include_router(publishing_router)
+from render_api import router as render_router
+app.include_router(render_router)

@@ -1,5 +1,5 @@
 import type { Session } from "./types";
-import { validateOrigin } from "./config";
+import { validateOrigin, portalMode, authorizationHeaders } from "./config";
 
 // Browser bearer sessions stay in memory, never localStorage or cookies.
 let saved: Session | null = null;
@@ -12,6 +12,21 @@ export class ApiError extends Error {
   }
 }
 export async function readSession() {
+  if (portalMode) {
+    try {
+      const user = await request<Session["user"]>("/api/me");
+      // A non-secret state marker; never sent as Authorization. The existing
+      // HttpOnly website cookie remains the sole portal credential.
+      return {
+        access_token: `ziipa-portal-cookie:${user.id}:${Date.now()}`,
+        expires_at: new Date(Date.now() + 3600000).toISOString(),
+        user,
+      };
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) return null;
+      throw error;
+    }
+  }
   return saved && Date.parse(saved.expires_at) > Date.now() ? saved : null;
 }
 export async function writeSession(session: Session) {
@@ -19,6 +34,11 @@ export async function writeSession(session: Session) {
 }
 export async function clearSession() {
   saved = null;
+  if (portalMode)
+    window.parent.postMessage(
+      { source: "ziipa-studio", type: "signed-out" },
+      window.location.origin,
+    );
 }
 export async function request<T>(
   path: string,
@@ -27,6 +47,8 @@ export async function request<T>(
 ): Promise<T> {
   if (!path.startsWith("/api/") || path.includes(".."))
     throw new Error("Invalid API path");
+  if (portalMode && path === "/api/mobile/auth/logout")
+    path = "/api/auth/logout";
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(),
@@ -36,11 +58,11 @@ export async function request<T>(
     const response = await fetch(validateOrigin() + path, {
       method: data === undefined ? "GET" : "POST",
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authorizationHeaders(token),
         ...(data === undefined ? {} : { "Content-Type": "application/json" }),
       },
       body: data === undefined ? undefined : JSON.stringify(data),
-      credentials: "omit",
+      credentials: portalMode ? "include" : "omit",
       redirect: "error",
       signal: controller.signal,
     });
@@ -137,16 +159,24 @@ export async function uploadMedia(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 180000);
   try {
-    const response = await fetch(direct ? reservation.url : validateOrigin() + "/api/creator/media", {
-      method: direct ? "PUT" : "POST",
-      headers: {
-        ...(direct ? reservation.headers : { Authorization: `Bearer ${token}`, "Content-Type": file.mimeType }),
+    const response = await fetch(
+      direct ? reservation.url : validateOrigin() + "/api/creator/media",
+      {
+        method: direct ? "PUT" : "POST",
+        headers: {
+          ...(direct
+            ? reservation.headers
+            : {
+                ...authorizationHeaders(token),
+                "Content-Type": file.mimeType,
+              }),
+        },
+        body: blob,
+        credentials: portalMode && !direct ? "include" : "omit",
+        redirect: "error",
+        signal: controller.signal,
       },
-      body: blob,
-      credentials: "omit",
-      redirect: "error",
-      signal: controller.signal,
-    });
+    );
     const body = await response.json().catch(() => null);
     if (!response.ok)
       throw new ApiError(
@@ -156,7 +186,9 @@ export async function uploadMedia(
     onProgress(100);
     return direct
       ? await request<{ id: string; url: string; content_type: string }>(
-          `/api/creator/media/${reservation.id}/complete`, token, {},
+          `/api/creator/media/${reservation.id}/complete`,
+          token,
+          {},
         )
       : (body as { id: string; url: string; content_type: string });
   } finally {

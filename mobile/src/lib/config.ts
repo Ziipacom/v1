@@ -1,6 +1,16 @@
 import { Platform } from "react-native";
 
 // EXPO_PUBLIC values are bundled and must never contain secrets.
+export const portalMode =
+  Platform.OS === "web" && process.env.EXPO_PUBLIC_PORTAL_MODE === "true";
+export const canonicalApiOrigin = (
+  process.env.EXPO_PUBLIC_CANONICAL_API_ORIGIN || "https://api.ziipa.com"
+).replace(/\/$/, "");
+export function authorizationHeaders(token?: string): Record<string, string> {
+  if (!portalMode) return token ? { Authorization: `Bearer ${token}` } : {};
+  const owner = token?.match(/^ziipa-portal-cookie:([1-9]\d*):\d+$/)?.[1];
+  return owner ? { "X-Ziipa-User": owner } : {};
+}
 export const apiOrigin = (
   process.env.EXPO_PUBLIC_API_URL ||
   (Platform.OS === "web" && typeof globalThis.location !== "undefined"
@@ -39,7 +49,15 @@ export function validateOrigin(origin = apiOrigin) {
     throw new Error(
       "Use an API origin without credentials, a path, or query parameters.",
     );
-  if (url.protocol !== "https:" && !(__DEV__ && url.protocol === "http:"))
+  const localPortal =
+    portalMode &&
+    typeof globalThis.location !== "undefined" &&
+    origin === globalThis.location.origin &&
+    ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (
+    url.protocol !== "https:" &&
+    !((__DEV__ || localPortal) && url.protocol === "http:")
+  )
     throw new Error("Release builds require a secure HTTPS API.");
   return url.origin;
 }

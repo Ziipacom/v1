@@ -20,9 +20,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            mobile/package-lock.json
       - run: npm ci
+      - name: Install shared Studio dependencies
+        run: npm ci
+        working-directory: mobile
       - run: npm run build
+      - run: npm test
       - run: npx tsc --noEmit
       - run: npx wrangler deploy --dry-run --config dist/server/wrangler.json
 
@@ -81,9 +87,19 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: contracts/package-lock.json
+          cache-dependency-path: |
+            contracts/package-lock.json
+            backend/atproto_bridge/package-lock.json
       - run: npm ci
         working-directory: contracts
+      - name: Install the pinned AT Protocol OAuth bridge
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: backend/atproto_bridge
+      - name: Check official OAuth SDK integration with mocked provider traffic
+        run: npm test
+        working-directory: backend/atproto_bridge
+      - name: Install media rendering runtime
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
       - run: npm run compile
         working-directory: contracts
       - name: Start local EVM for API integration tests
@@ -103,8 +119,10 @@ jobs:
       - run: npm run deploy:local
         working-directory: contracts
       - run: python render_migrate.py
-      - run: python -m pytest -q test_api.py test_web3.py
+      - run: python -m pytest -q
       - run: docker build -t ziipa-api-ci .
+      - name: Verify actual rendering in the production Linux image
+        run: docker run --rm --network none --cpus 1 --memory 1g --memory-swap 1g -e ZIIPA_RENDER_RESOURCE_TEST=1 --mount "type=bind,source=$PWD/test_rendering.py,target=/app/test_rendering.py,readonly" ziipa-api-ci python -m pytest test_rendering.py -q -p no:cacheprovider
 
   contracts:
     runs-on: ubuntu-latest

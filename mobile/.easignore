@@ -1,4 +1,5 @@
 node_modules/
+artifacts/
 .expo/
 dist/
 dist-web-preview/
@@ -12,9 +13,12 @@ ios/
 *.keystore
 *.p8
 *.p12
+*.key
+*.pem
 *.mobileprovision
 credentials.json
 google-service-account*.json
+store-owner-inputs.local.json
 audit*.json
 tests/
 store/

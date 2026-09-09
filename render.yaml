@@ -1,5 +1,8 @@
 # yaml-language-server: $schema=https://render.com/schema/render.yaml.json
-# Free demo API for the Ziipa hybrid stack. Durable state lives in the
+# API-only blueprint: syncing this file does not create a paid render worker.
+# Free compute is for a controlled demo; public-launch capacity needs review.
+# Import render-worker.yaml separately only after approving its $25/month plan.
+# Durable state lives in the
 # externally managed Neon, Upstash, Cloudflare R2, and Pinata services.
 services:
   - type: web
@@ -11,10 +14,10 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /api/health
-    autoDeployTrigger: commit
+    autoDeployTrigger: checksPass
     envVars:
       - key: ENVIRONMENT
-        value: demo
+        value: production
       - key: FRONTEND_ORIGIN
         value: https://ziipa.com,https://www.ziipa.com
       - key: MOBILE_WEB_ORIGIN
@@ -63,3 +66,57 @@ services:
         sync: false
       - key: MODERATOR_EMAILS
         sync: false
+      # New sync:false values must be added manually to an existing service;
+      # Render prompts for them only when initially creating a blueprint.
+      - key: ZIIPA_PROXY_SECRET
+        sync: false
+      - key: LIVEPEER_API_KEY
+        sync: false
+      - key: PUBLISHING_ENCRYPTION_KEY
+        sync: false
+      - key: PUBLISHING_API_ORIGIN
+        value: https://ziipa.com
+      - key: PUBLISHING_APPROVED_ORIGINS
+        value: https://ziipa.com
+      - key: PUBLISHING_PORTAL_URL
+        value: https://ziipa.com/portal
+      - key: PUBLISHING_ALLOW_INSECURE_LOCALHOST
+        value: "false"
+      - key: PUBLISHING_YOUTUBE_CLIENT_ID
+        sync: false
+      - key: PUBLISHING_YOUTUBE_CLIENT_SECRET
+        sync: false
+      - key: PUBLISHING_YOUTUBE_PUBLIC_APPROVED
+        sync: false
+      - key: PUBLISHING_TIKTOK_CLIENT_KEY
+        sync: false
+      - key: PUBLISHING_TIKTOK_CLIENT_SECRET
+        sync: false
+      - key: PUBLISHING_TIKTOK_PUBLIC_APPROVED
+        sync: false
+      - key: PUBLISHING_TIKTOK_VERIFIED_MEDIA_ORIGINS
+        sync: false
+      - key: PUBLISHING_META_CLIENT_ID
+        sync: false
+      - key: PUBLISHING_META_CLIENT_SECRET
+        sync: false
+      - key: PUBLISHING_META_GRAPH_VERSION
+        sync: false
+      - key: PUBLISHING_META_MEDIA_ORIGINS
+        sync: false
+      - key: PUBLISHING_META_PUBLIC_APPROVED
+        sync: false
+      - key: PUBLISHING_TWITCH_CLIENT_ID
+        sync: false
+      - key: PUBLISHING_TWITCH_CLIENT_SECRET
+        sync: false
+      - key: PUBLISHING_BLUESKY_ENABLED
+        sync: false
+      - key: PUBLISHING_BLUESKY_PRIVATE_JWK
+        sync: false
+      # This enables the queue API, never FFmpeg in the web process. The UI
+      # stays unavailable unless the separate, correctly configured worker is healthy.
+      - key: RENDER_ENABLED
+        value: "true"
+      - key: RENDER_TIMEOUT_SECONDS
+        value: "180"

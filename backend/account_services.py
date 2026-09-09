@@ -185,7 +185,10 @@ def get_privacy(user: User = Depends(current_user), session: Session = Depends(d
 
 
 @router.post('/api/account/privacy', dependencies=[Depends(guard)])
-def update_privacy(data: PrivacyInput, user: User = Depends(current_user), session: Session = Depends(db)):
+async def update_privacy(data: PrivacyInput, user: User = Depends(current_user), session: Session = Depends(db)):
+    if data.profile_visibility != 'public' or not data.discoverable:
+        from live_api import end_live_for_privacy
+        await end_live_for_privacy(user.id, session)
     state_for(session, user).privacy = data.model_dump()
     session.commit()
     return data.model_dump()
@@ -194,6 +197,10 @@ def update_privacy(data: PrivacyInput, user: User = Depends(current_user), sessi
 @router.get('/api/account/export')
 def export_account(user: User = Depends(current_user), session: Session = Depends(db)):
     from creator import CreatorComment, CreatorFeed, CreatorItem, CreatorPreferences
+    from social_api import build_hub
+    from social_publishing import publishing_connections
+    from live_api import LiveStream
+    from render_services import RenderJob
     state = state_for(session, user)
     return {
         'exported_at': datetime.now(timezone.utc).isoformat(),
@@ -201,6 +208,13 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
                     'email_verified': bool(state.email_verified_at), 'privacy': PrivacyInput(**(state.privacy or {})).model_dump()},
         'posts': [r.data | {'id': r.id, 'visibility': r.visibility} for r in session.scalars(select(CreatorItem).where(CreatorItem.owner_id == user.id))],
         'feeds': [r.data | {'id': r.id} for r in session.scalars(select(CreatorFeed).where(CreatorFeed.owner_id == user.id))],
+        'social_networks': build_hub(user, session),
+        'publishing': publishing_connections(user, session),
+        'rendered_exports': [{'id': row.id, 'item_id': row.item_id, 'status': row.status,
+                             'output_media_id': row.output_media_id, 'created_at': row.created_at.isoformat()}
+                            for row in session.scalars(select(RenderJob).where(RenderJob.owner_id == user.id))],
+        'broadcasts': [{'id': row.id, 'title': row.title, 'description': row.description, 'status': row.status,
+                        'created_at': row.created_at.isoformat()} for row in session.scalars(select(LiveStream).where(LiveStream.owner_id == user.id))],
         'preferences': (session.get(CreatorPreferences, user.id).data if session.get(CreatorPreferences, user.id) else {}),
         'comments': [{'id': r.id, 'item_id': r.item_id, 'body': r.body, 'created_at': r.created_at.isoformat()} for r in session.scalars(select(CreatorComment).where(CreatorComment.owner_id == user.id))],
     }

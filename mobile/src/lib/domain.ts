@@ -12,6 +12,25 @@ export function pageAtOffset(offset: number, height: number, count: number) {
   return Math.max(0, Math.min(count - 1, Math.round(offset / height)));
 }
 
+export function isPlayableMedia(item: Item) {
+  return (
+    !!item.media_url &&
+    (item.content_type
+      ? /^(video|audio)\//.test(item.content_type)
+      : item.media_url === "/media/sintel-trailer.mp4")
+  );
+}
+
+// Use the server's discovery selection, never the owner's private draft tray.
+// Prioritize moving media without mutating shared feed data or reordering peers.
+export function studioDiscoverItems(items: Item[]) {
+  return items
+    .filter(
+      (item) => item.visibility !== "draft" && item.visibility !== "hidden",
+    )
+    .sort((a, b) => Number(isPlayableMedia(b)) - Number(isPlayableMedia(a)));
+}
+
 export function matchesFeed(
   item: Item,
   rule: Pick<FeedInput, "category" | "tag" | "city" | "creator">,
@@ -69,6 +88,14 @@ export function privateMediaPath(path: string) {
   return /^\/api\/creator\/media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
     path,
   );
+}
+
+export function trustedMediaPath(path: string, origins: string[]) {
+  if (privateMediaPath(path)) return path;
+  try {
+    const url = new URL(path);
+    return !url.username && !url.password && !url.search && !url.hash && origins.includes(url.origin) && privateMediaPath(url.pathname) ? url.pathname : null;
+  } catch { return null; }
 }
 export function parsePrice(value: string) {
   if (!value.trim()) return null;

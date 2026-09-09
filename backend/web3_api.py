@@ -9,7 +9,7 @@ import uuid
 
 from eth_account import Account
 from eth_account.messages import encode_defunct
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from redis.exceptions import RedisError
 from sqlalchemy import String, ForeignKey, DateTime, JSON, UniqueConstraint, select, func
@@ -136,10 +136,12 @@ def configuration():
 
 
 @router.post('/challenge', dependencies=[Depends(guard)])
-def challenge(data: LinkInput, user: User = Depends(current_user)):
+def challenge(data: LinkInput, request: Request, user: User = Depends(current_user)):
     svc.chain_info(data.chain_id)
     addr = svc.address(data.address)
-    origin = svc.config.web3_public_origin.rstrip('/')
+    # guard has already checked a browser Origin against the configured list.
+    # Native clients without Origin use the configured canonical app identity.
+    origin = request.headers.get('origin', '').rstrip('/') or svc.config.web3_public_origin.rstrip('/')
     domain = urlparse(origin).netloc
     nonce = secrets.token_hex(16)
     issued = now()

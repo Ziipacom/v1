@@ -1,5 +1,9 @@
 # Validation record — 2026-08-31
 
+## Native livestream revision — 2026-09-09
+
+The updated ARM64 Android APK now compiles locally with Expo57, React Native 0.86.3 and native WebRTC 124.0.8. APK signature, package identity, minimum/target SDK, 16 KB ZIP alignment and all 26 native libraries' ELF alignment were verified. It includes phone-camera WHIP broadcasting, a private preview, microphone mute, camera flip and foreground/cancellation cleanup. No physical camera or public stream was activated. The APK still targets the production API origin; updated backend routes/provider setup are a separate deployment step. iOS compilation/signing/device QA and store submission remain outstanding. See [NATIVE-LIVE.md](NATIVE-LIVE.md) for the final APK, hash, build logs, exact validation and acceptance checklist. Older records below are retained as historical evidence.
+
 ## Web3 revision (latest)
 
 - FastAPI integration suite: **14 passed**, including actual local EVM + offline IPFS mint, transfers, creator token issuance, split tips, wallet proofs/replay, ownership, metadata consent, idempotency, hash-squatting prevention, code mismatch, confirmation thresholds and reverted receipts. Python dependency check passed.

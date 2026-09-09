@@ -18,9 +18,10 @@ export type SocialConnection = {
   provider: SocialProvider;
   name: string;
   capability: string;
-  status: "connected" | "disconnected" | "action_required";
+  status: "connected" | "linked" | "disconnected" | "action_required";
   handle: string;
   configured: boolean;
+  can_publish?: boolean;
 };
 export type Distribution = {
   id: string;
@@ -130,7 +131,10 @@ export type RootStack = {
   Utility: { kind: "wallet" | "promote" | "inbox"; item?: Item };
   Post: { item: Item };
   Composer: { item?: Item; remix?: Item; category?: Category } | undefined;
-  Connections: undefined;
+  Connections: { tab?: "accounts" | "feed" | "people" | "outbox" } | undefined;
+  Publishing: { itemId?: string; renderId?: string } | undefined;
+  Exports: { itemId: string };
+  Live: { tab?: "watch" | "broadcast" } | undefined;
   Settings: undefined;
   Legal: { kind: "privacy" | "terms" | "community" };
   Moderation: undefined;
