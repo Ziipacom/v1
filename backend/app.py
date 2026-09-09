@@ -261,6 +261,17 @@ def health(response: Response):
     services['media_storage'] = settings.media_storage_backend
     services['email'] = 'configured' if settings.resend_api_key else 'demo'
     services['environment'] = settings.environment
+    from render_services import config as renderer_config, readiness
+    services['renderer'] = {'enabled': bool(renderer_config.enabled),
+                            'worker_ready': False, 'can_render': False}
+    try:
+        renderer = readiness()
+        # Only report this API's scoped worker heartbeat, never its scope or
+        # configuration details. Rendering is optional and cannot fail health.
+        services['renderer'].update(worker_ready=bool(renderer['worker_ready']),
+                                    can_render=bool(renderer['can_render']))
+    except Exception:
+        pass
     if 'unavailable' in services.values():
         response.status_code = 503
     return services

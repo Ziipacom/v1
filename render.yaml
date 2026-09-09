@@ -120,9 +120,10 @@ services:
         sync: false
       - key: PUBLISHING_BLUESKY_PRIVATE_JWK
         sync: false
-      # Keep off until the free Oracle worker passes hosted/ARM64 acceptance.
-      # Enable through a reviewed deployment on both API and worker afterward.
+      # Operator-controlled after native Oracle acceptance; new installs must
+      # enter false until a matching worker is healthy. Keep this manual so a
+      # later Blueprint sync does not undo the accepted activation decision.
       - key: RENDER_ENABLED
-        value: "false"
+        sync: false
       - key: RENDER_TIMEOUT_SECONDS
         value: "180"

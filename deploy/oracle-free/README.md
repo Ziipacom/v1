@@ -117,9 +117,13 @@ worker startup. This package deliberately does not auto-migrate at every restart
 The worker's `--require-hosted` startup checks the current schema, TLS
 PostgreSQL/Redis and private R2 `HeadBucket` permission before claiming jobs.
 Its database/bucket coordination settings must match the API exactly. The API
-must have this release's rendering code and matching quota values. Keep its
-`RENDER_ENABLED=false` until the native acceptance tests pass and the worker is
-running; then enable rendering in the existing API configuration and redeploy.
+must have this release's rendering code and matching quota values. On a new
+installation, manually set `RENDER_ENABLED=false`. This operator-owned setting
+uses `sync: false` in the Blueprint so later syncs preserve the activation state;
+the application also defaults to false when omitted. Keep it false until native
+acceptance tests pass and the worker is running; then enable rendering in the
+existing API configuration and redeploy. The process-only `/api/livez` remains
+separate from the intentional `/api/health` dependency diagnostic.
 
 ```bash
 sudo install -m 0644 deploy/oracle-free/ziipa-render-worker.service /etc/systemd/system/ziipa-render-worker.service
@@ -172,8 +176,35 @@ whole-container peak memory. These are measured local results, not an ARM speed
 estimate. The final image manifest is
 `sha256:4dadce7d3cb67ca7bd3330ce661c75c0eb375aa7103f0b95af9f23040322a7cc`.
 
-The local ARM64 build reached the official ARM base images but could not execute
-them (`exec format error`; this machine has no ARM execution support). No
-privileged emulation was installed. **Native Oracle ARM build, resource test,
-live settings checks and cloud deployment remain pending.** No VM or paid
-service was created by these package checks.
+## Native Oracle acceptance, September 9, 2026
+
+The approved `ziipa-render-free` host was created in the tenancy's Ashburn home
+region using Always Free A1, 1 OCPU / 4 GB RAM and the default 46.6 GB boot
+volume. The account allocation was checked before creation. No paid worker,
+extra volume, NAT gateway, load balancer or registry was provisioned.
+
+The published backend from `a56d076` built natively on Ubuntu 24.04 ARM64 with
+Docker 29.8.0 and Compose 5.5.1. Image manifest:
+`sha256:1f3ccec3603a56246cb64a7442b4b6ffb1402f41a6bad943d05639ec81f53bd0`.
+The subsequent `6470114` commit changed CI only, leaving this backend identical.
+
+Offline effects and maximum-input tests passed **10 tests, 1 skipped** under the
+exact 1 CPU / 1 GiB / read-only / 256 MiB tmpfs limits. The 90-second export with
+two 100 MiB inputs, 45 captions, overlay and soundtrack took **40.03 seconds**,
+used **229,619,733 scratch bytes** and peaked at **514,473,984 container bytes**.
+These are one-host test measurements, not a throughput guarantee.
+
+Live one-shot checks verified PostgreSQL TLS and schema `20260909_0003`, verified
+Redis TLS, and R2 HTTPS access. An 89-byte generated, private deployment-check
+object was written, read back and deleted; absence was verified. No user media,
+accounts, jobs, emails or social posts were used for that probe.
+
+The eight-key environment passed the root-only preflight. The systemd worker
+started and a fresh scoped Redis heartbeat was observed. Only the approved
+administrator address can reach SSH through both OCI and the host firewall;
+password/root SSH is disabled. No container port is published. Administrative
+addresses and key locations are kept outside Git.
+
+An authenticated browser/mobile upload-to-export flow and provider/store review
+remain separate acceptance steps. Native tests and a worker heartbeat alone do
+not establish release equivalence or readiness for an unrestricted public launch.

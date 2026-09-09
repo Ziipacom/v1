@@ -57,10 +57,14 @@ def test_rate_limit(client):
     assert client.post('/api/waitlist', json={'name':'Test','email':'rate@example.com'}).status_code == 429
 
 
-def test_health(client):
+def test_health(client, monkeypatch):
+    import render_services as rendering
+    monkeypatch.setattr(rendering.config, 'enabled', False)
+    monkeypatch.setattr(rendering, 'readiness', lambda: {'worker_ready': False, 'can_render': False})
     result = client.get('/api/health')
     assert result.status_code == 200
-    assert result.json() == {'database':'connected','redis':'connected','media_storage':'local','email':'demo','environment':'development'}
+    assert result.json() == {'database':'connected','redis':'connected','media_storage':'local','email':'demo','environment':'development',
+                             'renderer': {'enabled': False, 'worker_ready': False, 'can_render': False}}
 
 
 def register_creator(client, email='creator@example.com'):

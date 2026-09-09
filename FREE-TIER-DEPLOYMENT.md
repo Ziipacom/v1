@@ -4,8 +4,8 @@ Decision recorded 9 September 2026: preserve the existing free services and do
 not provision the $25/month Render worker, upgrade a plan, add a payment method,
 or enable a pay-as-you-go fallback. Oracle Always Free is the selected worker
 target because Cloud Run requires a billing account and can charge for usage,
-registry storage and transfers. This is a deployment target, not a claim that
-Oracle has already been provisioned.
+registry storage and transfers. The approved Always Free Oracle host is now
+provisioned and has passed native ARM rendering acceptance.
 
 ## Services to preserve
 
@@ -19,12 +19,13 @@ Oracle has already been provisioned.
 | NFT media/metadata | Existing Pinata | Preserve current free account; video playback remains on R2. |
 | Livestreams | Livepeer Sandbox | Confirmed Free with no payment method on 9 September; leave unchanged. |
 | Demonstration blockchain | Base Sepolia | Testnet only; deployed contracts and wallet acceptance remain unverified. |
-| Rendering | Oracle Always Free A1 | Pending owner sign-in, free capacity, native ARM64 build and acceptance. |
+| Rendering | Oracle Always Free A1 | `ziipa-render-free` running; native ARM tests and hosted storage checks passed. API activation and user-flow acceptance are separate checks. |
 | Email / monitoring | Existing Resend / Sentry | Preserve current services and limits; do not enable paid overages. |
 
 The current Neon browser session reports the Ziipa project not found; Upstash
 reports its Ziipa database inaccessible to that session. Those findings do not
-prove data loss or an outage. No accounts, databases or credentials were changed.
+prove data loss or an outage; direct hosted connection checks passed from Oracle.
+No accounts or databases were migrated or replaced.
 Their owner dashboards must be accessible before claiming their plans and usage
 have been freshly verified. Do not substitute another project's infrastructure.
 
@@ -33,7 +34,7 @@ have been freshly verified. Do not substitute another project's infrastructure.
 Use [deploy/oracle-free/README.md](deploy/oracle-free/README.md) for the worker
 package and exact validation/start commands. Select only an **Always Free
 eligible** Ubuntu A1 VM in the account's home region. Allocate 1 OCPU, 4 GB RAM
-for the OS, image build and bounded worker, and one standard 50 GB boot volume,
+for the OS, image build and bounded worker, and the default 46.6 GB boot volume,
 provided the tenancy has room within its existing free allocation. Existing
 account allocations count too. No paid shape, extra disk, NAT gateway, load
 balancer, marketplace image or automatic paid fallback is part of this setup.
@@ -51,15 +52,15 @@ private R2 credentials belong there. Social OAuth, Livepeer, email, wallet and
 publishing encryption keys stay on the API. Do not put credentials in cloud-init,
 container images, Git, command lines or screenshots.
 
-The current Windows Docker host cannot execute ARM64 images (`exec format
-error`). A native build and the real FFmpeg resource test on the A1 VM remain
-required. An amd64 Docker test is not ARM validation. The local Ziipa worker
-remains the development fallback; it is not proof of public renderer readiness.
+The Windows Docker host could not execute ARM64 images, so no privileged
+emulator was installed. Instead the published backend was built and tested
+directly on the A1 host. The private systemd worker is running with a fresh
+Redis heartbeat; there is no paid worker fallback.
 
-Saved `MEDIA_OWNER_MAX_BYTES=1073741824` and
-`MEDIA_PROJECT_MAX_BYTES=6442450944` to the existing Render API with **Save only**
-and verified both saved rows. No credentials were replaced and no deploy was
-triggered. These limits require the new code before they become effective.
+The new API code and migrations are deployed. Its media limits are
+`MEDIA_OWNER_MAX_BYTES=1073741824` and
+`MEDIA_PROJECT_MAX_BYTES=6442450944`, matching the Oracle worker. Process health
+uses `/api/livez`; a successful deploy is not proof of all real user flows.
 
 ## Free-usage safeguards
 
@@ -108,7 +109,9 @@ before any upgrade. Do not add credentials to paid services as an automatic fix.
    implicitly on every worker restart.
 5. Enable rendering on the API only after a worker with the matching database,
    bucket and limits is healthy. Update the API deployment setting intentionally;
-   the default Blueprint keeps rendering off until this acceptance step.
+   `RENDER_ENABLED` is operator-owned (`sync: false`) so later Blueprint syncs
+   preserve it. Enter false for a new deployment until acceptance succeeds;
+   the application defaults to false if the setting is omitted.
 6. Use a designated test account and owned short clip to verify private upload,
    edited export, quota rejection, stale-draft protection and cleanup. No social
    posting or public broadcasting is part of provisioning the render worker.
@@ -121,11 +124,21 @@ successfully. Offline upload/quota/render checks in that image passed **28 tests
 with 1 skipped** under the 1 CPU / 1 GiB / read-only / 256 MiB temporary-storage
 restrictions. The generated maximum-input render finished in **22.23 seconds**,
 using 229,589,943 scratch bytes and 636,133,376 bytes peak container memory.
-These measurements do not establish Oracle ARM performance or real R2/mobile
-compatibility; those acceptance checks remain pending. No real media was posted.
+The native Oracle ARM test subsequently passed 10 tests (1 skipped). Its
+maximum-input render took 40.03 seconds, with 229,619,733 scratch bytes and
+514,473,984 bytes peak container memory. Read-only hosted schema/TLS checks and
+a disposable private R2 write/read/delete probe also passed. Browser/mobile
+presigned uploads and authenticated edited export remain separate acceptance
+checks. No real media was publicly posted.
 
-The source changes remain local until pushed/deployed. Prior GitHub CLI
-access was read-only for `Ziipacom/v1`; this turn's check still reports no push
-permission. Do not bypass the rejected broader OAuth grant. There is no claim
-that the new worker, quota safeguards, liveness route or shared Studio release
-is currently live. Existing local previews remain unchanged.
+The shared Studio/API release `a56d076` was pushed and deployed to Cloudflare
+and Render. CI-only follow-up `6470114` passed all four jobs: backend 323 passed
+(2 skipped), production image rendering 10 passed, plus frontend/mobile/contracts
+checks. Temporary repository-only deploy keys were removed immediately after
+each push; no broad OAuth access was added. Local previews were left unchanged.
+
+Live website and Studio checks verified https://ziipa.com, its portal sign-in,
+and `/studio/` assets. These deployment checks do not complete production email,
+social-provider approvals, native device testing, wallet acceptance or store
+submission. Keep the demo controlled and verify provider usage in owner accounts
+before expanding access.
