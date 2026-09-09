@@ -1,5 +1,15 @@
 # Deploying the API and private render worker
 
+> **Current decision, 9 September 2026:** keep free services only. Use the
+> [Oracle Always Free package](../deploy/oracle-free/README.md) and
+> [active deployment status](../FREE-TIER-DEPLOYMENT.md). Do not import the paid
+> worker Blueprint below. Oracle owner sign-in, free capacity and native ARM64
+> acceptance are still required; no Oracle worker is live yet. The API-only
+> Blueprint keeps rendering off and uses `/api/livez` for process liveness.
+> `/api/health` remains an on-demand database/Redis diagnostic, not a keep-awake
+> monitor. The paid instructions below are retained only for a future explicit
+> change of budget.
+
 The repository has two separate Render Blueprints. `render.yaml` continues to
 manage only the existing `ziipa-api` web service. `render-worker.yaml` is an
 explicit, separately approved **paid** deployment for `ziipa-render-worker`.
@@ -36,7 +46,8 @@ not themselves purchased or provisioned a worker.
 4. Deploy the reviewed API release. The Docker command runs
    `python render_migrate.py` before Uvicorn binds Render's `$PORT`. Hosted/demo
    startup does not silently create unversioned tables. Migrations must succeed
-   before the API deploy is accepted. Its health path remains `/api/health`.
+   before the API deploy is accepted. Its process health path is `/api/livez`;
+   `/api/health` remains the separate dependency diagnostic.
 5. Once the worker cost is approved, import `render-worker.yaml` as a separate
    Blueprint in the same workspace. Review the plan and confirm a single
    instance. Do not add the worker to the default API Blueprint merely to enable

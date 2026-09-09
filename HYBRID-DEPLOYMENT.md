@@ -1,5 +1,10 @@
 # Ziipa hybrid deployment
 
+The current free-only worker decision and actual activation status are in
+[FREE-TIER-DEPLOYMENT.md](FREE-TIER-DEPLOYMENT.md). Preserve the services below;
+use Oracle Always Free for the separate renderer only after owner sign-in and
+native ARM64 validation. Do not provision the paid Render worker or a paid fallback.
+
 This repository is prepared for the demo and closed-beta stack:
 
 | Layer | Provider | Ziipa configuration |

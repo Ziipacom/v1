@@ -1,0 +1,21 @@
+[Unit]
+Description=Ziipa private serial renderer (Oracle Always Free)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=900
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ziipa/deploy/oracle-free
+UMask=0077
+ExecStartPre=/usr/bin/python3 /opt/ziipa/deploy/oracle-free/preflight.py
+ExecStart=/usr/bin/docker compose --ansi never -f compose.json up --no-build --pull never --abort-on-container-exit --exit-code-from render-worker
+ExecStop=/usr/bin/docker compose --ansi never -f compose.json stop --timeout 300 render-worker
+TimeoutStopSec=330
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

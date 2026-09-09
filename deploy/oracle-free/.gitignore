@@ -1,0 +1,4 @@
+# Keep accidental copies of the protected host file out of source control.
+*.env
+*.env.*
+!worker.env.example

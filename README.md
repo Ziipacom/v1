@@ -1,10 +1,13 @@
 # Ziipa local website and portal
 
-The production demo path uses Cloudflare Workers, Koyeb, Neon, Upstash, private
-Cloudflare R2 storage, Pinata, and Base Sepolia. See
+The current free-only deployment keeps Cloudflare Workers, the existing Render
+Free API, Neon, Upstash, private R2, Pinata and Base Sepolia. The rendering worker
+is being prepared for Oracle Always Free; it is not yet hosted or verified there.
+See [FREE-TIER-DEPLOYMENT.md](FREE-TIER-DEPLOYMENT.md) for the active plan and
+remaining account/acceptance gates. The provider setup is also documented in
 [HYBRID-DEPLOYMENT.md](HYBRID-DEPLOYMENT.md) for the provider setup, secret map,
-custom domains, testnet deployment, monitoring, and launch gates. The older
-Render Blueprint remains available as an alternative deployment path.
+custom domains, testnet deployment, monitoring, and launch gates. Do not import
+the separate paid Render worker Blueprint under the current free-only instruction.
 
 A new Ziipa website and member portal, in a standalone folder. The visual direction draws on the existing site's Web3 / beta waitlist positioning; all new marketing copy is a proposed direction, not a claim that wallet or metaverse features exist.
 

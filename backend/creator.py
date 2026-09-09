@@ -8,11 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import ForeignKey, String, JSON, DateTime, select, func, delete, UniqueConstraint
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Mapped, mapped_column, Session
 from app import Base, User, db, current_user, guard, settings
 from catalog import CATALOG
 from storage_services import LocalStorage, storage
+from media_quota import lock_admission, available_bytes, require_capacity, MediaAdmissionError
 
 router = APIRouter(prefix='/api/creator', dependencies=[Depends(current_user)])
 MEDIA_ROOT = Path(settings.uploads_dir).expanduser().resolve()
@@ -436,16 +436,10 @@ async def upload(request: Request, user: User = Depends(current_user), session: 
     content_type = request.headers.get('content-type', '').split(';')[0]
     if content_type not in ALLOWED_MEDIA:
         raise HTTPException(415, 'Choose a supported image, video, or audio creator file.')
-    # Serialize uploads per owner so concurrent requests cannot bypass the storage quota.
-    try:
-        session.execute(select(User).where(User.id == user.id).with_for_update(nowait=True))
-    except OperationalError:
-        session.rollback()
-        raise HTTPException(409, 'Another upload is in progress. Please wait for it to finish.')
-    used = session.scalar(select(func.coalesce(func.sum(CreatorMedia.size), 0)).where(CreatorMedia.owner_id == user.id))
-    max_size = min(100 * 1024 * 1024, 1024 * 1024 * 1024 - used)
+    lock_admission(session, user.id)
+    max_size = min(100 * 1024 * 1024, available_bytes(session, user.id))
     if max_size <= 0:
-        raise HTTPException(413, 'Local storage limit reached (1 GB per account).')
+        raise HTTPException(413, 'Media storage limit reached. No upload capacity is available.')
     media_id = str(uuid.uuid4())
     MEDIA_ROOT.mkdir(exist_ok=True)
     path = MEDIA_ROOT / media_id
@@ -456,7 +450,7 @@ async def upload(request: Request, user: User = Depends(current_user), session: 
             async for chunk in request.stream():
                 size += len(chunk)
                 if size > max_size:
-                    raise HTTPException(413, 'File too large. Limit: 100 MB per upload and 1 GB per account.')
+                    raise HTTPException(413, 'File exceeds the 100 MB upload limit or available account/project storage capacity.')
                 header = (header + chunk)[:32]
                 output.write(chunk)
         if not size or not valid_signature(content_type, header):
@@ -476,16 +470,10 @@ def presign_upload(data: UploadReservation, user: User = Depends(current_user), 
         return {'mode': 'api', 'url': media_url(''), 'method': 'POST', 'headers': {'Content-Type': data.content_type}}
     if data.content_type not in ALLOWED_MEDIA:
         raise HTTPException(415, 'Choose a supported image, video, or audio creator file.')
-    session.execute(delete(PendingUpload).where(PendingUpload.expires_at < datetime.now(timezone.utc)))
-    try:
-        session.execute(select(User).where(User.id == user.id).with_for_update(nowait=True))
-    except OperationalError:
-        session.rollback()
-        raise HTTPException(409, 'Another upload is in progress. Please wait for it to finish.')
-    used = session.scalar(select(func.coalesce(func.sum(CreatorMedia.size), 0)).where(CreatorMedia.owner_id == user.id))
-    reserved = session.scalar(select(func.coalesce(func.sum(PendingUpload.size), 0)).where(PendingUpload.owner_id == user.id))
-    if used + reserved + data.size > 1024 * 1024 * 1024:
-        raise HTTPException(413, 'Storage limit reached (1 GB per account).')
+    lock_admission(session, user.id)
+    # Keep expired reservation IDs as cleanup anchors. The quota excludes them,
+    # but deleting their rows here could orphan a failed copy's private target.
+    require_capacity(session, user.id, data.size)
     media_id = str(uuid.uuid4())
     row = PendingUpload(id=media_id, owner_id=user.id, content_type=data.content_type,
                         size=data.size, filename=Path(data.filename).name[:180],
@@ -497,25 +485,39 @@ def presign_upload(data: UploadReservation, user: User = Depends(current_user), 
 
 @router.post('/media/{media_id}/complete', dependencies=[Depends(guard)])
 def complete_upload(media_id: str, user: User = Depends(current_user), session: Session = Depends(db)):
+    # Reservation -> committed media must use the same lock as uploads/renders,
+    # otherwise separate SUM queries could miss an in-flight conversion.
+    lock_admission(session, user.id)
     row = session.get(PendingUpload, media_id)
     if not row or row.owner_id != user.id:
         raise HTTPException(404, 'Upload reservation not found.')
     expires = row.expires_at.replace(tzinfo=timezone.utc) if row.expires_at.tzinfo is None else row.expires_at
     if expires < datetime.now(timezone.utc):
+        storage().delete_pending(user.id, media_id)
         session.delete(row)
         session.commit()
         raise HTTPException(410, 'Upload reservation expired. Start the upload again.')
-    size, content_type, header = storage().inspect(user.id, media_id)
-    if size != row.size or content_type != row.content_type or not valid_signature(row.content_type, header):
+    verified = storage().inspect(user.id, media_id)
+    if (verified.size != row.size or verified.content_type != row.content_type
+            or not valid_signature(row.content_type, verified.header)):
         storage().delete_pending(user.id, media_id)
         session.delete(row)
         session.commit()
         raise HTTPException(415, 'Uploaded file does not match the reserved media type or size.')
-    storage().promote(user.id, media_id)
+    try:
+        require_capacity(session, user.id, row.size, exclude_reservation_id=row.id)
+    except MediaAdmissionError:
+        # Caps may have been reduced since reservation. Do not promote the file;
+        # retain the reservation if storage cleanup fails so deletion can retry.
+        storage().delete_pending(user.id, media_id)
+        session.delete(row)
+        session.commit()
+        raise
+    storage().promote(user.id, media_id, verified)
     session.add(CreatorMedia(id=row.id, owner_id=row.owner_id, content_type=row.content_type, size=row.size))
     session.delete(row)
     session.commit()
-    return {'id': media_id, 'url': media_url(media_id), 'content_type': content_type}
+    return {'id': media_id, 'url': media_url(media_id), 'content_type': verified.content_type}
 
 
 @router.get('/media/{media_id}')

@@ -1,0 +1,40 @@
+{
+  "name": "ziipa-oracle-render",
+  "services": {
+    "render-worker": {
+      "image": "ziipa-render:oracle-arm64",
+      "platform": "linux/arm64",
+      "pull_policy": "never",
+      "build": { "context": "../../backend", "dockerfile": "Dockerfile" },
+      "command": ["python", "render_worker.py", "--require-hosted"],
+      "env_file": [{ "path": "/etc/ziipa/render-worker.env", "required": true, "format": "raw" }],
+      "environment": {
+        "ENVIRONMENT": "production",
+        "SECURE_COOKIES": "true",
+        "ENABLE_DEMO_CATALOG": "false",
+        "WEB3_ENABLE_LOCAL": "false",
+        "MEDIA_STORAGE_BACKEND": "r2",
+        "RENDER_ENABLED": "true",
+        "RENDER_TIMEOUT_SECONDS": "180",
+        "RENDER_WORK_DIR": "/tmp/ziipa-render",
+        "RENDER_POLL_SECONDS": "60",
+        "RENDER_RECONCILE_SECONDS": "3600"
+      },
+      "user": "10001:10001",
+      "init": true,
+      "read_only": true,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "cpus": "1.0",
+      "mem_limit": "1g",
+      "memswap_limit": "1g",
+      "pids_limit": 128,
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=268435456,mode=1777"],
+      "shm_size": "8m",
+      "ulimits": { "core": 0, "nofile": { "soft": 256, "hard": 256 } },
+      "stop_grace_period": "300s",
+      "restart": "no",
+      "logging": { "driver": "local", "options": { "max-size": "5m", "max-file": "2" } }
+    }
+  }
+}

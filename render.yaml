@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://render.com/schema/render.yaml.json
 # API-only blueprint: syncing this file does not create a paid render worker.
 # Free compute is for a controlled demo; public-launch capacity needs review.
-# Import render-worker.yaml separately only after approving its $25/month plan.
+# Current free-only setup uses deploy/oracle-free; do not import render-worker.yaml.
 # Durable state lives in the
 # externally managed Neon, Upstash, Cloudflare R2, and Pinata services.
 services:
@@ -13,7 +13,7 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    healthCheckPath: /api/health
+    healthCheckPath: /api/livez
     autoDeployTrigger: checksPass
     envVars:
       - key: ENVIRONMENT
@@ -38,6 +38,12 @@ services:
         value: r2
       - key: R2_BUCKET_NAME
         value: ziipa-media
+      # Ledger limits include uploads, reservations and rendered outputs.
+      # They do not measure orphaned/external R2 objects or cap provider billing.
+      - key: MEDIA_OWNER_MAX_BYTES
+        value: "1073741824"
+      - key: MEDIA_PROJECT_MAX_BYTES
+        value: "6442450944"
       - key: WEB3_ENABLE_LOCAL
         value: "false"
       - key: WEB3_BASE_RPC
@@ -114,9 +120,9 @@ services:
         sync: false
       - key: PUBLISHING_BLUESKY_PRIVATE_JWK
         sync: false
-      # This enables the queue API, never FFmpeg in the web process. The UI
-      # stays unavailable unless the separate, correctly configured worker is healthy.
+      # Keep off until the free Oracle worker passes hosted/ARM64 acceptance.
+      # Enable through a reviewed deployment on both API and worker afterward.
       - key: RENDER_ENABLED
-        value: "true"
+        value: "false"
       - key: RENDER_TIMEOUT_SECONDS
         value: "180"

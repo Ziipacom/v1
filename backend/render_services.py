@@ -26,6 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app import Base, User, cache, settings
 from creator import CreatorItem, CreatorMedia, ItemInput
 from storage_services import LocalStorage, object_key, storage
+from media_quota import lock_admission, require_capacity, MediaAdmissionError, config as quota_config
 
 
 class RenderSettings(BaseSettings):
@@ -52,6 +53,7 @@ def coordination_scope():
     identity = {'database': [database.get_backend_name(), database.host, database.port,
                              database.database, database.username],
                 'storage': settings.media_storage_backend,
+                'media_limits': [quota_config.owner_max_bytes, quota_config.project_max_bytes],
                 'media': [settings.r2_endpoint_url.rstrip('/'), settings.r2_bucket_name] if settings.media_storage_backend == 'r2'
                          else str(Path(settings.uploads_dir).expanduser().resolve())}
     # No credentials or personal data appear in Redis key names. A worker on
@@ -429,7 +431,7 @@ def process_job(session_factory, job_id: str, claim: str):
             output, duration = render_files(snapshot, work)
             digest = hashlib.sha256(output.read_bytes()).hexdigest()
             with session_factory() as session:
-                user = session.scalar(select(User).where(User.id == owner_id).with_for_update())
+                user = lock_admission(session, owner_id, nowait=False, missing_ok=True)
                 job = session.scalar(select(RenderJob).where(RenderJob.id == job_id).with_for_update())
                 if not user or not job or job.status != 'processing' or job.claim_token != claim:
                     return
@@ -441,6 +443,9 @@ def process_job(session_factory, job_id: str, claim: str):
                 backend = storage()
                 if session.get(CreatorMedia, job.output_media_id):
                     raise RuntimeError('The reserved render output is already in the media catalog.')
+                # Include all owned sources/audio/drafts/older exports plus active
+                # direct-upload reservations while the shared admission lock is held.
+                require_capacity(session, owner_id, output.stat().st_size)
                 if isinstance(backend, LocalStorage) and backend.path(job.output_media_id).exists():
                     # This random reserved key can only be a previous crashed
                     # attempt. The user/job locks and lease prevent concurrent
@@ -454,11 +459,16 @@ def process_job(session_factory, job_id: str, claim: str):
                 job.output_sha256, job.source_sha256, job.duration = digest, source_hash, duration
                 job.updated_at, job.lease_until = datetime.now(timezone.utc), None
                 session.commit()
-    except Exception:
+    except Exception as exc:
         with session_factory() as session:
-            job = session.get(RenderJob, job_id)
+            # Match the commit lock order so a failed old worker cannot delete a
+            # replacement worker's reserved output during cleanup.
+            if not lock_admission(session, owner_id, nowait=False, missing_ok=True):
+                return
+            job = session.scalar(select(RenderJob).where(RenderJob.id == job_id).with_for_update())
             if job and job.claim_token == claim and job.status == 'processing':
-                job.status, job.detail = 'failed', 'The media could not be rendered within the format, duration or resource limits. Check your trim/audio and retry.'
+                job.status, job.detail = 'failed', (exc.detail if isinstance(exc, MediaAdmissionError) else
+                    'The media could not be rendered within the format, duration or resource limits. Check your trim/audio and retry.')
                 job.updated_at, job.lease_until = datetime.now(timezone.utc), None
                 # A failed final storage write may leave this reserved key.
                 if not session.get(CreatorMedia, job.output_media_id):

@@ -1,4 +1,7 @@
 # yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+# NOT SELECTED: the current user instruction permits free services only.
+# Use deploy/oracle-free instead. This file is retained as a paid alternative,
+# not as part of the active Ziipa deployment.
 # OPT-IN PAID SERVICE. Creating/syncing this separate blueprint provisions a
 # $25/month 1 CPU / 2 GB worker (1c-2g, formerly Standard), billed by Render.
 # Do not import it until its cost is approved and the existing ziipa-api service

@@ -285,6 +285,7 @@ def test_production_registration_requires_verification_before_session(client, mo
 def test_r2_upload_reservation_validates_object_before_recording(client, monkeypatch):
     import base64
     import creator
+    from storage_services import VerifiedUpload
     png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jE9sAAAAASUVORK5CYII=')
 
     class FakeStorage:
@@ -292,8 +293,8 @@ def test_r2_upload_reservation_validates_object_before_recording(client, monkeyp
         def presign_put(self, owner_id, media_id, content_type, size):
             return {'url': 'https://r2.invalid/signed', 'method': 'PUT', 'headers': {'Content-Type': content_type}}
         def inspect(self, owner_id, media_id):
-            return len(png), 'image/png', png[:32]
-        def promote(self, owner_id, media_id):
+            return VerifiedUpload(len(png), 'image/png', png[:32], '"test-etag"')
+        def promote(self, owner_id, media_id, verified):
             pass
         def delete_pending(self, owner_id, media_id):
             self.deleted.append((owner_id, media_id))
@@ -312,6 +313,36 @@ def test_r2_upload_reservation_validates_object_before_recording(client, monkeyp
     assert complete.status_code == 200
     assert complete.json()['content_type'] == 'image/png'
     assert client.post(f"/api/creator/media/{body['id']}/complete", json={}).status_code == 404
+
+
+def test_postgresql_media_admission_waits_for_brief_contention():
+    """Read-only local database locks; never touch account rows or external hosts."""
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    import threading
+    from sqlalchemy import text
+    from media_quota import PROJECT_LOCK, lock_admission
+    if engine.url.get_backend_name() != 'postgresql' or engine.url.host not in {'127.0.0.1', 'localhost', '::1'}:
+        pytest.skip('Only the local PostgreSQL integration database may be used')
+    started = threading.Event()
+    def contender():
+        with Session(engine) as session:
+            started.set()
+            result = lock_admission(session, -2147483648, nowait=False, missing_ok=True)
+            timeout = session.scalar(text('SHOW lock_timeout'))
+            return result, timeout
+    with engine.connect() as connection, ThreadPoolExecutor(max_workers=1) as pool:
+        transaction = connection.begin()
+        connection.execute(text("SET LOCAL lock_timeout = '5s'"))
+        connection.execute(text('SELECT pg_advisory_xact_lock(:key)'), {'key': PROJECT_LOCK})
+        try:
+            future = pool.submit(contender)
+            assert started.wait(timeout=2)
+            with pytest.raises(TimeoutError):
+                future.result(timeout=0.15)
+        finally:
+            transaction.rollback()
+        result, timeout = future.result(timeout=3)
+        assert result is None and timeout == '30s'
 
 
 def test_private_profile_is_removed_from_discovery_and_media_access(client, tmp_path, monkeypatch):

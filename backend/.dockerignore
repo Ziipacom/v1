@@ -1,4 +1,15 @@
 .env
+.env.*
+!.env.example
+.local
+*.env
+*.pem
+*.key
+*.p8
+*.p12
+*.jks
+*.keystore
+*.mobileprovision
 .venv
 __pycache__
 .pytest_cache

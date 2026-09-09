@@ -237,6 +237,13 @@ class Login(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+@app.get('/api/livez')
+async def liveness():
+    # Frequent host probes must not wake Neon or consume Redis operations.
+    # Dependency readiness remains a separate, explicitly requested diagnostic.
+    return {'status': 'alive', 'scope': 'process'}
+
+
 @app.get('/api/health')
 def health(response: Response):
     services = {}

@@ -1,5 +1,21 @@
 # Ziipa integration follow-up — 9 September 2026
 
+## Current budget decision
+
+The owner has selected **free services only**. The paid Render worker described
+in the historical preparation notes below is not approved or active. The selected
+replacement is Oracle Always Free; see [FREE-TIER-DEPLOYMENT.md](FREE-TIER-DEPLOYMENT.md)
+and [the worker package](deploy/oracle-free/README.md). Owner Oracle sign-in,
+available free capacity and native ARM64 acceptance are still pending. Keep the
+API's rendering flag off until a verified hosted worker exists. The current
+free-only changes also add process liveness and shared media quota safeguards;
+they are not deployed by editing configuration files.
+
+The free-only follow-up passed 317 backend tests (2 skipped; blockchain suite
+excluded) and 28 final-image offline tests (1 skipped), including a real 90-second
+generated-media export with two 100 MiB inputs under a 1 CPU / 1 GiB limit.
+Oracle ARM, real R2/device acceptance and public deployment remain pending.
+
 This update implements the remaining native live transport, Bluesky/Twitch
 adapters, and real editor exports. **Implementation is not provider approval or
 release acceptance.** Nothing was posted to a real social account, no camera or
