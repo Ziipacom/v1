@@ -99,7 +99,14 @@ jobs:
         run: npm test
         working-directory: backend/atproto_bridge
       - name: Install media rendering runtime
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+        run: |
+          # FFmpeg needs Ubuntu packages, not the runner's unrelated third-party
+          # repositories. Keep the configured Ubuntu mirrors and trust settings.
+          ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources
+          test -s "$ubuntu_sources"
+          apt_options=(-o "Dir::Etc::sourcelist=$ubuntu_sources" -o "Dir::Etc::sourceparts=-")
+          sudo apt-get "${apt_options[@]}" update
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends ffmpeg fonts-dejavu-core
       - run: npm run compile
         working-directory: contracts
       - name: Start local EVM for API integration tests
