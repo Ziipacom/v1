@@ -78,6 +78,7 @@ export function ComposerScreen({
   const existing = route.params?.item;
   const remix = route.params?.remix;
   const { data, session, guest, api, refresh, savePreviewDraft } = useZiipa();
+  const originalUpload = !guest && session ? route.params?.upload : undefined;
   const [category, setCategory] = useState<Category>(
     existing?.category || remix?.category || route.params?.category || "music",
   );
@@ -143,7 +144,9 @@ export function ComposerScreen({
       capturedUris.current.delete(uri);
     }
   }, [file]);
-  const [mediaId, setMediaId] = useState(existing?.media_id || null);
+  const [mediaId, setMediaId] = useState(
+    existing?.media_id || originalUpload?.id || null,
+  );
   const [soundtrackFile, setSoundtrackFile] = useState<UploadFile | null>(null);
   const [soundtrackId, setSoundtrackId] = useState(
     existing?.soundtrack?.media_id || null,
@@ -187,8 +190,14 @@ export function ComposerScreen({
     creator: session?.user.name || "Ziipa Studio",
     tags: [],
     city: "",
-    cover: "/brand/ziipa-background.png",
-    media_url: null,
+    cover: originalUpload?.content_type.startsWith("image/")
+      ? `/api/creator/media/${originalUpload.id}`
+      : "/brand/ziipa-background.png",
+    media_url:
+      originalUpload && !originalUpload.content_type.startsWith("image/")
+        ? `/api/creator/media/${originalUpload.id}`
+        : null,
+    content_type: originalUpload?.content_type,
     demo: guest,
     label: "Draft",
   };
@@ -1075,7 +1084,15 @@ export function ComposerScreen({
                   navigation.navigate("Connections", { tab: "outbox" })
                 }
               />
-              {!guest && saved.media_id && <Action title="Render & export saved edit" icon={Share2} onPress={()=>navigation.navigate('Exports',{itemId:saved.id})}/>}
+              {!guest && saved.media_id && (
+                <Action
+                  title="Render & export saved edit"
+                  icon={Share2}
+                  onPress={() =>
+                    navigation.navigate("Exports", { itemId: saved.id })
+                  }
+                />
+              )}
               {!guest && saved.visibility === "published" && saved.media_id && (
                 <Action
                   title="Publish directly to authorized networks"

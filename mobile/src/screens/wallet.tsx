@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   Coins,
   Copy,
+  Gift,
   Hexagon,
   Link2,
   Plus,
@@ -62,6 +63,12 @@ import {
   walletConnectConfigured,
 } from "../lib/wallet-connector";
 import { readPending, savePending, type Pending } from "../lib/wallet-pending";
+import { MediaRewards, RewardRuleFields } from "../components/media-rewards";
+import {
+  emptyRewardDraft,
+  rewardRules,
+  type RewardDraft,
+} from "../lib/rewards-types";
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStack>;
@@ -101,7 +108,14 @@ export function WalletScreen({ navigation, initialItem }: Props) {
   const [syncedBalance, setBalance] = useState<Balances | null>(null);
   const [records, setRecords] = useState<MetadataRecord[]>([]);
   const [history, setHistory] = useState<Intent[]>([]);
-  const [tab, setTab] = useState<"Assets" | "Metadata" | "Activity">("Assets");
+  const [tab, setTab] = useState<
+    "Assets" | "Rewards" | "Metadata" | "Activity"
+  >("Assets");
+  const [rewardDraft, setRewardDraft] = useState<RewardDraft>(emptyRewardDraft);
+  const [rewardToken, setRewardToken] = useState<Intent | null>(null);
+  const owner = useRef<string | null>(null);
+  owner.current = session?.access_token || null;
+  const walletOwner = useRef<number | null>(session?.user.id || null);
   const [sheet, setSheet] = useState<
     "protocol" | "review" | "pairing" | "transfer" | "receive" | "media" | null
   >(null);
@@ -146,30 +160,44 @@ export function WalletScreen({ navigation, initialItem }: Props) {
   }
   async function run(fn: () => Promise<void>) {
     if (busy) return;
+    const token = owner.current;
     setBusy(true);
     setError("");
     setNotice("");
     try {
       await fn();
     } catch (e) {
-      setError((e as Error).message || "The wallet request was not completed.");
+      if (owner.current === token)
+        setError(
+          (e as Error).message || "The wallet request was not completed.",
+        );
     } finally {
-      setBusy(false);
+      if (owner.current === token) setBusy(false);
     }
   }
   async function loadAccount() {
     if (!session) return;
-    const [w, m, t, p] = await Promise.all([
+    const token = session.access_token;
+    const [w, m, t] = await Promise.all([
       api<WalletLink[]>("/api/web3/wallets"),
       api<MetadataRecord[]>("/api/web3/metadata"),
       api<Intent[]>("/api/web3/intents"),
-      readPending(session.user.id),
     ]);
+    if (owner.current !== token) return;
+    const [p, settlement] = await Promise.all([
+      readPending(session.user.id),
+      api<Intent[]>("/api/rewards/settlement/intents"),
+    ]);
+    if (owner.current !== token) return;
     setLinks(w);
     setRecords(m);
-    setHistory(t);
+    setHistory(
+      [...t, ...settlement].sort((a, b) =>
+        b.created_at.localeCompare(a.created_at),
+      ),
+    );
     setPending(p);
-    if (!link && w[0]) {
+    if ((!link || !w.some((wallet) => wallet.id === link.id)) && w[0]) {
       setLink(w[0]);
       setChainId(w[0].chain_id);
     }
@@ -180,8 +208,42 @@ export function WalletScreen({ navigation, initialItem }: Props) {
       .catch((e) => setError(e.message));
   }, []);
   useEffect(() => {
-    void loadAccount().catch((e) => setError(e.message));
-  }, [session?.user.id]);
+    if (walletOwner.current !== (session?.user.id || null)) {
+      setName("");
+      setDescription("");
+      setMediaId("");
+      setMediaName("");
+      setImageUri("");
+      setTrait("");
+      setSymbol("");
+      setSupply("1000000");
+      setMetadataId("");
+      setMetadataRequest(Crypto.randomUUID());
+    }
+    walletOwner.current = session?.user.id || null;
+    setLinks([]);
+    setLink(null);
+    setBalance(null);
+    setRecords([]);
+    setHistory([]);
+    setPending(null);
+    setIntent(null);
+    setRewardToken(null);
+    setSheet(null);
+    setBusy(false);
+    setError("");
+    setNotice("");
+    setRewardDraft(emptyRewardDraft());
+    setConsent(false);
+    setRecipient("");
+    setAmount("");
+    setPairUri("");
+    setConnected(false);
+    const token = owner.current;
+    void loadAccount().catch((e) => {
+      if (owner.current === token) setError(e.message);
+    });
+  }, [session?.access_token]);
   useEffect(() => observeWallet(() => setConnected(false)), []);
   function chooseChain(c: Chain) {
     setChainId(c.id);
@@ -195,11 +257,14 @@ export function WalletScreen({ navigation, initialItem }: Props) {
       navigation.navigate("Login");
       return;
     }
+    const token = session.access_token;
     const wallet = await connectWallet(chainId, method, (uri) => {
+      if (owner.current !== token) return;
       setPairUri(uri);
       if (uri) setSheet("pairing");
       else setSheet(null);
     });
+    if (owner.current !== token) return;
     setConnected(true);
     const proof = await api<{ id: string; message: string }>(
       "/api/web3/challenge",
@@ -261,6 +326,11 @@ export function WalletScreen({ navigation, initialItem }: Props) {
     );
   }
   async function prepareMint() {
+    if (kind === "create_token" && rewardDraft.enabled)
+      rewardRules({
+        ...rewardDraft,
+        name: rewardDraft.name || `${name.trim()} rewards`,
+      });
     if (!activeLink || !linkedConnection)
       throw new Error(
         "Reconnect your verified wallet before preparing a mint.",
@@ -302,16 +372,41 @@ export function WalletScreen({ navigation, initialItem }: Props) {
   }
   async function verifyPending(value = pending) {
     if (!value || !session) return;
+    const token = session.access_token;
     const updated = await api<Intent>(
-      `/api/web3/intents/${value.intentId}/submit`,
+      value.settlement
+        ? `/api/rewards/settlement/intents/${value.intentId}/submit`
+        : `/api/web3/intents/${value.intentId}/submit`,
       { tx_hash: value.hash },
     );
     setIntent(updated);
     setHistory((prev) => [updated, ...prev.filter((i) => i.id !== updated.id)]);
+    if (
+      updated.kind === "create_token" &&
+      updated.status === "confirmed" &&
+      (
+        value.rewardProgramDraft ||
+        (pending?.intentId === value.intentId
+          ? pending.rewardProgramDraft
+          : null) ||
+        rewardDraft
+      ).enabled
+    ) {
+      const savedDraft =
+        value.rewardProgramDraft ||
+        (pending?.intentId === value.intentId
+          ? pending.rewardProgramDraft
+          : null);
+      if (savedDraft) setRewardDraft(savedDraft);
+      setRewardToken(updated);
+      setTab("Rewards");
+    }
     if (updated.status === "confirmed" || updated.status === "reverted") {
       const stored = await readPending(session.user.id);
+      if (owner.current !== token) return;
       if (stored?.intentId === value.intentId)
         await savePending(session.user.id, null);
+      if (owner.current !== token) return;
       setPending((previous) =>
         previous?.intentId === value.intentId ? null : previous,
       );
@@ -327,24 +422,43 @@ export function WalletScreen({ navigation, initialItem }: Props) {
   }
   async function approve() {
     if (!intent || !session) return;
+    const token = session.access_token;
     if (pending)
       throw new Error(
         "Verify your previous transaction before signing another.",
       );
     const hash = await sendWalletTransaction(intent);
-    const value = { intentId: intent.id, hash };
-    setPending(value);
-    setIntent({ ...intent, tx_hash: hash, status: "submitted" });
+    const value: Pending = {
+      intentId: intent.id,
+      hash,
+      ...(intent.kind.startsWith("reward_") ? { settlement: true } : {}),
+      ...(intent.kind === "create_token" && rewardDraft.enabled
+        ? {
+            rewardProgramDraft: {
+              ...rewardDraft,
+              name: rewardDraft.name || `${name.trim()} rewards`,
+            },
+          }
+        : {}),
+    };
     // Save the hash before the API call so an interrupted request can be recovered.
     try {
       await savePending(session.user.id, value);
     } catch {
       // Still submit the hash to the API if device persistence fails.
-      setNotice(`Keep this transaction hash: ${hash}`);
+      if (owner.current === token)
+        setNotice(`Keep this transaction hash: ${hash}`);
     }
+    if (owner.current !== token) return;
+    setPending(value);
+    setIntent({ ...intent, tx_hash: hash, status: "submitted" });
     await verifyPending(value);
     setView("vault");
-    setTab("Activity");
+    setTab(
+      intent.kind === "create_token" && rewardDraft.enabled
+        ? "Rewards"
+        : "Activity",
+    );
   }
   async function prepareTransfer() {
     if (!activeLink || !linkedConnection)
@@ -520,6 +634,30 @@ export function WalletScreen({ navigation, initialItem }: Props) {
                           </Pressable>
                         ))}
                       </View>
+                      {kind === "create_token" && (
+                        <View style={{ gap: 10 }}>
+                          <View style={styles.row}>
+                            <Gift size={20} color={color.lime} />
+                            <Text style={[s.label, { flex: 1 }]}>
+                              Media Rewards
+                            </Text>
+                            <Switch
+                              accessibilityLabel="Include Media Rewards with creator token"
+                              value={rewardDraft.enabled}
+                              onValueChange={(enabled) =>
+                                setRewardDraft({ ...rewardDraft, enabled })
+                              }
+                              trackColor={{ true: color.purple }}
+                            />
+                          </View>
+                          <Text style={s.hint}>
+                            Prepare interaction rewards with your creator token.
+                            Points are separate from tokens; a paused program
+                            can be saved after your token transaction is
+                            confirmed.
+                          </Text>
+                        </View>
+                      )}
                     </>
                   )}
                   {step === 1 && (
@@ -721,6 +859,24 @@ export function WalletScreen({ navigation, initialItem }: Props) {
                           </Text>
                         </>
                       )}
+                      {kind === "create_token" && rewardDraft.enabled && (
+                        <View style={{ gap: 15, paddingTop: 8 }}>
+                          <View style={styles.row}>
+                            <Gift size={20} color={color.lime} />
+                            <Text style={s.label}>Media Rewards rules</Text>
+                          </View>
+                          <RewardRuleFields
+                            value={{
+                              ...rewardDraft,
+                              name:
+                                rewardDraft.name || `${name.trim()} rewards`,
+                            }}
+                            onChange={setRewardDraft}
+                            disabled={busy}
+                          />
+                          <Notice text="Save a paused reward program after the token receipt is confirmed. Enabling points, funding tokens, and publishing claims are separate reviewed actions. No extra token supply is minted." />
+                        </View>
+                      )}
                       <View
                         style={{
                           flexDirection: "row",
@@ -751,6 +907,17 @@ export function WalletScreen({ navigation, initialItem }: Props) {
                     </>
                   )}
                 </View>
+              </View>
+              <View style={{ marginTop: 16 }}>
+                <Action
+                  secondary
+                  title="Open Media Rewards"
+                  icon={Gift}
+                  onPress={() => {
+                    setView("vault");
+                    setTab("Rewards");
+                  }}
+                />
               </View>
               {step < 3 && <View style={{ height: 20 }} />}
             </>
@@ -903,37 +1070,74 @@ export function WalletScreen({ navigation, initialItem }: Props) {
                   />
                 </View>
               )}
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: 25,
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ flexGrow: 0 }}
+                contentContainerStyle={{
+                  gap: 22,
                   borderBottomWidth: 1,
                   borderBottomColor: "#30263B",
                 }}
               >
-                {(["Assets", "Metadata", "Activity"] as const).map((t) => (
-                  <Pressable
-                    key={t}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: tab === t }}
-                    onPress={() => setTab(t)}
-                    style={{
-                      paddingVertical: 13,
-                      borderBottomWidth: 2,
-                      borderBottomColor: tab === t ? "#8242D8" : "transparent",
-                    }}
-                  >
-                    <Text
-                      style={[
-                        s.label,
-                        { color: tab === t ? "white" : "#978AA6" },
-                      ]}
+                {(["Assets", "Rewards", "Metadata", "Activity"] as const).map(
+                  (t) => (
+                    <Pressable
+                      key={t}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: tab === t }}
+                      onPress={() => setTab(t)}
+                      style={{
+                        paddingVertical: 13,
+                        borderBottomWidth: 2,
+                        borderBottomColor:
+                          tab === t ? "#8242D8" : "transparent",
+                      }}
                     >
-                      {t}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+                      <Text
+                        style={[
+                          s.label,
+                          { color: tab === t ? "white" : "#978AA6" },
+                        ]}
+                      >
+                        {t}
+                      </Text>
+                    </Pressable>
+                  ),
+                )}
+              </ScrollView>
+              {tab === "Rewards" && (
+                <MediaRewards
+                  tokenHistory={history}
+                  initialDraft={{
+                    ...rewardDraft,
+                    name:
+                      rewardDraft.name ||
+                      (name.trim() ? `${name.trim()} rewards` : ""),
+                  }}
+                  confirmedToken={rewardToken}
+                  activeWallet={activeLink}
+                  connected={linkedConnection}
+                  onConnect={() => {
+                    setView("wizard");
+                    setStep(2);
+                  }}
+                  onNewToken={() => {
+                    setKind("create_token");
+                    setRewardDraft((value) => ({ ...value, enabled: true }));
+                    setStep(0);
+                    setView("wizard");
+                  }}
+                  onReviewIntent={(value) => {
+                    setIntent(value);
+                    setHistory((previous) => [
+                      value,
+                      ...previous.filter((item) => item.id !== value.id),
+                    ]);
+                    setSheet("review");
+                  }}
+                />
+              )}
               {tab === "Assets" && (
                 <>
                   <View style={styles.between}>
@@ -1378,6 +1582,9 @@ export function WalletScreen({ navigation, initialItem }: Props) {
                       verifyPending({
                         intentId: intent.id,
                         hash: intent.tx_hash!,
+                        ...(intent.kind.startsWith("reward_")
+                          ? { settlement: true }
+                          : {}),
                       }),
                     )
                   }

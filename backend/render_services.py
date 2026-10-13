@@ -459,6 +459,8 @@ def process_job(session_factory, job_id: str, claim: str):
                 job.output_sha256, job.source_sha256, job.duration = digest, source_hash, duration
                 job.updated_at, job.lease_until = datetime.now(timezone.utc), None
                 session.commit()
+                from media_workflows import notify_workflows
+                notify_workflows(owner_id)
     except Exception as exc:
         with session_factory() as session:
             # Match the commit lock order so a failed old worker cannot delete a

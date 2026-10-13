@@ -1,5 +1,11 @@
 import * as SecureStore from "expo-secure-store";
-export type Pending = { intentId: string; hash: string };
+import type { RewardDraft } from "./rewards-types";
+export type Pending = {
+  intentId: string;
+  hash: string;
+  settlement?: boolean;
+  rewardProgramDraft?: RewardDraft;
+};
 export async function readPending(userId: number): Promise<Pending | null> {
   const raw = await SecureStore.getItemAsync(`ziipa.web3.pending.${userId}`);
   return raw ? JSON.parse(raw) : null;

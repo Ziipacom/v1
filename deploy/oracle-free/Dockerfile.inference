@@ -1,0 +1,8 @@
+FROM python:3.13-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY deploy/oracle-free/inference-requirements.lock.txt /app/requirements.txt
+RUN pip install --no-cache-dir --disable-pip-version-check -r requirements.txt && useradd --uid 10001 --create-home ziipa
+COPY backend/inference_gateway.py /app/inference_gateway.py
+USER 10001:10001
+CMD ["uvicorn", "inference_gateway:create_app", "--factory", "--host", "0.0.0.0", "--port", "8089", "--workers", "1", "--limit-concurrency", "32", "--timeout-keep-alive", "5", "--no-access-log", "--no-proxy-headers"]

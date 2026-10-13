@@ -1,6 +1,7 @@
 # Oracle Always Free private render worker
 
-This optional package adds **one serial renderer only**. The website, API,
+This optional package adds **one serial renderer** and an independently supervised
+Media OS workflow worker when enabled. The website, API,
 Neon accounts/queue, Upstash sessions, private R2 media, Pinata and blockchain
 settings remain where they are. It does not provision cloud resources, upgrade
 an account, run paid fallback services or change DNS. Do not deploy the paid
@@ -208,3 +209,56 @@ addresses and key locations are kept outside Git.
 An authenticated browser/mobile upload-to-export flow and provider/store review
 remain separate acceptance steps. Native tests and a worker heartbeat alone do
 not establish release equivalence or readiness for an unrestricted public launch.
+
+## Optional Media OS workflow worker
+
+`workflow-compose.json` runs `workflow_worker.py` in a separate Compose project
+and systemd unit using the **same reviewed ARM64 image** and existing eight-key,
+root-only environment file. It adds no VM, disk, registry, inbound port or secret.
+The container has a read-only root, an unprivileged user, no Linux capabilities,
+16 MiB ephemeral scratch, a 512 MiB memory/no-swap limit and a 0.25 CPU limit.
+Both containers share the existing VM's actual CPU; these limits do not add
+capacity. Keep the original renderer manifest and unit unchanged.
+
+Deploy the Media OS API migration first, rebuild the reviewed local image with
+`workflow_worker.py`, then use the existing offline preflight to verify its
+architecture and protected TLS/storage configuration. The workflow process
+checks the matching schema and Redis at startup. Set `OS_WORKFLOW_ENABLED=true`
+in the existing API configuration and redeploy it so its owner-authenticated
+`/api/os/workflows/config` can report the worker's matching scoped heartbeat.
+
+```bash
+cd /opt/ziipa
+sudo python3 deploy/oracle-free/preflight.py
+sudo docker compose -f deploy/oracle-free/workflow-compose.json config --quiet
+sudo install -m 0644 deploy/oracle-free/ziipa-workflow-worker.service /etc/systemd/system/ziipa-workflow-worker.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now ziipa-workflow-worker
+sudo systemctl status ziipa-workflow-worker --no-pager
+```
+
+The unit is separate so a workflow failure cannot stop the renderer. Do not run
+a second workflow instance with `compose up` or `--scale`. Schedules and event
+cursors live in PostgreSQL; Redis contains only expiring readiness and wake hints.
+Users must enable a reviewed workflow or choose Run once. Actions are limited
+to reminders persisted in Ziipa, owned render-job submissions, and the existing
+bounded public Bluesky profile/posts/following sync. Public sync also requires
+outbound HTTPS to `public.api.bsky.app`. It does not provide private feeds,
+publish posts, send email/invitations, spend funds or use social OAuth secrets.
+
+The default 60-second worker loop adds about **86,400 Redis commands per 30 days**
+when idle, plus API/work commands. It scans PostgreSQL when a committed wake hint
+changes, a cached scheduled/recovery deadline arrives, or at most an hour has
+passed; ordinary idle polls do not hold Neon awake. Creator saves and completed
+renders emit wake hints after their database commits. A lost hint still recovers
+through the hourly scan; Redis restarts/missing hints trigger a fresh scan too.
+Hourly scans can wake Neon, and active workflows consume more requests/compute:
+check combined provider allowances and stop the optional unit before limits
+approach. Saved schedules/runs remain durable across restarts. There is no paid
+fallback. Actual ARM memory/throughput and an
+owned reminder/render/sync acceptance flow still need verification on the host.
+
+For image changes, schema upgrades or credential rotation, stop **both**
+`ziipa-workflow-worker` and `ziipa-render-worker`, follow the existing migration,
+secure-file and native-image checks, then restart both units. View only safe
+status fields; never print container environments or the private env file.

@@ -128,9 +128,27 @@ export type RootStack = {
   Studio: { category?: Category; edit?: boolean } | undefined;
   Profile: undefined;
   Feeds: undefined;
+  MediaOS:
+    | {
+        tab?:
+          | "Overview"
+          | "Library"
+          | "Memory"
+          | "Assistant"
+          | "Workflows"
+          | "Insights";
+      }
+    | undefined;
   Utility: { kind: "wallet" | "promote" | "inbox"; item?: Item };
   Post: { item: Item };
-  Composer: { item?: Item; remix?: Item; category?: Category } | undefined;
+  Composer:
+    | {
+        item?: Item;
+        remix?: Item;
+        category?: Category;
+        upload?: { id: string; content_type: string };
+      }
+    | undefined;
   Connections: { tab?: "accounts" | "feed" | "people" | "outbox" } | undefined;
   Publishing: { itemId?: string; renderId?: string } | undefined;
   Exports: { itemId: string };

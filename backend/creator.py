@@ -324,6 +324,8 @@ def save_item(data, session, user, row=None):
     row.visibility = data.visibility
     session.commit()
     session.refresh(row)
+    from media_workflows import notify_workflows
+    notify_workflows(user.id)
     return serialize_item(row, session)
 
 
@@ -387,11 +389,15 @@ def distribute_item(item_id: str, data: DistributionInput, user: User = Depends(
 
 @router.post('/preferences', dependencies=[Depends(guard)])
 def preferences(data: PreferencesInput, user: User = Depends(current_user), session: Session = Depends(db)):
+    from media_rewards import lock_user, sync_preferences_rewards
+    lock_user(session, user)
     row = session.get(CreatorPreferences, user.id)
+    previous = dict(row.data or {}) if row else {}
     if row is None:
         row = CreatorPreferences(owner_id=user.id)
         session.add(row)
     row.data = data.model_dump()
+    sync_preferences_rewards(session, user, previous, row.data)
     session.commit()
     return row.data
 
@@ -417,6 +423,8 @@ def comments(item_id: str, user: User = Depends(current_user), session: Session 
 
 @router.post('/items/{item_id}/comments', dependencies=[Depends(guard)])
 def add_comment(item_id: str, data: CommentInput, user: User = Depends(current_user), session: Session = Depends(db)):
+    from media_rewards import lock_user, award_comment_reward
+    lock_user(session, user)
     assert_visible(item_id, session, user)
     item = session.get(CreatorItem, item_id)
     if item and item.owner_id != user.id:
@@ -425,6 +433,8 @@ def add_comment(item_id: str, data: CommentInput, user: User = Depends(current_u
             raise HTTPException(403, 'You cannot comment on this creator’s posts.')
     row = CreatorComment(owner_id=user.id, item_id=item_id, body=data.body.strip())
     session.add(row)
+    session.flush()
+    award_comment_reward(session, user, item, row)
     session.commit()
     return {'id': row.id, 'body': row.body, 'creator': user.name, 'creator_id': user.id}
 

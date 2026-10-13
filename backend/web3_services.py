@@ -89,7 +89,7 @@ def contract(w3, chain_id, kind):
     code = w3.eth.get_code(addr)
     if not code or Web3.to_hex(Web3.keccak(code)).lower() != row.get('code_hash', '').lower():
         raise HTTPException(503, 'Contract code does not match the deployment registry. Transactions are disabled.')
-    return w3.eth.contract(address=addr, abi=abi({'collectibles':'ZiipaCollectibles', 'factory':'ZiipaTokenFactory', 'tips':'ZiipaTips'}[kind]))
+    return w3.eth.contract(address=addr, abi=abi({'collectibles':'ZiipaCollectibles', 'factory':'ZiipaTokenFactory', 'tips':'ZiipaTips', 'rewards':'ZiipaMediaRewards'}[kind]))
 
 
 def content_uri(uri):

@@ -59,7 +59,12 @@ export default defineConfig(async () => {
     server: {
       host: process.env.ZIIPA_DEV_HOST || '127.0.0.1', port: 5178, strictPort: true,
       proxy: { '/api': { target: process.env.ZIIPA_API_PROXY || 'http://127.0.0.1:8018', changeOrigin: false } },
-      ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
+      // Expo replaces this generated directory during export. Watching its
+      // removal can crash Windows/OneDrive's watcher; reload Studio after export.
+      watch: {
+        ignored: /[\\/]public[\\/]studio(?:[\\/]|$)/,
+        ...(isCodexSeatbeltSandbox ? { useFsEvents: false, usePolling: true } : {}),
+      },
     },
     plugins: [
       vinext(),

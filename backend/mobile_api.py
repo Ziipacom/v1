@@ -224,6 +224,20 @@ async def delete_account(data: DeleteAccount, user: User = Depends(current_user)
     await delete_publishing_account(user.id, session)
     from render_services import delete_render_jobs
     delete_render_jobs(user.id, session)
+    # Durable workflows and proposals must stop before the account/media vanish.
+    from media_workflows import delete_workflows_data
+    from assistant_api import delete_assistant_data
+    from agent_api import delete_agent_data
+    from personal_media import delete_os_data
+    from media_rewards import lock_user, delete_rewards_data
+    from rewards_redemption import delete_settlement_data
+    lock_user(session, user)
+    delete_workflows_data(session, user.id)
+    delete_agent_data(session, user.id)
+    delete_assistant_data(session, user.id)
+    delete_os_data(session, user.id)
+    delete_settlement_data(session, user.id)
+    delete_rewards_data(session, user.id)
     item_ids = list(session.scalars(select(CreatorItem.id).where(CreatorItem.owner_id == user.id)))
     media_ids = list(session.scalars(select(CreatorMedia.id).where(CreatorMedia.owner_id == user.id)))
     provider = storage()

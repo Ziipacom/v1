@@ -1,8 +1,85 @@
-# Ziipa local website and portal
+# Ziipa Agent and private inference — 13 October 2026
 
-The current free-only deployment keeps Cloudflare Workers, the existing Render
-Free API, Neon, Upstash, private R2, Pinata and Base Sepolia. The rendering worker
-is being prepared for Oracle Always Free; it is not yet hosted or verified there.
+The shared portal/mobile Media OS now has an **Agent** tab for durable, opt-in
+autonomous private tasks. A real local API → worker → authenticated inference
+gateway → Ollama/Qwen3 1.7B acceptance task created a project and its linked goal
+with three unchecked steps, then completed. Stored records and step receipts were
+verified; retrying the same queue request returned the same task. No public post,
+wallet transaction, invitation or arbitrary code was executed.
+
+Autonomy is deliberately permission-scoped. Each account starts disabled with no
+grants. Effective tools must be granted in both Assistant and Agent, and are
+rechecked before every step. Durable receipts, idempotent requests, leases,
+interruption recovery, pause/cancel and finite daily/runtime/model-call budgets
+limit work. Public publishing, wallet signing/spending, deletion, shell access and
+permission changes remain user-controlled. Small-model planning can still be
+wrong; blocked tasks retain completed private changes for review.
+
+The API, agent, workflow and rendering workers, private Ollama service and
+authenticated gateway are running locally. The website/shared Studio production
+build passes. Native ARM64 Compose/systemd packages, protected-secret preflight,
+normal/small model profiles and synthetic model acceptance are documented in
+[AGENT-DEPLOYMENT.md](AGENT-DEPLOYMENT.md). The separate inference image contains
+no database, media-storage, email, publishing or wallet credentials. Its root
+Docker build context is explicitly allowlisted; the full API uses `backend/`.
+
+Final backend acceptance passes **555 tests**, with two explicit opt-in resource
+checks skipped. **54 mobile tests**, TypeScript, **13 contract tests** and **10
+website tests** pass. Unprivileged, read-only Linux images also passed offline
+gateway authentication/process-health checks and API/worker/migration imports.
+
+**This new release has not been publicly deployed.** Oracle owner sign-in and
+working SSH, native free-host memory/capacity/model acceptance, GitHub write
+access and the earlier approved Neon credential rotation remain operational
+gates. The small free profile is for a controlled demo/closed beta, not an
+unrestricted public launch. No paid model fallback or paid worker was added.
+
+On this Windows review machine, PostgreSQL uses port **54329** because a Windows
+reserved range blocks 55439. The existing Docker volume/data was retained.
+Set `ZIIPA_POSTGRES_PORT=54329` for Compose and use that port in the local
+`DATABASE_URL`; the repository's historical default remains 55439.
+
+## Earlier Media Rewards and Personal Media OS — 12 October 2026
+
+The shared portal/mobile Studio now includes private media organization, projects,
+editable memory, goals, reviewed Assistant tools, durable workflows, rights and
+a creator ledger. See [MEDIA-OS.md](MEDIA-OS.md) for privacy and the free runtime
+setup. This new release is locally built and tested; it has not been publicly
+deployed or included in a new store binary.
+
+## Local Media Rewards and collapsible menu acceptance
+
+The shared mobile and portal Wallet now includes a Media Rewards step in creator
+token creation, paused reward programs, bounded interaction-point budgets, private
+history and separate creator-funded testnet distributions. Points accrue only from
+eligible persisted likes, saves and qualified comments; they have no cash value or
+automatic token conversion. Funding, publishing immutable allocations, claiming
+tokens and withdrawing unused funds each require explicit wallet review. See
+[MEDIA-REWARDS.md](MEDIA-REWARDS.md) for the rules and implementation boundaries.
+
+An actual local HTTP/EVM fixture earned **12 noncash points** from qualified media
+interactions: six Ziipa baseline points and six creator-program points. It approved
+and deposited **1 ZMR**, published an immutable allocation, verified the recipient's
+**0.6 ZMR** claim, and withdrew the unused **0.4 ZMR**. These were local test tokens,
+not a payment or a public-chain deployment. The Studio menu now hides on a Close
+click or web hover; the right-side Menu button reopens it while the feed stays
+mounted.
+
+Final local verification passed **462 backend tests** with two opt-in resource
+checks skipped, **54 mobile tests** and TypeScript, **13 contract tests**, and
+**10 website tests**. The final shared Studio export and website build passed.
+No commit, push, public deployment, new APK, mainnet transaction or paid service
+was created in this update. Public testnet deployment and independent contract
+and fraud review remain required before release. Earlier deployment notes below
+describe prior work and do not establish acceptance of this new local build.
+
+## Earlier website and deployment notes
+
+The free-only stack uses Cloudflare Workers, the existing Render Free API, Neon,
+Upstash, private R2, Pinata and Base Sepolia. Oracle Always Free hosts the last
+recorded renderer release; its separate Media OS workflow package is newly
+prepared here. Today's cloud state and this new release still need deployment
+acceptance; local tests do not establish hosted readiness.
 See [FREE-TIER-DEPLOYMENT.md](FREE-TIER-DEPLOYMENT.md) for the active plan and
 remaining account/acceptance gates. The provider setup is also documented in
 [HYBRID-DEPLOYMENT.md](HYBRID-DEPLOYMENT.md) for the provider setup, secret map,

@@ -38,7 +38,12 @@ export type TxKind =
   | "send_native"
   | "send_nft"
   | "send_token"
-  | "tip";
+  | "tip"
+  | "reward_approve"
+  | "reward_deposit"
+  | "reward_withdraw"
+  | "reward_publish"
+  | "reward_claim";
 export type Intent = {
   id: string;
   kind: TxKind;
@@ -59,6 +64,8 @@ export type Intent = {
     token_id?: string;
     token_address?: string;
     contract?: string;
+    batch_id?: string;
+    allocation_id?: string;
   };
   created_at: string;
 };

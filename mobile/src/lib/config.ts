@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { browserPreviewApiOrigin } from "./preview-origin";
 
 // EXPO_PUBLIC values are bundled and must never contain secrets.
 export const portalMode =
@@ -11,7 +12,7 @@ export function authorizationHeaders(token?: string): Record<string, string> {
   const owner = token?.match(/^ziipa-portal-cookie:([1-9]\d*):\d+$/)?.[1];
   return owner ? { "X-Ziipa-User": owner } : {};
 }
-export const apiOrigin = (
+const configuredApiOrigin = (
   process.env.EXPO_PUBLIC_API_URL ||
   (Platform.OS === "web" && typeof globalThis.location !== "undefined"
     ? globalThis.location.origin
@@ -22,6 +23,15 @@ export const apiOrigin = (
       : "http://127.0.0.1:8018"
     : "")
 ).replace(/\/$/, "");
+export const apiOrigin = browserPreviewApiOrigin(configuredApiOrigin, {
+  development: __DEV__,
+  web: Platform.OS === "web",
+  portal: portalMode,
+  pageHostname:
+    typeof globalThis.location !== "undefined"
+      ? globalThis.location.hostname
+      : "",
+});
 export const demoEnabled =
   __DEV__ || process.env.EXPO_PUBLIC_ENABLE_DEMO === "true";
 export const conceptsEnabled =

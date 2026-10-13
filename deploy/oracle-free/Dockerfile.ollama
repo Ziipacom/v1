@@ -1,0 +1,7 @@
+FROM ollama/ollama:0.40.3
+# The persistent volume inherits this ownership at creation; no host mounts or
+# administrator keys are accessible to the unprivileged model process.
+ENV HOME=/home/ollama OLLAMA_MODELS=/models OLLAMA_HOST=0.0.0.0:11434 OLLAMA_NO_CLOUD=1
+RUN mkdir -p /models /home/ollama && chown 10001:10001 /models /home/ollama
+USER 10001:10001
+VOLUME ["/models"]

@@ -201,6 +201,12 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
     from social_publishing import publishing_connections
     from live_api import LiveStream
     from render_services import RenderJob
+    from personal_media import export_os_data
+    from media_workflows import export_workflows_data
+    from assistant_api import export_assistant_data
+    from agent_api import export_agent_data
+    from media_rewards import export_rewards_data
+    from rewards_redemption import export_settlement_data
     state = state_for(session, user)
     return {
         'exported_at': datetime.now(timezone.utc).isoformat(),
@@ -216,5 +222,11 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
         'broadcasts': [{'id': row.id, 'title': row.title, 'description': row.description, 'status': row.status,
                         'created_at': row.created_at.isoformat()} for row in session.scalars(select(LiveStream).where(LiveStream.owner_id == user.id))],
         'preferences': (session.get(CreatorPreferences, user.id).data if session.get(CreatorPreferences, user.id) else {}),
+        'personal_media_os': export_os_data(session, user.id),
+        'workflows': export_workflows_data(session, user.id),
+        'assistant': export_assistant_data(session, user.id),
+        'agent': export_agent_data(session, user.id),
+        'media_rewards': export_rewards_data(session, user.id),
+        'reward_distributions': export_settlement_data(session, user.id),
         'comments': [{'id': r.id, 'item_id': r.item_id, 'body': r.body, 'created_at': r.created_at.isoformat()} for r in session.scalars(select(CreatorComment).where(CreatorComment.owner_id == user.id))],
     }

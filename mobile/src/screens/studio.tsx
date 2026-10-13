@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, ScrollView, Text, View } from "react-native";
+import { Animated, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -7,9 +7,11 @@ import {
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   ChevronDown,
+  ChevronRight,
   LayoutGrid,
   Megaphone,
   Menu,
+  Sparkles,
   Network,
   Pencil,
   Plus,
@@ -40,6 +42,7 @@ export function StudioScreen({
     route.params?.category || "nft",
   );
   const [editing, setEditing] = useState(route.params?.edit || false);
+  const [menuVisible, setMenuVisible] = useState(true);
   const [page, setPage] = useState(0);
   const slide = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -83,10 +86,10 @@ export function StudioScreen({
           <Logo width={96} />
         </Pressable>
         <FloatButton
-          label="Close Studio menu"
+          label={menuVisible ? "Hide Studio menu" : "Open Studio menu"}
           icon={Menu}
           plain
-          onPress={() => navigation.navigate("Profile")}
+          onPress={() => setMenuVisible((visible) => !visible)}
         />
       </View>
       <View style={{ flex: 1, marginBottom: dockHeight, overflow: "hidden" }}>
@@ -100,12 +103,12 @@ export function StudioScreen({
             })
           }
         />
-        <ScrollView
+        {menuVisible ? <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             alignItems: "flex-end",
-            gap: 12,
-            paddingTop: 17,
+            gap: 8,
+            paddingTop: 12,
             paddingRight: 20,
             paddingBottom: 22,
           }}
@@ -115,7 +118,7 @@ export function StudioScreen({
             right: 0,
             width: 172,
             maxWidth: "52%",
-            bottom: editing ? 240 : 178,
+            bottom: editing ? 240 : 70,
           }}
         >
           <Pressable
@@ -180,8 +183,23 @@ export function StudioScreen({
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Close Studio"
-            onPress={() => navigation.navigate("Profile")}
+            accessibilityLabel="Open your Personal Media OS"
+            onPress={() => navigation.navigate("MediaOS")}
+            style={s.menuRow}
+          >
+            <Text style={s.menuText}>Media OS</Text>
+            <View
+              style={[s.circleSlot, s.circle, { backgroundColor: "#32145A" }]}
+            >
+              <Sparkles size={25} color={color.lime} strokeWidth={1.5} />
+            </View>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Hide Studio menu"
+            accessibilityState={{ expanded: true }}
+            onPress={() => setMenuVisible(false)}
+            onHoverIn={Platform.OS === "web" ? () => setMenuVisible(false) : undefined}
             style={s.menuRow}
           >
             <Text style={s.menuText}>Close</Text>
@@ -189,7 +207,24 @@ export function StudioScreen({
               <ChevronDown size={29} color={color.text} strokeWidth={1.5} />
             </View>
           </Pressable>
-        </ScrollView>
+        </ScrollView> : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open Studio menu"
+            accessibilityState={{ expanded: false }}
+            onPress={() => setMenuVisible(true)}
+            style={[s.menuRow, {
+              position: "absolute", top: 12, right: 20,
+              paddingLeft: 14, borderRadius: 36,
+              backgroundColor: "#140D24B8",
+            }]}
+          >
+            <Text style={s.menuText}>Menu</Text>
+            <View style={[s.circleSlot, s.circle]}>
+              <ChevronRight size={29} color={color.text} strokeWidth={1.5} />
+            </View>
+          </Pressable>
+        )}
       </View>
       {editing && (
         <Animated.View

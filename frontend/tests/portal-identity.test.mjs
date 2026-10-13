@@ -5,9 +5,17 @@ import vm from 'node:vm';
 import ts from 'typescript';
 function headers(portal) {
   const exports={};
+  const previewExports={};
+  const previewSource=readFileSync(new URL('../../mobile/src/lib/preview-origin.ts',import.meta.url),'utf8');
+  vm.runInNewContext(ts.transpileModule(previewSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:previewExports,URL});
   const source=readFileSync(new URL('../../mobile/src/lib/config.ts',import.meta.url),'utf8');
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{
-    exports,process:{env:{EXPO_PUBLIC_PORTAL_MODE:portal?'true':'false'}},__DEV__:false,require:()=>({Platform:{OS:'web'}}),location:{origin:'https://ziipa.com'},URL,
+    exports,process:{env:{EXPO_PUBLIC_PORTAL_MODE:portal?'true':'false'}},__DEV__:false,
+    require:(name)=>{
+      if(name==='react-native') return {Platform:{OS:'web'}};
+      if(name==='./preview-origin') return previewExports;
+      throw new Error('Unexpected config dependency: '+name);
+    },location:{origin:'https://ziipa.com',hostname:'ziipa.com'},URL,
   });
   return exports.authorizationHeaders;
 }

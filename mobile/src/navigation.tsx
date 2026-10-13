@@ -11,13 +11,14 @@ import { WelcomeScreen, LoginScreen } from "./screens/auth";
 import { DiscoverScreen } from "./screens/discovery";
 import { StudioScreen } from "./screens/studio";
 import { ProfileScreen } from "./screens/profile";
+import { MediaOSScreen } from "./screens/media-os";
 import { WatchScreen } from "./screens/watch";
 import { UtilityScreen } from "./screens/utility";
 import { FeedsScreen } from "./screens/feeds";
 import { ComposerScreen } from "./screens/editor";
 import { ConnectionsScreen } from "./screens/connections";
 import { PublishingScreen } from "./screens/publishing";
-import { ExportsScreen } from './screens/exports';
+import { ExportsScreen } from "./screens/exports";
 import { LiveScreen } from "./screens/live";
 import { PostScreen } from "./screens/post";
 import {
@@ -135,6 +136,11 @@ export function Navigation() {
               options={{ headerShown: false }}
             />
             <Stack.Screen
+              name="MediaOS"
+              component={MediaOSScreen}
+              options={{ title: "Your Media OS" }}
+            />
+            <Stack.Screen
               name="Feeds"
               component={FeedsScreen}
               options={{ title: "Your feed rules" }}
@@ -157,7 +163,11 @@ export function Navigation() {
               component={ConnectionsScreen}
               options={{ title: "Your networks" }}
             />
-            <Stack.Screen name="Exports" component={ExportsScreen} options={{title:'Rendered exports'}} />
+            <Stack.Screen
+              name="Exports"
+              component={ExportsScreen}
+              options={{ title: "Rendered exports" }}
+            />
             <Stack.Screen
               name="Publishing"
               component={PublishingScreen}

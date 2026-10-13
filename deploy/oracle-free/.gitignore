@@ -2,3 +2,5 @@
 *.env
 *.env.*
 !worker.env.example
+!inference-gateway.env.example
+!agent-inference.env.example

@@ -1,0 +1,16 @@
+{
+  "services": {
+    "inference-tunnel": {
+      "image": "cloudflare/cloudflared:2026.10.0", "platform": "linux/arm64", "pull_policy": "never",
+      "command": ["tunnel", "--no-autoupdate", "--loglevel", "warn", "run", "--token-file", "/run/ziipa-tunnel-token"],
+      "volumes": [{ "type": "bind", "source": "/etc/ziipa/inference-tunnel.token", "target": "/run/ziipa-tunnel-token", "read_only": true, "bind": { "create_host_path": false } }],
+      "depends_on": { "inference-gateway": { "condition": "service_healthy" } },
+      "user": "0:0", "init": true, "read_only": true,
+      "cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"],
+      "cpus": "0.10", "mem_limit": "128m", "memswap_limit": "128m", "pids_limit": 64,
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=8388608,mode=1777"],
+      "networks": ["gateway-egress"], "restart": "no", "stop_grace_period": "30s",
+      "logging": { "driver": "local", "options": { "max-size": "5m", "max-file": "2" } }
+    }
+  }
+}

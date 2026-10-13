@@ -1,4 +1,111 @@
-# Ziipa integration follow-up — 9 September 2026
+# Agent and private inference acceptance — 13 October 2026
+
+The new release adds per-account opt-in agent policies, owner-scoped durable
+tasks/step receipts, bounded model planning, worker leases/recovery, idempotent
+admission and pause/cancel controls. Effective grants intersect the Agent and
+Assistant settings. Accounts begin disabled. Public posting, invitations,
+destruction, access changes, arbitrary code and wallet operations are excluded
+from unattended execution. Migration `20261013_0006` is additive.
+
+The **actual local HTTP acceptance** used Qwen3 1.7B through the authenticated
+loopback inference gateway. The task completed two private actions in three
+model calls: create the requested project, then create its linked goal with the
+three exact unchecked steps. Stored project/goal IDs and contents were verified.
+An idempotent request retry returned the same task. Earlier model attempts were
+blocked when they repeated or misordered actions; those receipts remain in the
+disposable review account. The planner now uses relevant receipts and few-shot
+guidance, with same-task semantic name/title deduplication. This measured case
+does not establish reliability for all objectives or public-launch throughput.
+
+The separate gateway uses a fixed downloaded model, bearer authentication,
+bounded bodies/context/output, deadlines, single-flight generation and finite
+request limits. Raw Ollama remains private. The root inference-image build
+context excludes local secrets/runtimes/media. Linux inference and API images
+build locally; deployment still requires native ARM acceptance. Free Oracle
+normal/small profiles, optional outbound tunnel, protected-file/key/model
+preflight and operator runbook are in [AGENT-DEPLOYMENT.md](AGENT-DEPLOYMENT.md).
+
+Final acceptance: **555 backend tests passed**, with **two opt-in resource checks
+skipped**; **54 mobile tests**, TypeScript, **13 contract tests** and **10 website
+tests** passed. The shared Studio export and production website build passed.
+Both final Linux images built locally. The gateway passed anonymous-access
+rejection/process health inside a network-disabled, read-only container running
+as UID10001 with 192 MiB memory. The full API image imported the API and all three
+workers, exposed the expected OpenAPI routes and reported migration head0006
+inside a network-disabled, read-only, UID10001 container limited to 1 CPU/1 GiB.
+These are x86-64 packaging checks, not native ARM runtime or throughput proof.
+
+The API, renderer, workflow/agent workers, Ollama, private gateway, website and
+mobile preview are active locally. The new code is **not publicly deployed** or
+included in a new signed mobile binary. Oracle owner sign-in/SSH is unavailable,
+the GitHub connector has read-only access, and native ARM model/resource/restart
+acceptance and the previously approved Neon rotation remain outstanding. No
+paid service, public post or public-chain transaction was made in this update.
+
+## Earlier Media Rewards and collapsible menu acceptance — 12 October 2026
+
+The latest local update adds Media Rewards to the shared mobile and web portal
+Wallet and creator token flow. Creator programs begin paused and require explicit
+enabling. Server-verified eligible media interactions earn bounded, whole-number
+noncash points with permanent deduplication, reversal rules and account-scoped
+history. Points do not automatically convert to tokens or money. Creator-funded
+testnet distributions are a separate, reviewed wallet process; published
+allocations are immutable. See [MEDIA-REWARDS.md](MEDIA-REWARDS.md).
+The additive rewards schema is `20261012_0005`.
+
+Final local acceptance passed **462 backend tests**, with **two opt-in resource
+checks skipped**, **54 mobile tests** and TypeScript, **13 contract tests**, and
+**10 website tests**. The final shared Studio export and website build passed.
+These checks include private account isolation, interaction eligibility and
+source reconciliation, finite budgets, repeated-action prevention, allocation
+reservations, verified wallet ownership, exact chain receipt matching and
+deletion privacy.
+
+The actual local HTTP/EVM acceptance fixture earned **12 noncash points** from
+qualified interactions: **six baseline points plus six creator-program points**.
+It approved and deposited **1 ZMR**, published an immutable allocation, verified
+the recipient's **0.6 ZMR** claim and withdrew the unused **0.4 ZMR**. These are
+local development-chain tokens with no cash value, not a public-chain payment.
+
+Browser acceptance also confirmed that the Studio menu hides on a **Close click
+or web hover**, and the right-side **Menu button** reopens it while the feed stays
+mounted. The menu behavior is shared by the mobile preview and web portal.
+
+This update made **no commit or push, public deployment, new APK, mainnet
+transaction or paid-service purchase**. Public testnet deployment and an
+independent contract and fraud review remain required. Caps and deduplication
+reduce basic abuse but do not prove one person per account. Public provider
+acceptance, release signing and the approved credential rotation remain separate
+operational work. The earlier Personal Media OS acceptance section is preserved
+below as a historical record, not a claim that this new build is deployed.
+
+## Earlier Personal Media OS acceptance — 12 October 2026
+
+The new four-stage release adds private organization/memory/goals, permissioned
+Assistant proposals, a separate workflow worker and rights/ledger insights to
+the shared mobile and portal Studio. See [MEDIA-OS.md](MEDIA-OS.md).
+The additive schema is `20261012_0004`.
+
+Local acceptance: **397 backend tests passed**, with two explicit opt-in resource
+checks skipped. **52 mobile tests passed** and TypeScript passed. The website and
+shared Studio export built successfully; all **10 website tests passed**. Browser
+acceptance confirmed mobile-created projects, metadata, goals, memory and ledger
+data in the portal. A reminder and synthetic-video export completed through the
+real local workers. A free local Qwen model is installed,
+with cloud inference disabled. Public hosted API inference is still guided unless
+a model is configured on that same host.
+
+This release is not publicly deployed or packaged into a new store binary. The
+historical notes below do not prove today's provider/cloud acceptance. Production
+provider verification, release signing and the approved Neon credential rotation
+remain separate operational work.
+
+Preview note: the standalone mobile preview passed in Chrome. The Codex in-app
+browser rejected some of its cross-origin requests after preflight, even with
+loopback routing; the same-origin portal loaded every workspace tool there.
+The side view is therefore open to the shared portal, not the standalone preview.
+
+## Historical integration follow-up — 9 September 2026
 
 ## Current budget decision
 

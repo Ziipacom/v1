@@ -18,6 +18,7 @@ import {
   Menu,
   Pencil,
   Plus,
+  Sparkles,
 } from "lucide-react-native";
 import {
   CategoryDock,
@@ -223,6 +224,14 @@ export function ProfileScreen({
               {guest ? "SAMPLE PROFILE" : "CREATOR"}
             </Text>
           </View>
+        </View>
+        <View style={{ paddingHorizontal: 23, paddingTop: 14 }}>
+          <Action
+            secondary
+            title="Open your Personal Media OS"
+            icon={Sparkles}
+            onPress={() => navigation.navigate("MediaOS")}
+          />
         </View>
         <View
           style={{

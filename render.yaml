@@ -127,3 +127,20 @@ services:
         sync: false
       - key: RENDER_TIMEOUT_SECONDS
         value: "180"
+      # Manual activation only after the matching private worker/model has
+      # passed native acceptance. Defaults in the application remain disabled.
+      # No paid model fallback or Render background worker is created here.
+      - key: OS_WORKFLOW_ENABLED
+        sync: false
+      - key: OS_AGENT_ENABLED
+        sync: false
+      - key: OS_ASSISTANT_LOCAL_AI_ENABLED
+        sync: false
+      - key: OS_ASSISTANT_INFERENCE_URL
+        sync: false
+      - key: OS_ASSISTANT_INFERENCE_HOST
+        sync: false
+      - key: OS_ASSISTANT_INFERENCE_KEY
+        sync: false
+      - key: OS_ASSISTANT_MODEL
+        sync: false

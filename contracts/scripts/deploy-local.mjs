@@ -4,7 +4,7 @@ const provider = new JsonRpcProvider('http://127.0.0.1:8545');
 if ((await provider.getNetwork()).chainId !== 31337n) throw new Error('Local deployment only; refusing any other chain.');
 const signer = await provider.getSigner(0);
 const contracts = {};
-for (const [key, name] of [['collectibles','ZiipaCollectibles'],['factory','ZiipaTokenFactory'],['tips','ZiipaTips']]) {
+for (const [key, name] of [['collectibles','ZiipaCollectibles'],['factory','ZiipaTokenFactory'],['tips','ZiipaTips'],['rewards','ZiipaMediaRewards']]) {
   const artifact=JSON.parse(fs.readFileSync(`artifacts/${name}.json`));
   const c=await new ContractFactory(artifact.abi,artifact.bytecode,signer).deploy();
   await c.waitForDeployment();

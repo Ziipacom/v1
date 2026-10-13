@@ -1,0 +1,14 @@
+# Root context is exclusively for the isolated inference images. The full API
+# uses backend/ as its own context and its separate .dockerignore.
+# Never send local credentials, media, model volumes or development runtimes.
+**
+!backend/
+backend/**
+!backend/inference_gateway.py
+!deploy/
+deploy/**
+!deploy/oracle-free/
+deploy/oracle-free/**
+!deploy/oracle-free/Dockerfile.inference
+!deploy/oracle-free/Dockerfile.ollama
+!deploy/oracle-free/inference-requirements.lock.txt

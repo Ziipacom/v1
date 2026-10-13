@@ -145,7 +145,7 @@ async def lifespan(app):
 
 app = FastAPI(title='Ziipa API', version='0.1.0', lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=list(TRUSTED_ORIGINS), allow_credentials=True,
-                   allow_methods=['GET', 'POST', 'PUT', 'OPTIONS'],
+                   allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
                    allow_headers=['Content-Type', 'Authorization', 'X-Request-ID', 'X-Ziipa-User'],
                    expose_headers=['X-Request-ID'])
 
@@ -361,3 +361,15 @@ from social_publishing import router as publishing_router
 app.include_router(publishing_router)
 from render_api import router as render_router
 app.include_router(render_router)
+from personal_media import router as personal_media_router
+app.include_router(personal_media_router)
+from media_workflows import router as media_workflows_router
+app.include_router(media_workflows_router)
+from assistant_api import router as assistant_router
+app.include_router(assistant_router)
+from agent_api import router as agent_router
+app.include_router(agent_router)
+from media_rewards import router as rewards_router
+app.include_router(rewards_router)
+from rewards_redemption import router as rewards_settlement_router
+app.include_router(rewards_settlement_router)

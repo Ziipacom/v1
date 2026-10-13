@@ -12,7 +12,7 @@ if ((await provider.getNetwork()).chainId !== BigInt(chainId)) throw new Error('
 const signer = new Wallet(privateKey, provider);
 const balance = await provider.getBalance(signer.address);
 if (balance === 0n) throw new Error('The deployment wallet needs Base Sepolia ETH.');
-const names = [['collectibles','ZiipaCollectibles'], ['factory','ZiipaTokenFactory'], ['tips','ZiipaTips']];
+const names = [['collectibles','ZiipaCollectibles'], ['factory','ZiipaTokenFactory'], ['tips','ZiipaTips'], ['rewards','ZiipaMediaRewards']];
 const registry = {[chainId]: {}};
 for (const [key, name] of names) {
   const artifact = JSON.parse(fs.readFileSync(`artifacts/${name}.json`, 'utf8'));
