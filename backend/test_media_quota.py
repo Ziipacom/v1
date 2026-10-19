@@ -72,6 +72,14 @@ def fake_renderer(monkeypatch, *, size=40, barrier=None):
         path.write_bytes(b'R' * size)
         return path, 1.0
     monkeypatch.setattr(render, 'render_files', create)
+    # Quota tests intentionally encode sentinel bytes, not a real MP4. Supply
+    # matching verified metadata at the same probe boundary used after encoding;
+    # actual codec/canvas verification belongs to the real-FFmpeg render tests.
+    def probe(path, content_type):
+        assert path.name == 'output.mp4' and content_type == 'video/mp4'
+        assert path.read_bytes() == b'R' * size
+        return 1.0, [{'codec_type': 'video', 'width': 320, 'height': 240}]
+    monkeypatch.setattr(render, '_probe', probe)
 
 
 def test_quota_counts_all_owned_media_and_active_reservations_without_double_counting_completion(quota_db):
@@ -156,6 +164,8 @@ def test_two_simultaneous_sqlite_render_commits_cannot_exceed_project_cap(quota_
             future.result(timeout=10)
     with factory() as session:
         assert sorted(session.get(render.RenderJob, job_id).status for job_id in job_ids) == ['failed', 'ready']
+        ready = next(session.get(render.RenderJob, job_id) for job_id in job_ids if session.get(render.RenderJob, job_id).status == 'ready')
+        assert (ready.output_width, ready.output_height) == (320, 240)
         assert quota.usage(session, None) == 240
         assert session.scalar(select(func.count()).select_from(CreatorMedia)) == 3
 
@@ -268,6 +278,8 @@ def test_sqlite_real_write_lock_serializes_reservation_against_render_commit(quo
     with factory() as session:
         assert quota.usage(session, owner) == 140
         assert session.scalar(select(func.count()).select_from(PendingUpload)) == 0
+        ready = session.scalar(select(render.RenderJob))
+        assert ready.status == 'ready' and (ready.output_width, ready.output_height) == (320, 240)
 
 
 def test_unknown_database_fails_closed_without_reading_capacity():

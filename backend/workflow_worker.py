@@ -235,7 +235,18 @@ def next_wakeup_at(session):
         return utcnow()
     scheduled = session.scalar(select(func.min(OsWorkflow.next_run)).where(OsWorkflow.enabled.is_(True), OsWorkflow.trigger == 'scheduled'))
     recovery = session.scalar(select(func.min(OsWorkflowRun.lease_until)).where(OsWorkflowRun.status == 'running', OsWorkflowRun.external_ref.is_(None)))
-    deadlines = [aware(value) for value in (scheduled, recovery) if value is not None]
+    import creation_campaigns
+    campaign_due = None
+    if creation_campaigns.config.enabled:
+        from campaign_worker import next_wakeup_at as campaign_wakeup
+        campaign_due = campaign_wakeup(session)
+    from calendar_worker import next_wakeup_at as calendar_wakeup
+    calendar_due = calendar_wakeup(session)
+    from live_recordings_worker import next_wakeup_at as recording_wakeup
+    recording_due = recording_wakeup(session)
+    from notification_worker import next_wakeup_at as notification_wakeup
+    notification_due = notification_wakeup(session)
+    deadlines = [aware(value) for value in (scheduled, recovery, campaign_due, calendar_due, recording_due, notification_due) if value is not None]
     return min(deadlines) if deadlines else None
 
 
@@ -274,9 +285,27 @@ def run_worker(stop, *, once=False, coordinator=cache, session_factory=SessionLo
                 coordinator.set(key, identity, ex=max(180, config.poll_seconds * 3))
                 if claimed and not stop.is_set():
                     dispatch(session_factory, *claimed)
+                if should_scan and not stop.is_set():
+                    from campaign_worker import tick as campaign_tick
+                    campaign_tick(session_factory)
+                if should_scan and not stop.is_set():
+                    from calendar_worker import tick as calendar_tick
+                    calendar_tick(session_factory)
+                if should_scan and not stop.is_set():
+                    from live_recordings_worker import tick as recording_tick
+                    recording_tick(session_factory)
+                if should_scan and not stop.is_set():
+                    from notification_worker import tick as notification_tick
+                    notification_tick(session_factory)
                 if should_scan:
                     with session_factory() as session:
                         next_due = next_wakeup_at(session)
+                from campaign_worker import heartbeat as campaign_heartbeat
+                campaign_heartbeat(coordinator)
+                from live_recordings_worker import heartbeat as recording_heartbeat
+                recording_heartbeat(coordinator)
+                from notification_worker import heartbeat as notification_heartbeat
+                notification_heartbeat()
                 if once:
                     return
             except Exception:

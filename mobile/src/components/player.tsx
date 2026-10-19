@@ -95,7 +95,7 @@ function VideoPlayer({ source, item }: Props) {
       >
         <VideoView
           player={player}
-          style={{ flex: 1 }}
+          style={{ width: "100%", height: "100%" }}
           contentFit="contain"
           nativeControls
           fullscreenOptions={{ enable: !item.captions?.length }}

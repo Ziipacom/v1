@@ -214,22 +214,72 @@ not establish release equivalence or readiness for an unrestricted public launch
 
 `workflow-compose.json` runs `workflow_worker.py` in a separate Compose project
 and systemd unit using the **same reviewed ARM64 image** and existing eight-key,
-root-only environment file. It adds no VM, disk, registry, inbound port or secret.
-The container has a read-only root, an unprivileged user, no Linux capabilities,
-16 MiB ephemeral scratch, a 512 MiB memory/no-swap limit and a 0.25 CPU limit.
-Both containers share the existing VM's actual CPU; these limits do not add
-capacity. Keep the original renderer manifest and unit unchanged.
+root-only storage environment file. The renderer's configuration is unchanged.
+The workflow process remains enabled for existing reviewed reminders/render jobs
+and public-profile sync. The optional `/etc/ziipa/workflow-worker.env` file is
+absent by default; without it, recording imports, Web Push, campaigns and calendar
+automation remain disabled by the application's defaults. This package provisions
+no VM, disk, registry, paid service, inbound port, API key or webhook.
 
-Deploy the Media OS API migration first, rebuild the reviewed local image with
-`workflow_worker.py`, then use the existing offline preflight to verify its
-architecture and protected TLS/storage configuration. The workflow process
+The container has a read-only root, an unprivileged user, no Linux capabilities,
+**128 MiB ephemeral `/tmp` scratch**, a **512 MiB memory/no-swap limit** and a
+**0.25 CPU limit**. `RENDER_WORK_DIR=/tmp/ziipa-workflows` is writable inside that
+bounded tmpfs. One import can contain at most 100 MiB; FFmpeg export still runs in
+the separate renderer. Tmpfs counts against container memory, and the R2 upload
+also allocates up to 100 MiB in process memory. The offline workflow preflight
+requires at least 3 GiB host RAM for both workers and the OS; 4 GiB remains the
+recommended starting host. Check all other running containers/models and free
+allocation before enabling new work. These limits do not add VM capacity.
+
+### Optional workflow-only settings
+
+To stage optional features, copy `workflow.env.example` through a secure editor
+to `/etc/ziipa/workflow-worker.env` **only when it does not already exist**. Keep
+it root:root mode 0600 inside root-owned, non-writable-by-others directories.
+Do not append these settings to `render-worker.env`, and do not copy the full
+API `.env`. A missing optional file is accepted; an existing malformed, symlinked,
+unprotected or unrecognized configuration blocks startup without printing values.
+
+The example explicitly leaves `LIVE_RECORDINGS_ENABLED`, `PUSH_ENABLED`,
+`CREATION_CAMPAIGN_ENABLED` and `OS_CALENDAR_ENABLED` false. The existing public
+profile sync setting remains true and can be disabled in this file. Only the
+Livepeer server key and the dedicated Web Push encryption/VAPID keys/contact
+are allowed as optional credentials. They reach the workflow container only;
+the renderer, agent, inference service and website do not receive this file.
+Secrets must be separately authorized for this host: permission to save a key
+locally does not authorize transferring it to Oracle or Render.
+
+For recording imports, separately configure the matching API release and its
+`LIVE_RECORDINGS_ENABLED`, `LIVE_WEBHOOK_ID` and `LIVE_WEBHOOK_SECRET`. The webhook
+ID/signing secret are **API-only**, not workflow secrets. A valid public HTTPS
+callback and user opt-in before recording are required. The workflow's optional
+file needs `LIVEPEER_API_KEY` and `LIVE_RECORDINGS_ENABLED=true` only after native
+acceptance and approval; there is no automatic broadcast or public publication.
+The CDN allowlist intentionally rejects unsupported signed/query URLs. Complete
+an explicitly approved real-provider acceptance before claiming compatibility.
+
+Web Push requires the same dedicated encryption/VAPID keys and
+`PUSH_VAPID_SUBJECT=https://ziipa.com` on API and workflow. The stdlib-only offline
+preflight checks key encoding/size; the application must also report the actual
+P256 key pair and transport ready before opt-in device acceptance. Native Expo
+push, transcription, local AI and external publishing credentials are deliberately
+excluded from this free profile. Campaign preparation can use manual text and
+rendering; it does not acquire provider publishing authority from this package.
+Changing the profile for those capabilities requires separate resource, privacy
+and credential review. Do not loosen the allowlist by copying arbitrary secrets.
+
+Deploy API migrations through `20261019_0011` first, rebuild the reviewed local
+image with `workflow_worker.py`, then use the workflow offline preflight to verify
+the existing architecture/TLS/storage checks and optional file. The process
 checks the matching schema and Redis at startup. Set `OS_WORKFLOW_ENABLED=true`
 in the existing API configuration and redeploy it so its owner-authenticated
 `/api/os/workflows/config` can report the worker's matching scoped heartbeat.
+Match each optional API feature flag to the accepted worker feature. A generic
+workflow heartbeat is not proof of recording capability or provider acceptance.
 
 ```bash
 cd /opt/ziipa
-sudo python3 deploy/oracle-free/preflight.py
+sudo python3 deploy/oracle-free/workflow-preflight.py
 sudo docker compose -f deploy/oracle-free/workflow-compose.json config --quiet
 sudo install -m 0644 deploy/oracle-free/ziipa-workflow-worker.service /etc/systemd/system/ziipa-workflow-worker.service
 sudo systemctl daemon-reload
@@ -237,14 +287,19 @@ sudo systemctl enable --now ziipa-workflow-worker
 sudo systemctl status ziipa-workflow-worker --no-pager
 ```
 
-The unit is separate so a workflow failure cannot stop the renderer. Do not run
+The unit is separate so a workflow failure cannot stop the renderer. Its graceful
+stop allows 300 seconds for an active import; interrupted work recovers through
+the persisted receipt/lease, never by silently publishing. Do not run
 a second workflow instance with `compose up` or `--scale`. Schedules and event
 cursors live in PostgreSQL; Redis contains only expiring readiness and wake hints.
-Users must enable a reviewed workflow or choose Run once. Actions are limited
-to reminders persisted in Ziipa, owned render-job submissions, and the existing
+Users must enable a reviewed workflow or choose Run once. Existing actions include
+reminders persisted in Ziipa, owned render-job submissions, and the existing
 bounded public Bluesky profile/posts/following sync. Public sync also requires
 outbound HTTPS to `public.api.bsky.app`. It does not provide private feeds,
-publish posts, send email/invitations, spend funds or use social OAuth secrets.
+send email/invitations, spend funds or use social OAuth secrets. Opt-in recording
+imports additionally need outbound HTTPS to Livepeer and supported CDN hosts;
+opt-in Web Push uses only the application's supported notification origins.
+Retain inbound SSH-only access; do not add a worker webhook/HTTP port.
 
 The default 60-second worker loop adds about **86,400 Redis commands per 30 days**
 when idle, plus API/work commands. It scans PostgreSQL when a committed wake hint
@@ -262,3 +317,44 @@ For image changes, schema upgrades or credential rotation, stop **both**
 `ziipa-workflow-worker` and `ziipa-render-worker`, follow the existing migration,
 secure-file and native-image checks, then restart both units. View only safe
 status fields; never print container environments or the private env file.
+
+### New recording profile acceptance
+
+The new import path needs a **native ARM** check under the actual resource caps;
+the historical September renderer acceptance above does not cover it. The opt-in
+test generates a valid 46-second MP4, writes real pages to reach exactly 100 MiB,
+verifies it with FFprobe, imports it using a mocked private R2 sink, and confirms
+private source/excerpt receipts. It does not read any host credential files,
+contact providers or broadcast. The production image excludes tests and the
+deployment directory. Mount only the four reviewed test files and nonsecret
+deployment package below; never mount the whole backend, `.env` or `.local`.
+
+```bash
+sudo docker run --rm --network none --read-only --user 10001:10001 \
+  --cap-drop ALL --security-opt no-new-privileges --cpus 0.25 \
+  --memory 512m --memory-swap 512m --pids-limit 64 \
+  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=134217728,mode=1777 \
+  --mount type=bind,src=/opt/ziipa/deploy/oracle-free,dst=/deploy/oracle-free,readonly \
+  --mount type=bind,src=/opt/ziipa/backend/test_oracle_deployment.py,dst=/app/test_oracle_deployment.py,readonly \
+  --mount type=bind,src=/opt/ziipa/backend/test_live_recordings.py,dst=/app/test_live_recordings.py,readonly \
+  --mount type=bind,src=/opt/ziipa/backend/test_rendering.py,dst=/app/test_rendering.py,readonly \
+  --mount type=bind,src=/opt/ziipa/backend/test_render_deployment.py,dst=/app/test_render_deployment.py,readonly \
+  -e DATABASE_URL=sqlite:// -e REDIS_URL=redis://127.0.0.1:6379/0 \
+  -e ZIIPA_ORACLE_WORKFLOW_RESOURCE_TEST=1 ziipa-render:oracle-arm64 \
+  python -m pytest test_oracle_deployment.py \
+  -k maximum_recording_import -q -s -p no:cacheprovider --basetemp=/tmp/acceptance
+```
+
+Record the tested source commit/image, duration and cgroup memory peak; keep
+recording imports disabled if this test or the subsequent scoped worker/provider
+acceptance fails. No native ARM or external-provider pass is implied by preparing
+this package or passing its ordinary parser/manifest tests.
+
+On October 19, 2026, the Linux **amd64** image
+`ziipa-api:livepeer-activation-review` passed this generated-input test with
+networking disabled, a read-only root, 0.25 CPU, 128 MiB tmpfs and 512 MiB memory.
+It imported **104,857,600 bytes** in **1.20 seconds** (pytest 8.80 seconds); the
+whole-container cgroup memory peak was **500,772,864 bytes**, about 477.6 MiB.
+That leaves tight headroom and is only one offline case, not a native ARM,
+real-provider or throughput acceptance. Keep recording activation gated on the
+same test on the intended native host and its aggregate free-resource budget.

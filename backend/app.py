@@ -329,6 +329,10 @@ def logout(request: Request, response: Response, session: Session = Depends(db))
     from account_services import forget_session, session_key
     key = session_key('session:', token)
     uid = cache.get(key) if token else None
+    if uid:
+        from notification_services import revoke_session_devices
+        revoke_session_devices(session, int(uid), key)
+        session.commit()
     forget_session(int(uid) if uid else None, key)
     response.delete_cookie('ziipa_session', path='/')
     return {'ok': True}
@@ -357,6 +361,12 @@ from social_api import router as social_router
 app.include_router(social_router)
 from live_api import router as live_router
 app.include_router(live_router)
+from live_recordings import router as live_recordings_router
+app.include_router(live_recordings_router)
+from live_webhooks import router as live_webhooks_router
+app.include_router(live_webhooks_router)
+from notification_api import router as notification_router
+app.include_router(notification_router)
 from social_publishing import router as publishing_router
 app.include_router(publishing_router)
 from render_api import router as render_router
@@ -369,6 +379,10 @@ from assistant_api import router as assistant_router
 app.include_router(assistant_router)
 from agent_api import router as agent_router
 app.include_router(agent_router)
+from creation_campaigns import router as campaign_router
+app.include_router(campaign_router)
+from calendar_api import router as calendar_router
+app.include_router(calendar_router)
 from media_rewards import router as rewards_router
 app.include_router(rewards_router)
 from rewards_redemption import router as rewards_settlement_router

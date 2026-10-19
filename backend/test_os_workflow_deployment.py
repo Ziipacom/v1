@@ -15,13 +15,19 @@ def test_workflow_service_is_bounded_private_and_uses_existing_reviewed_image():
     assert service['image'] == renderer['services']['render-worker']['image']
     assert service['platform'] == 'linux/arm64' and service['pull_policy'] == 'never'
     assert service['command'] == ['python', 'workflow_worker.py']
-    assert service['env_file'] == renderer['services']['render-worker']['env_file']
+    # Storage credentials keep their existing boundary; optional provider/push
+    # settings belong only to the separately preflighted workflow container.
+    assert service['env_file'][:1] == renderer['services']['render-worker']['env_file']
+    assert service['env_file'][1:] == [
+        {'path': '/etc/ziipa/workflow-worker.env', 'required': False, 'format': 'raw'}]
+    assert all(value['path'] != '/etc/ziipa/workflow-worker.env'
+               for value in renderer['services']['render-worker']['env_file'])
     assert service['user'] == '10001:10001' and service['read_only'] is True
     assert service['cap_drop'] == ['ALL'] and service['security_opt'] == ['no-new-privileges:true']
     assert not set(service) & {'ports', 'expose', 'volumes', 'privileged', 'network_mode', 'build'}
     assert service['cpus'] == '0.25' and service['mem_limit'] == service['memswap_limit'] == '512m'
     assert service['pids_limit'] <= 64
-    assert 'size=16777216' in service['tmpfs'][0] and 'noexec' in service['tmpfs'][0]
+    assert 'size=134217728' in service['tmpfs'][0] and 'noexec' in service['tmpfs'][0]
     assert 'nosuid' in service['tmpfs'][0] and 'nodev' in service['tmpfs'][0]
 
 
@@ -40,10 +46,10 @@ def test_workflow_settings_contain_only_operational_flags_and_no_secret_grants()
 
 def test_workflow_unit_supervision_cannot_start_or_stop_the_render_project():
     unit = (PACKAGE / 'ziipa-workflow-worker.service').read_text()
-    assert '/usr/bin/python3 /opt/ziipa/deploy/oracle-free/preflight.py' in unit
+    assert '/usr/bin/python3 /opt/ziipa/deploy/oracle-free/workflow-preflight.py' in unit
     assert '-f workflow-compose.json up --no-build --pull never' in unit
     assert '--exit-code-from workflow-worker' in unit
-    assert '-f workflow-compose.json stop --timeout 60 workflow-worker' in unit
+    assert '-f workflow-compose.json stop --timeout 300 workflow-worker' in unit
     assert '-f compose.json' not in unit and 'EnvironmentFile=' not in unit
-    assert 'StartLimitBurst=3' in unit and 'RestartSec=60' in unit and 'TimeoutStopSec=90' in unit
+    assert 'StartLimitBurst=3' in unit and 'RestartSec=60' in unit and 'TimeoutStopSec=330' in unit
     assert 'UMask=0077' in unit

@@ -4,16 +4,18 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-function loadApi(portalMode, response={id:7,name:'Studio member',email:'test@example.test'}, status=200) {
-  const calls=[]; const messages=[];
+function loadApi(portalMode, response={id:7,name:'Studio member',email:'test@example.test'}, status=200, standalone=false) {
+  const calls=[]; const messages=[]; const redirects=[];
   const exports={};
   const source=readFileSync(new URL('../../mobile/src/lib/api.web.ts', import.meta.url), 'utf8');
   const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+  const browserWindow={location:{origin:'https://ziipa.com',replace:(path)=>redirects.push(path)},parent:{postMessage:(...args)=>messages.push(args)}};
+  if(standalone) browserWindow.parent=browserWindow;
   const context={exports,require:(name)=>{assert.equal(name,'./config');return {portalMode,validateOrigin:()=> 'https://ziipa.com',authorizationHeaders:(token)=>token&&!portalMode?{Authorization:`Bearer ${token}`}:{}};},
-    AbortController,setTimeout,clearTimeout,Date,window:{location:{origin:'https://ziipa.com'},parent:{postMessage:(...args)=>messages.push(args)}},
+    AbortController,setTimeout,clearTimeout,Date,window:browserWindow,
     fetch:async(url,options)=>{calls.push({url,options});return {ok:status>=200&&status<300,status,json:async()=>response};}};
   vm.runInNewContext(compiled,context);
-  return {api:exports,calls,messages};
+  return {api:exports,calls,messages,redirects};
 }
 test('portal restores the existing cookie session without issuing or exposing a bearer token', async()=>{
   const {api,calls}=loadApi(true);
@@ -44,6 +46,24 @@ test('standalone browser preview keeps bearer sessions separate from website coo
 test('expired portal sessions do not fall back to sample mode or cached identity', async()=>{
   const {api}=loadApi(true,{detail:'Sign in required'},401);
   assert.equal(await api.readSession(),null);
+});
+
+test('top-level Studio logout returns to portal sign-in without messaging an absent parent',async()=>{
+  const {api,calls,messages,redirects}=loadApi(true,{},200,true);
+  await api.request('/api/mobile/auth/logout','ziipa-portal-cookie',{});
+  await api.clearSession();
+  assert.equal(calls[0].url,'https://ziipa.com/api/auth/logout');
+  assert.deepEqual(redirects,['/portal']);
+  assert.equal(messages.length,0);
+});
+
+test('top-level Studio cookie expiry redirects to portal while non-portal preview does not',async()=>{
+  const portal=loadApi(true,{detail:'Sign in required'},401,true);
+  assert.equal(await portal.api.readSession(),null);
+  assert.deepEqual(portal.redirects,['/portal']);
+  const preview=loadApi(false,{},200,true);
+  await preview.api.clearSession();
+  assert.deepEqual(preview.redirects,[]);
 });
 test('API helper rejects arbitrary URLs before credentials can leave the API', async()=>{
   const {api,calls}=loadApi(true);

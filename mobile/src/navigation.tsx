@@ -19,7 +19,12 @@ import { ComposerScreen } from "./screens/editor";
 import { ConnectionsScreen } from "./screens/connections";
 import { PublishingScreen } from "./screens/publishing";
 import { ExportsScreen } from "./screens/exports";
+import { CampaignsScreen } from "./screens/campaigns";
+import { CalendarScreen } from "./screens/calendar";
 import { LiveScreen } from "./screens/live";
+import { RecordingsScreen } from "./screens/recordings";
+import { NotificationsScreen } from "./screens/notifications";
+import { NotificationBridge } from "./components/notification-bridge";
 import { PostScreen } from "./screens/post";
 import {
   LegalScreen,
@@ -102,6 +107,7 @@ export function Navigation() {
         },
       }}
     >
+      {session && <NotificationBridge />}
       <Stack.Navigator
         initialRouteName={portalMode ? "Studio" : undefined}
         screenOptions={{
@@ -169,6 +175,16 @@ export function Navigation() {
               options={{ title: "Rendered exports" }}
             />
             <Stack.Screen
+              name="Campaigns"
+              component={CampaignsScreen}
+              options={{ title: "Creator campaigns" }}
+            />
+            <Stack.Screen
+              name="Calendar"
+              component={CalendarScreen}
+              options={{ title: "Creator calendar" }}
+            />
+            <Stack.Screen
               name="Publishing"
               component={PublishingScreen}
               options={{ title: "Publish to your networks" }}
@@ -177,6 +193,16 @@ export function Navigation() {
               name="Live"
               component={LiveScreen}
               options={{ title: "Live broadcasts" }}
+            />
+            <Stack.Screen
+              name="Recordings"
+              component={RecordingsScreen}
+              options={{ title: "Private recordings & clips" }}
+            />
+            <Stack.Screen
+              name="Notifications"
+              component={NotificationsScreen}
+              options={{ title: "Private updates" }}
             />
           </>
         ) : (

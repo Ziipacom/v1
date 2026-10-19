@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
-import { Alert, Linking, ScrollView, Share, Switch, Text, View } from "react-native";
+import {
+  Alert,
+  Linking,
+  ScrollView,
+  Share,
+  Switch,
+  Text,
+  View,
+} from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { LogOut, ShieldCheck, Trash2 } from "lucide-react-native";
+import { Bell, LogOut, ShieldCheck, Trash2 } from "lucide-react-native";
 import { Action, Field, Notice } from "../components/ui";
 import { useZiipa } from "../provider";
 import { color, styles } from "../theme";
@@ -94,6 +102,12 @@ export function SettingsScreen({
       keyboardShouldPersistTaps="handled"
     >
       <Text style={styles.title}>Make it{"\n"}your space.</Text>
+      <Action
+        title="Private updates · notification preferences"
+        secondary
+        icon={Bell}
+        onPress={() => navigation.navigate("Notifications")}
+      />
       <View style={styles.panel}>
         <Text style={styles.heading}>{session?.user.name}</Text>
         <Text style={styles.body}>{session?.user.email}</Text>
@@ -171,7 +185,8 @@ export function SettingsScreen({
       <View style={styles.panel}>
         <Text style={styles.heading}>Privacy controls</Text>
         <Text style={styles.small}>
-          Choose who can view your profile and whether Ziipa can use your activity for discovery.
+          Choose who can view your profile and whether Ziipa can use your
+          activity for discovery.
         </Text>
         <Action
           secondary
@@ -179,21 +194,28 @@ export function SettingsScreen({
           disabled={busy}
           onPress={() => {
             const values = ["public", "members", "private"];
-            const next = values[(values.indexOf(privacy.profile_visibility) + 1) % values.length];
+            const next =
+              values[
+                (values.indexOf(privacy.profile_visibility) + 1) % values.length
+              ];
             setPrivacy({ ...privacy, profile_visibility: next });
           }}
         />
-        {([
-          ["discoverable", "Appear in creator discovery"],
-          ["personalized_feeds", "Personalize my feeds"],
-          ["marketing_emails", "Product and creator emails"],
-        ] as const).map(([key, label]) => (
+        {(
+          [
+            ["discoverable", "Appear in creator discovery"],
+            ["personalized_feeds", "Personalize my feeds"],
+            ["marketing_emails", "Product and creator emails"],
+          ] as const
+        ).map(([key, label]) => (
           <View style={styles.between} key={key}>
             <Text style={[styles.body, { flex: 1 }]}>{label}</Text>
             <Switch
               accessibilityLabel={label}
               value={privacy[key]}
-              onValueChange={(value) => setPrivacy({ ...privacy, [key]: value })}
+              onValueChange={(value) =>
+                setPrivacy({ ...privacy, [key]: value })
+              }
               trackColor={{ true: color.purple }}
               disabled={busy}
             />
@@ -203,19 +225,30 @@ export function SettingsScreen({
           title="Save privacy controls"
           icon={ShieldCheck}
           busy={busy}
-          onPress={() => void run(async () => {
-            setPrivacy(await api<typeof privacy>("/api/account/privacy", privacy));
-            setMessage("Your privacy controls are saved.");
-          })}
+          onPress={() =>
+            void run(async () => {
+              setPrivacy(
+                await api<typeof privacy>("/api/account/privacy", privacy),
+              );
+              setMessage("Your privacy controls are saved.");
+            })
+          }
         />
         <Action
           secondary
           title="Export my Ziipa data"
           disabled={busy}
-          onPress={() => void run(async () => {
-            const exported = await api<Record<string, unknown>>("/api/account/export");
-            await Share.share({ title: "My Ziipa data export", message: JSON.stringify(exported, null, 2) });
-          })}
+          onPress={() =>
+            void run(async () => {
+              const exported = await api<Record<string, unknown>>(
+                "/api/account/export",
+              );
+              await Share.share({
+                title: "My Ziipa data export",
+                message: JSON.stringify(exported, null, 2),
+              });
+            })
+          }
         />
       </View>
       {!!error && <Notice error text={error} />}

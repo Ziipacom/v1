@@ -152,7 +152,18 @@ export type RootStack = {
   Connections: { tab?: "accounts" | "feed" | "people" | "outbox" } | undefined;
   Publishing: { itemId?: string; renderId?: string } | undefined;
   Exports: { itemId: string };
-  Live: { tab?: "watch" | "broadcast" } | undefined;
+  Campaigns: { itemId?: string; campaignId?: string } | undefined;
+  Calendar:
+    | {
+        eventId?: string;
+        streamId?: string;
+        campaignId?: string;
+        kind?: "reminder" | "stream" | "campaign";
+      }
+    | undefined;
+  Live: { tab?: "watch" | "broadcast"; streamId?: string } | undefined;
+  Recordings: { streamId?: string } | undefined;
+  Notifications: { deliveryId?: string } | undefined;
   Settings: undefined;
   Legal: { kind: "privacy" | "terms" | "community" };
   Moderation: undefined;

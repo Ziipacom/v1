@@ -1093,6 +1093,14 @@ export function ComposerScreen({
                   }
                 />
               )}
+              {!guest && saved.media_id && saved.content_type?.startsWith("video/") && (
+                <Action
+                  title="Prepare a reviewed release campaign"
+                  icon={Share2}
+                  secondary
+                  onPress={() => navigation.navigate("Campaigns", { itemId: saved.id })}
+                />
+              )}
               {!guest && saved.visibility === "published" && saved.media_id && (
                 <Action
                   title="Publish directly to authorized networks"

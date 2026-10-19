@@ -456,6 +456,23 @@ def test_cached_deadline_wakes_without_database_polling_until_due(isolated, monk
     assert client.get('/api/os/workflows/runs').json()[0]['status'] == 'completed'
 
 
+def test_calendar_deadline_uses_shared_worker_without_minute_database_polling(isolated, monkeypatch):
+    import calendar_worker
+    factory, _, _, _, _, _ = isolated
+    stop = StopAfter(12)
+    coordinator = WakeCoordinator()
+    scans, calendar_ticks = [], []
+    original = worker.scan_due
+    monkeypatch.setattr(worker, 'scan_due', lambda session: scans.append(stop.time) or original(session))
+    monkeypatch.setattr(worker, 'utcnow', lambda: NOW + timedelta(seconds=stop.time))
+    monkeypatch.setattr(calendar_worker, 'next_wakeup_at',
+                        lambda session: NOW + timedelta(minutes=10) if stop.time < 600 else None)
+    monkeypatch.setattr(calendar_worker, 'tick', lambda factory: calendar_ticks.append(stop.time))
+    worker.run_worker(stop, coordinator=coordinator, session_factory=factory, clock=lambda: stop.time)
+    assert scans == calendar_ticks == [0, 600]
+    assert sum(call == ('set', workflows.heartbeat_key()) for call in coordinator.calls) == 12
+
+
 def test_wake_hint_arriving_during_scan_is_not_lost(isolated, monkeypatch):
     factory, _, _, _, _, _ = isolated
     stop = StopAfter(3)

@@ -14,6 +14,7 @@ import tempfile
 import textwrap
 import time
 import uuid
+from typing import Literal
 
 from fastapi import HTTPException
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -46,6 +47,24 @@ MAX_INPUT_BYTES = 100 * 1024 * 1024
 MAX_OUTPUT_BYTES = 25 * 1024 * 1024
 MAX_DURATION = 90
 LEASE_SECONDS = 600
+Rendition = Literal['original', 'portrait', 'square', 'landscape']
+RENDITIONS = {'original': None, 'portrait': (720, 1280), 'square': (720, 720), 'landscape': (1280, 720)}
+
+
+def rendition_descriptor(name='original'):
+    if name not in RENDITIONS:
+        raise HTTPException(422, 'Choose an original, portrait, square or landscape rendition.')
+    canvas = RENDITIONS[name]
+    return {'name': name, 'fit': 'contain', 'width': canvas[0] if canvas else None, 'height': canvas[1] if canvas else None}
+
+
+def snapshot_rendition(snapshot):
+    value = snapshot.get('rendition')
+    if value is None:
+        return rendition_descriptor()
+    if not isinstance(value, dict) or value != rendition_descriptor(value.get('name')) or value.get('name') == 'original':
+        raise HTTPException(422, 'The saved rendition descriptor is invalid.')
+    return value
 
 
 def coordination_scope():
@@ -91,6 +110,8 @@ class RenderJob(Base):
     output_sha256: Mapped[str] = mapped_column(String(64), default='')
     source_sha256: Mapped[str] = mapped_column(String(64), default='')
     duration: Mapped[float | None] = mapped_column(nullable=True)
+    output_width: Mapped[int | None] = mapped_column(nullable=True)
+    output_height: Mapped[int | None] = mapped_column(nullable=True)
     attempts: Mapped[int] = mapped_column(default=0)
     claim_token: Mapped[str] = mapped_column(String(64), default='')
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -122,7 +143,8 @@ def readiness():
             'can_render': not requirements and worker_ready, 'requirements': requirements,
             'max_input_bytes': MAX_INPUT_BYTES, 'max_output_bytes': MAX_OUTPUT_BYTES,
             'max_duration_seconds': MAX_DURATION, 'max_output_long_edge': 1280,
-            'output_type': 'video/mp4', 'features': ['trim', 'timed_captions', 'text_overlays', 'owned_soundtrack_mix']}
+            'output_type': 'video/mp4', 'features': ['trim', 'timed_captions', 'text_overlays', 'owned_soundtrack_mix', 'contain_renditions'],
+            'renditions': [rendition_descriptor(name) for name in RENDITIONS], 'rendition_fit': 'contain'}
 
 
 def _owned_media(session, owner_id, media_id, audio=False):
@@ -140,7 +162,7 @@ def _owned_media(session, owner_id, media_id, audio=False):
     return {'id': media.id, 'content_type': media.content_type, 'size': media.size}
 
 
-def input_snapshot(session, item: CreatorItem) -> dict:
+def input_snapshot(session, item: CreatorItem, rendition: Rendition = 'original') -> dict:
     try:
         parsed = ItemInput.model_validate(item.data)
     except Exception as exc:
@@ -160,15 +182,22 @@ def input_snapshot(session, item: CreatorItem) -> dict:
     for caption in edit['captions']:
         if not math.isfinite(caption['start']) or not math.isfinite(caption['end']):
             raise HTTPException(422, 'Caption times must be finite.')
-    return {'schema': 1, 'source': source, 'audio': audio, 'edit': edit}
+    descriptor = rendition_descriptor(rendition)
+    # Original is deliberately absent: every existing snapshot/hash stays valid.
+    return {'schema': 1, 'source': source, 'audio': audio, 'edit': edit,
+            **({'rendition': descriptor} if rendition != 'original' else {})}
 
 
 def snapshot_hash(snapshot) -> str:
     return hashlib.sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
 
 
-def input_fingerprint(session, item: CreatorItem) -> str:
-    return snapshot_hash(input_snapshot(session, item))
+def input_fingerprint(session, item: CreatorItem, rendition: Rendition = 'original') -> str:
+    return snapshot_hash(input_snapshot(session, item, rendition))
+
+
+def current_job_fingerprint(session, item, job):
+    return input_fingerprint(session, item, snapshot_rendition(job.snapshot)['name'])
 
 
 def resolve_rendered_media(session, owner_id: int, item: CreatorItem, render_id: str) -> CreatorMedia:
@@ -181,7 +210,7 @@ def resolve_rendered_media(session, owner_id: int, item: CreatorItem, render_id:
         raise HTTPException(404, 'Your render was not found.')
     if job.status != 'ready':
         raise HTTPException(409, 'The rendered video is not ready.')
-    if job.input_fingerprint != input_fingerprint(session, item):
+    if job.input_fingerprint != current_job_fingerprint(session, item, job):
         raise HTTPException(409, 'This render is stale. Save your edits and render again before exporting or publishing.')
     media = session.get(CreatorMedia, job.output_media_id)
     if not media or media.owner_id != owner_id or media.content_type != 'video/mp4' or media.size > MAX_OUTPUT_BYTES:
@@ -194,13 +223,15 @@ def receipt(job, session=None):
     if session is not None and status == 'ready':
         item = session.get(CreatorItem, job.item_id)
         try:
-            if not item or item.owner_id != job.owner_id or input_fingerprint(session, item) != job.input_fingerprint:
+            if not item or item.owner_id != job.owner_id or current_job_fingerprint(session, item, job) != job.input_fingerprint:
                 status, detail = 'stale', 'Saved editor settings changed. Render again before exporting.'
         except HTTPException:
             status, detail = 'stale', 'The source media or editor settings are no longer available.'
     return {'id': job.id, 'item_id': job.item_id, 'status': status, 'detail': detail,
             'input_fingerprint': job.input_fingerprint, 'output_media_id': job.output_media_id if status == 'ready' else None,
             'duration_seconds': job.duration, 'content_type': 'video/mp4',
+            'rendition': snapshot_rendition(job.snapshot)['name'], 'fit': 'contain',
+            'output_width': job.output_width, 'output_height': job.output_height,
             'created_at': job.created_at.isoformat(), 'updated_at': job.updated_at.isoformat()}
 
 
@@ -317,8 +348,17 @@ def render_files(snapshot: dict, work: Path):
     width, height = int(video['width']), int(video['height'])
     scale = min(1, 1280 / max(width, height), 720 / min(width, height))
     width, height = max(2, int(width * scale) // 2 * 2), max(2, int(height * scale) // 2 * 2)
+    rendition = snapshot_rendition(snapshot)
     shutil.copyfile(font, work / 'font.ttf')
     filters = [f'trim=start={start:.6f}:end={end:.6f}', 'setpts=PTS-STARTPTS', f'scale={width}:{height}', 'setsar=1', 'fps=30', 'format=yuv420p']
+    if rendition['name'] != 'original':
+        width, height = rendition['width'], rendition['height']
+        # Fixed, bounded canvas. Filter DAR includes sample aspect/autorotation;
+        # no user-controlled crop/filter expressions or network input are used.
+        contain = (f"scale=w='max(2,trunc(min({width},{height}*dar)/2)*2)':"
+                   f"h='max(2,trunc(min({height},{width}/dar)/2)*2)'")
+        filters = [f'trim=start={start:.6f}:end={end:.6f}', 'setpts=PTS-STARTPTS', contain,
+                   'setsar=1', f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black', 'fps=30', 'format=yuv420p']
     index = 0
     themes = {'light': ('black', 'white@0.9'), 'dark': ('white', 'black@0.75'),
               'purple': ('white', '0x5424AF@0.9'), 'lime': ('black', '0xA4E900@0.95')}
@@ -370,6 +410,9 @@ def render_files(snapshot: dict, work: Path):
     output_duration, output_streams = _probe(output, 'video/mp4')
     if not 0 < output.stat().st_size < MAX_OUTPUT_BYTES or abs(output_duration - length) > 0.25 or not any(s.get('codec_type') == 'video' for s in output_streams):
         raise RuntimeError('The render was truncated or exceeded its output limit.')
+    output_video = next(s for s in output_streams if s.get('codec_type') == 'video')
+    if (int(output_video.get('width', 0)), int(output_video.get('height', 0))) != (width, height):
+        raise RuntimeError('The actual rendered dimensions do not match the reviewed rendition canvas.')
     return output, output_duration
 
 
@@ -436,7 +479,7 @@ def process_job(session_factory, job_id: str, claim: str):
                 if not user or not job or job.status != 'processing' or job.claim_token != claim:
                     return
                 item = session.get(CreatorItem, job.item_id)
-                if not item or item.owner_id != owner_id or input_fingerprint(session, item) != job.input_fingerprint:
+                if not item or item.owner_id != owner_id or current_job_fingerprint(session, item, job) != job.input_fingerprint:
                     job.status, job.detail = 'stale', 'Editor settings changed while rendering. Save and render the current version.'
                     session.commit()
                     return
@@ -457,6 +500,9 @@ def process_job(session_factory, job_id: str, claim: str):
                 session.add(CreatorMedia(id=job.output_media_id, owner_id=owner_id, content_type='video/mp4', size=output.stat().st_size))
                 job.status, job.detail = 'ready', 'Trim, captions, overlays and selected soundtrack are baked into this private MP4.'
                 job.output_sha256, job.source_sha256, job.duration = digest, source_hash, duration
+                _, output_streams = _probe(output, 'video/mp4')
+                output_video = next(s for s in output_streams if s.get('codec_type') == 'video')
+                job.output_width, job.output_height = int(output_video['width']), int(output_video['height'])
                 job.updated_at, job.lease_until = datetime.now(timezone.utc), None
                 session.commit()
                 from media_workflows import notify_workflows

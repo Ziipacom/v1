@@ -38,9 +38,13 @@ def cases():
               (WEBSITE + "/studio/index.html", "studio")]
     for origin in (API, WEBSITE):
         result.extend((origin + path, kind) for path, kind in (
-            ("/api/health", "health"), ("/api/live/config", "live"),
+            ("/api/livez", "liveness"), ("/api/health", "health"), ("/api/live/config", "live"),
             ("/api/publishing/config", "authenticated"),
             ("/api/render/config", "authenticated"),
+            ("/api/os/campaigns/config", "authenticated"),
+            ("/api/os/calendar/config", "authenticated"),
+            ("/api/live/recordings/config", "authenticated"),
+            ("/api/notifications/config", "authenticated"),
             (METADATA_PATH, "metadata"), (JWKS_PATH, "jwks")))
     return result
 
@@ -70,6 +74,9 @@ def validate(kind, status, content_type, body):
     if kind == "authenticated":
         ok = isinstance(value.get("detail"), str)
         return ok, "Unauthenticated request rejected; internal readiness not tested", {}
+    if kind == "liveness":
+        ok = value.get('status') == 'alive' and value.get('scope') == 'process'
+        return ok, "Process liveness checked; workers and providers not tested", {}
     if kind == "health":
         fields = {
             "database": {"connected", "unavailable"},

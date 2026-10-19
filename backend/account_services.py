@@ -172,6 +172,8 @@ def reset_password(data: ResetInput, session: Session = Depends(db)):
     user = session.get(User, row.owner_id)
     user.password_hash = passwords.hash(data.password)
     row.used_at = now
+    from notification_services import revoke_all_devices
+    revoke_all_devices(session, user.id)
     session.commit()
     revoke_user_sessions(user.id)
     return {'ok': True}
@@ -205,6 +207,10 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
     from media_workflows import export_workflows_data
     from assistant_api import export_assistant_data
     from agent_api import export_agent_data
+    from creation_campaigns import export_campaigns_data
+    from calendar_services import export_calendar_data
+    from live_recordings import export_live_recordings
+    from notification_services import export_notification_data
     from media_rewards import export_rewards_data
     from rewards_redemption import export_settlement_data
     state = state_for(session, user)
@@ -226,6 +232,10 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
         'workflows': export_workflows_data(session, user.id),
         'assistant': export_assistant_data(session, user.id),
         'agent': export_agent_data(session, user.id),
+        'creation_campaigns': export_campaigns_data(session, user.id),
+        'calendar': export_calendar_data(session, user.id),
+        'live_recordings': export_live_recordings(session, user.id),
+        'notifications': export_notification_data(session, user.id),
         'media_rewards': export_rewards_data(session, user.id),
         'reward_distributions': export_settlement_data(session, user.id),
         'comments': [{'id': r.id, 'item_id': r.item_id, 'body': r.body, 'created_at': r.created_at.isoformat()} for r in session.scalars(select(CreatorComment).where(CreatorComment.owner_id == user.id))],

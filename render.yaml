@@ -78,6 +78,40 @@ services:
         sync: false
       - key: LIVEPEER_API_KEY
         sync: false
+      # New features stay disabled in application defaults. Set these manually
+      # only after the matching free Oracle workflow/render release passes its
+      # native acceptance and provider/notification consent checks. Never add
+      # a paid worker or turn on speech/model downloads during Blueprint sync.
+      # For a new service, enter literal false for feature booleans (not an
+      # empty value). Omit unused secrets until the approved setup supplies them.
+      - key: CREATION_CAMPAIGN_ENABLED
+        sync: false
+      - key: OS_CALENDAR_ENABLED
+        sync: false
+      - key: LIVE_RECORDINGS_ENABLED
+        sync: false
+      - key: LIVE_WEBHOOK_ID
+        sync: false
+      - key: LIVE_WEBHOOK_SECRET
+        sync: false
+      - key: TRANSCRIPTION_ENABLED
+        sync: false
+      - key: PUSH_ENABLED
+        sync: false
+      - key: PUSH_ENCRYPTION_KEY
+        sync: false
+      - key: PUSH_EXPO_ENABLED
+        sync: false
+      - key: PUSH_EXPO_ACCESS_TOKEN
+        sync: false
+      - key: PUSH_VAPID_PRIVATE_KEY
+        sync: false
+      - key: PUSH_VAPID_PUBLIC_KEY
+        sync: false
+      - key: PUSH_VAPID_SUBJECT
+        value: https://ziipa.com
+      - key: PUSH_WEB_ALLOWED_ORIGINS
+        value: https://fcm.googleapis.com,https://updates.push.services.mozilla.com,https://web.push.apple.com
       - key: PUBLISHING_ENCRYPTION_KEY
         sync: false
       - key: PUBLISHING_API_ORIGIN

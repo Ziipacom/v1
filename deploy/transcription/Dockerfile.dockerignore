@@ -1,0 +1,4 @@
+**
+!deploy/
+!deploy/transcription/
+!deploy/transcription/entrypoint.sh

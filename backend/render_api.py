@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app import User, current_user, db, guard
 from creator import CreatorItem
 from render_services import (RenderJob, input_snapshot, snapshot_hash, readiness, receipt,
-                             resolve_rendered_media, notify_worker)
+                             resolve_rendered_media, notify_worker, Rendition, snapshot_rendition)
 from storage_services import LocalStorage, storage
 
 router = APIRouter(prefix='/api/render')
@@ -20,6 +20,7 @@ class RenderInput(BaseModel):
     item_id: uuid.UUID
     soundtrack_rights_confirmed: bool = False
     retry_failed: bool = False
+    rendition: Rendition = 'original'
 
 
 @router.get('/config', dependencies=[Depends(current_user)])
@@ -35,7 +36,7 @@ def queue_render(data: RenderInput, user: User = Depends(current_user), session:
     item = session.get(CreatorItem, str(data.item_id))
     if not item or item.owner_id != user.id:
         raise HTTPException(404, 'Your saved creation was not found.')
-    snapshot = input_snapshot(session, item)
+    snapshot = input_snapshot(session, item, data.rendition)
     if snapshot['audio'] and not data.soundtrack_rights_confirmed:
         raise HTTPException(422, 'Confirm that you own or have a license to use the selected soundtrack.')
     fingerprint = snapshot_hash(snapshot)
@@ -107,4 +108,6 @@ def export_render(job_id: uuid.UUID, response: Response, user: User = Depends(cu
     response.headers['Cache-Control'] = 'no-store'
     return {'url': f'/api/creator/media/{media.id}' if isinstance(backend, LocalStorage) else backend.read_url(user.id, media.id),
             'media_id': media.id, 'render_id': job.id, 'rendered': True, 'content_type': media.content_type, 'size': media.size,
-            'input_fingerprint': job.input_fingerprint, 'output_sha256': job.output_sha256}
+            'input_fingerprint': job.input_fingerprint, 'output_sha256': job.output_sha256,
+            'rendition': snapshot_rendition(job.snapshot)['name'], 'fit': 'contain',
+            'output_width': job.output_width, 'output_height': job.output_height}

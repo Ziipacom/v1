@@ -204,6 +204,26 @@ def test_schema_readiness_requires_current_release_migration():
         engine.dispose()
 
 
+def test_fresh_database_and_repeated_upgrade_preserve_rendition_and_calendar_schema():
+    from sqlalchemy import inspect
+    engine = create_engine('sqlite://')
+    try:
+        migration.upgrade_database(engine)
+        migration.ensure_schema_ready(engine)
+        columns = {name: {column['name'] for column in inspect(engine).get_columns(name)}
+                   for name in ('creation_campaigns', 'campaign_deliveries', 'render_jobs',
+                                'calendar_events', 'calendar_occurrences')}
+        assert {'renditions', 'ziipa_rendition', 'artifacts', 'render_jobs', 'published_items'} <= columns['creation_campaigns']
+        assert {'rendition', 'published_item_id'} <= columns['campaign_deliveries']
+        assert {'output_width', 'output_height'} <= columns['render_jobs']
+        assert {'event_revision', 'starts_at', 'remind_at', 'checklist'} <= columns['calendar_occurrences']
+        migration.upgrade_database(engine)
+        migration.ensure_schema_ready(engine)
+        assert set(inspect(engine).get_table_names()) >= set(columns)
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.parametrize('fail', [False, True])
 def test_neon_migration_lock_and_alembic_share_one_transaction(monkeypatch, fail):
     events = []

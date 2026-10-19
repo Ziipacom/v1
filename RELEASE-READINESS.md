@@ -1,4 +1,174 @@
-# Agent and private inference acceptance — 13 October 2026
+# Live, private recordings and notifications — 19 October 2026
+
+Implemented signed Livepeer event ingestion, current-provider ownership checks,
+opt-in private recording imports, up to three real FFmpeg excerpt drafts and
+durable completion notifications. Public start rechecks live-provider and account
+privacy state. Imported clips never automatically publish. Recording URLs are
+restricted to known provider CDN paths and pinned public TLS connections; unknown
+formats/URLs, expired consent, quotas and unverified ownership fail closed.
+Account deletion now logically removes tracked provider recordings only after
+verified stream shutdown/ownership, before local stream/media cleanup. Provider
+physical retention is separate from a successful removal request.
+
+The optional push backend provides encrypted session-bound registrations, separate
+category/device consent, durable source-transaction outboxes, Expo ticket/receipt
+polling, actual Web Push encryption and bounded recovery/retention. Uncertain sends
+are not blindly retried. Provider acceptance is not reported as device display.
+The shared Studio exposes Recordings and Notifications on both clients. Native
+push needs a new binary and APNs/FCM/EAS configuration; LAN HTTP cannot Web Push.
+No device is silently registered and no startup permission request is made.
+
+Chrome's portal loading issue is addressed by the normal authenticated `/portal`
+opening same-origin `/studio/index.html` as a full-page app. Existing HttpOnly
+cookie authentication is preserved. The optional framed layout has explicit
+load/retry recovery. Real Chrome and side-view review loaded the shared Studio,
+Recordings and notification settings successfully; logged-out/expired standalone
+Studio sessions return to portal sign-in without exposing bearer tokens.
+
+Final local validation: **838 backend tests passed, four opt-in resource checks
+skipped; 79 mobile tests; 12 website tests; TypeScript and full website/shared
+Studio production build passed.** A signed synthetic HTTP callback imported a
+real generated 46-second MP4 and rendered three private 15-second square clips,
+verifying dimensions and SHA256. The Linux image also passed offline imports,
+notification crypto, migration head `0011`, hosted flags-off checks and actual
+portrait/square/landscape FFmpeg renders in a read-only unprivileged container
+limited to 1 CPU/1 GiB. This is not ARM or production load acceptance.
+
+The optional free Oracle workflow package now has a separate root-only
+workflow settings file and a 128 MiB writable work directory within its existing
+512 MiB memory / 0.25 CPU cap. Renderer credentials remain separate. Native Expo
+push, AI/transcription and external publishing credentials are excluded from
+this profile, and new feature flags default off. A separate opt-in Linux AMD64
+test imported an exact 100 MiB generated/padded valid MP4 through real FFprobe
+and a mocked R2 sink, keeping source/clip drafts private. With networking off,
+read-only root and the actual 512 MiB / 128 MiB scratch caps, import took 1.20s;
+whole test-container memory peaked at 500,772,864 bytes (about 478 MiB). This is
+tight headroom, not native ARM or production throughput acceptance. No provider
+requests or mutations occurred in that test. Oracle remains unmodified.
+
+The local API/workflow/renderer and mobile preview are running. Browser push keys
+exist only in protected ignored local settings; native push remains disabled.
+Livepeer owner sign-in and the existing Ziipa Studio project were verified. The
+loaded key list contains an existing server-only key with CORS disabled; no new
+key was created. After explicit owner approval, it was encrypted with Windows
+CurrentUser protection in an ACL-restricted local AppData file outside
+OneDrive/Git, and passed only to API/recording workflow child processes. The
+temporary plaintext staging file was removed from the project.
+The shared backend dotenv file is guarded against credential fallback into other
+workers. Startup parsing failures are sanitized. A real bounded authenticated
+Livepeer GET returned HTTP 200 with zero streams; it made no provider mutations.
+Local portal live configuration now reports configured and workflow ready. The
+public API responds, but the new webhook route returns HTTP 404; registering a
+callback before deploying the receiver would not work. Signed HTTPS webhook
+activation, a designated real broadcast, actual push
+arrival on opted-in devices and public deployment remain release gates. No real
+broadcast, provider recording, push message, paid service, new native binary,
+commit/push or cloud deployment was created by this update. Dependency tooling
+advisories are recorded in `mobile/store/RELEASE.md`; they were not hidden by a
+forced SDK downgrade. Operation: [LIVE-RECORDINGS-PUSH.md](backend/LIVE-RECORDINGS-PUSH.md).
+
+The current GitHub CLI credential reports repository `pull=true`, `push=false`,
+`admin=false`. No new write credential was added. Owner approval so far covers
+the existing Livepeer key in the protected **local** configuration only; it does
+not authorize cloud transfers of that key, new production push secrets, or a
+webhook signing secret. Existing free-plan source packages are prepared, but
+publication, cloud activation and native ARM acceptance remain separate gates.
+
+## Earlier platform versions and calendar acceptance
+
+The shared mobile/portal Studio now supports original, portrait (720×1280),
+square (720×720) and landscape (1280×720) video exports. Each actual MP4 has a
+format-bound input fingerprint, probed output dimensions and SHA256. Contain
+padding preserves the source frame. Campaign approval binds the entire selected
+version set and each destination's version; the UI requires reviewing every
+selected export. Ordinary Publishing still rejects private drafts. Only exact
+campaign authority can send a private alternate version to its approved target.
+
+Migration `20261019_0008` adds rendition lineage and dimensions;
+`20261019_0009` adds private calendar events and durable occurrences. The shared
+Calendar includes a date picker, local time, IANA timezone, daily/weekly recurrence,
+DST gap/fold rules, pause/resume, acknowledgement and read-only stream preflight.
+The existing workflow process delivers reminders without an additional scheduler.
+Calendar plans cannot approve/reschedule campaigns or start public broadcasts.
+Private ICS exports omit cancelled series, escape/fold UTF-8 safely, and reject
+oversized results rather than silently truncating them. Export filters support
+event ID and offset-aware date ranges.
+
+Final local acceptance passed **699 backend tests**, with **three opt-in resource
+checks skipped**, **69 mobile tests**, TypeScript and **10 website tests**. The
+website production build regenerated Studio from the final mobile source. Tests
+cover fresh/repeated migrations, legacy render compatibility, exact per-platform
+authority, concurrency/quota limits, DST folds/gaps, restart idempotency, owner
+isolation, private export bounds, deletion and provider preflight failures.
+
+Actual HTTP/worker acceptance produced all three named canvases and verified every
+downloaded file's dimensions and digest. Browser review played all three exports;
+approval stayed disabled until every format was reviewed. The scheduled synthetic
+Ziipa-only campaign then completed. Its exact portrait MP4 became one feed post;
+the source and alternate versions remained private, with no duplicate public
+versions. Cookie and bearer sessions returned identical campaign records.
+
+A separate real calendar fixture delivered its reminder, exported private ICS and
+returned the same data through cookie and bearer authentication. Browser checks
+confirmed acknowledgement, pause/resume and unchanged local times across the
+November DST change. The rebuilt side-view portal displayed that calendar and the
+same completed campaign. Chrome's embedded portal frames stalled during this
+review, while its mobile preview and the side-view portal worked; HTTP assets and
+the direct shared Studio entry point also worked. No source workaround or browser
+security change was made for that browser-specific issue.
+
+The final API image built and passed actual generated-video rendering for all
+three canvases in an offline, read-only, unprivileged Linux container limited to
+1 CPU/1 GiB. It imported the API/workers, exposed calendar/campaign routes, reported
+migration head `0009` and kept new hosted flags disabled. This short synthetic
+check is packaging evidence, not ARM or full-duration throughput acceptance.
+
+No external post, public broadcast, cloud deployment, paid service, signed mobile
+binary or store submission was made. Signed provider webhooks, recording-to-clips,
+email/push delivery, external calendar synchronization and real provider/device
+acceptance remain unfinished. Public broadcasts retain explicit Live controls.
+
+## Earlier creation campaign acceptance — 19 October 2026
+
+The shared mobile/portal Studio now includes Creation Campaigns. An additive
+`20261019_0007` migration stores source/editor/rights fingerprints, immutable
+review manifests, exact rendered-file digests, explicit destination/schedule
+approval and durable delivery receipts. The existing workflow process advances
+campaign stages; the general Assistant/Agent receives no new publishing grant.
+See [CREATION-WORKFLOWS.md](CREATION-WORKFLOWS.md).
+
+Local acceptance passed **639 backend tests** with **three opt-in resource checks
+skipped**, **61 mobile tests**, TypeScript and **10 website tests**. The final
+website build regenerated the portal from the same mobile source. Browser QA
+also fixed the shared VideoView's intrinsic portrait sizing and verified a
+360px contained preview with actual playback.
+
+The current API Docker image built successfully and imported the API, campaign
+worker, speech and planning modules in a network-disabled, read-only container
+limited to 1 CPU/1 GiB. OpenAPI included campaign approval routes, migration head
+was `0007`, and hosted campaign activation remained false by default. This is
+packaging acceptance, not a hosted deployment.
+
+A synthetic recording completed the real HTTP/worker flow: private upload,
+explicit AI rights/consent, actual local whisper.cpp transcription, private Qwen
+copy suggestions, reviewed captions applied to Studio, a fresh rendered MP4,
+browser playback/approval and scheduled local Ziipa publication. The posted
+media's SHA256 matched the reviewed export; the original stayed a private draft.
+Cookie and mobile bearer authentication returned the same completed campaign,
+also visible in the portal and mobile preview. The fixture had **zero external
+destinations**; mocked-provider tests cover failures, checkpoint cancellation,
+staged polling, uncertain outcomes, stable request IDs and restart recovery.
+
+The optional CPU speech image passed actual synthetic recognition without
+networking, with a read-only root, 2 CPUs and 1 GiB RAM. Runtime/model downloads
+are pinned and explicit; no request downloads models. This is x86 CPU evidence,
+not ARM, free-cloud capacity or physical-device acceptance. All new hosted flags
+remain disabled by default. No public social post, cloud deployment, mainnet
+transaction, new signed APK/store submission or paid service was made. Richer
+renditions, calendar/stream automation, external analytics, portable Ziipa public
+records and personal/commercial connectors remain the next roadmap stages.
+
+## Earlier agent and private inference acceptance — 13 October 2026
 
 The new release adds per-account opt-in agent policies, owner-scoped durable
 tasks/step receipts, bounded model planning, worker leases/recovery, idempotent

@@ -508,6 +508,30 @@ export function MediaOSScreen({
         <Text style={styles.small}>
           Media, memory, plans and a helping hand in one private workspace.
         </Text>
+        <Action
+          secondary
+          title="Campaigns · create, review and distribute"
+          icon={CalendarClock}
+          onPress={() => navigation.navigate("Campaigns")}
+        />
+        <Action
+          secondary
+          title="Calendar · schedules and stream preflight"
+          icon={CalendarClock}
+          onPress={() => navigation.navigate("Calendar")}
+        />
+        <Action
+          secondary
+          title="Recordings · private VODs and clips"
+          onPress={() => navigation.navigate("Recordings")}
+        />
+        {session && (
+          <Action
+            secondary
+            title="Private updates · opt-in notifications"
+            onPress={() => navigation.navigate("Notifications")}
+          />
+        )}
       </View>
       <ScrollView
         horizontal

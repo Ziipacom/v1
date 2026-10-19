@@ -149,6 +149,8 @@ async def provider_request(method, path, payload=None, allow_missing=False):
                (method == 'POST' and path == '/multistream/target') or
                (method in ('GET', 'DELETE') and re.fullmatch(r'/multistream/target/[0-9a-f-]{36}', path)) or
                (method in ('GET', 'PATCH') and re.fullmatch(r'/stream/[0-9a-f-]{36}', path)) or
+               (method == 'GET' and re.fullmatch(r'/(asset|session)/[0-9a-f-]{36}', path)) or
+               (method == 'DELETE' and re.fullmatch(r'/asset/[0-9a-f-]{36}', path)) or
                (method == 'DELETE' and re.fullmatch(r'/stream/[0-9a-f-]{36}/terminate', path)) or
                (method == 'GET' and re.fullmatch(r'/playback/[A-Za-z0-9_-]{8,128}', path)))
     if not allowed:
@@ -385,6 +387,11 @@ async def start_stream(stream_id: uuid.UUID, data: StartLive, user: User = Depen
             raise HTTPException(409, 'The Twitch destination changed before the broadcast could start.')
         if grant['target_id'] != destination.channel_id:
             raise HTTPException(409, 'The Twitch channel changed. Remove this destination and authorize it again.')
+    # Fresh read immediately before the explicit start. A stale prepared row or
+    # calendar reminder is never proof that the provider still has this stream.
+    raw = await read_provider_stream(row)
+    if raw is None or playback_policy(raw).get('type') != 'public':
+        raise HTTPException(409, 'Provider broadcast configuration changed. Prepare or resolve this stream before starting.')
     await provider_request('PATCH', '/stream/' + checked_uuid(row.provider_id), {'suspended': False})
     row.publish_enabled = True
     row.status, row.playback_url, row.checked_at = 'awaiting_media', None, None
@@ -553,6 +560,11 @@ async def set_twitch_destination(stream_id: uuid.UUID, data: TwitchDestinationIn
 @router.post('/streams/{stream_id}/ingest', dependencies=[Depends(guard)])
 async def ingest(stream_id: uuid.UUID, user: User = Depends(current_user), session: Session = Depends(db)):
     row = owned(session, stream_id, user)
+    from account_services import AccountState, PrivacyInput
+    account = session.get(AccountState, user.id)
+    privacy = PrivacyInput(**(account.privacy or {})) if account else PrivacyInput()
+    if privacy.profile_visibility != 'public':
+        raise HTTPException(409, 'Public ingest is unavailable for a private or members-only profile.')
     if not row.publish_enabled or row.status not in ('awaiting_media', 'live', 'unknown'):
         raise HTTPException(409, 'Enable public ingest before requesting encoder credentials.')
     raw = await read_provider_stream(row)
@@ -667,6 +679,8 @@ async def end_live_for_privacy(user_id: int, session: Session):
 async def delete_live_account(user_id: int, session: Session):
     """Call before deleting User; raises 503 rather than orphaning active ingest."""
     await end_live_for_privacy(user_id, session)
+    from live_recordings import delete_provider_recordings
+    await delete_provider_recordings(session, user_id)
     for destination in session.scalars(select(TwitchDestination).where(TwitchDestination.owner_id == user_id)).all():
         session.delete(destination)
     session.flush()

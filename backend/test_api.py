@@ -268,6 +268,35 @@ def test_email_verification_recovery_privacy_and_export(client, monkeypatch):
     assert client.post('/api/auth/forgot-password', json={'email': 'missing@example.com'}).json() == {'message': 'If an account exists, a password reset link has been sent.'}
 
 
+def test_private_calendar_cookie_bearer_export_and_account_cleanup(client):
+    from datetime import datetime, timedelta, timezone
+    import uuid
+    from sqlalchemy import select
+    from calendar_services import CalendarEvent, CalendarOccurrence
+    credentials = {'name': 'Calendar review', 'email': 'calendar-account@example.com',
+                   'password': 'calendar-account-password-123'}
+    assert client.post('/api/auth/register', json=credentials).status_code == 201
+    starts = (datetime.now(timezone.utc) + timedelta(minutes=20)).replace(tzinfo=None, microsecond=0).isoformat()
+    created = client.post('/api/os/calendar/events', json={'request_id': str(uuid.uuid4()),
+        'title': 'Private stream preparation', 'kind': 'stream', 'timezone': 'UTC', 'starts_local': starts})
+    assert created.status_code == 201, created.text
+    event = created.json()
+    native = client.post('/api/mobile/auth/login', json=credentials).json()['access_token']
+    native_result = client.get('/api/os/calendar/events/' + event['id'],
+                               headers={'Authorization': 'Bearer ' + native})
+    assert native_result.status_code == 200 and native_result.json() == event
+    exported = client.get('/api/account/export').json()
+    assert any(row['id'] == event['id'] for row in exported['calendar']['events'])
+    assert event['automatic_broadcast'] is False and event['automatic_campaign_delivery'] is False
+    removed = client.post('/api/account/delete', json={'password': credentials['password'], 'confirmation': 'DELETE'})
+    assert removed.status_code == 200, removed.text
+    assert client.get('/api/os/calendar/events/' + event['id'],
+                      headers={'Authorization': 'Bearer ' + native}).status_code == 401
+    session = next(app.dependency_overrides[db]())
+    assert session.scalar(select(CalendarEvent.id).where(CalendarEvent.id == event['id'])) is None
+    assert session.scalar(select(CalendarOccurrence.id).where(CalendarOccurrence.event_id == event['id'])) is None
+
+
 def test_production_registration_requires_verification_before_session(client, monkeypatch):
     import re
     import account_services

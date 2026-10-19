@@ -10,10 +10,10 @@ StartLimitBurst=3
 Type=simple
 WorkingDirectory=/opt/ziipa/deploy/oracle-free
 UMask=0077
-ExecStartPre=/usr/bin/python3 /opt/ziipa/deploy/oracle-free/preflight.py
+ExecStartPre=/usr/bin/python3 /opt/ziipa/deploy/oracle-free/workflow-preflight.py
 ExecStart=/usr/bin/docker compose --ansi never -f workflow-compose.json up --no-build --pull never --abort-on-container-exit --exit-code-from workflow-worker
-ExecStop=/usr/bin/docker compose --ansi never -f workflow-compose.json stop --timeout 60 workflow-worker
-TimeoutStopSec=90
+ExecStop=/usr/bin/docker compose --ansi never -f workflow-compose.json stop --timeout 300 workflow-worker
+TimeoutStopSec=330
 Restart=always
 RestartSec=60
 

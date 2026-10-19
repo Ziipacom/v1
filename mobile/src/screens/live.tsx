@@ -10,7 +10,16 @@ import {
 import { useIsFocused, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Crypto from "expo-crypto";
-import { Check, Plus, Radio, RefreshCw, Square } from "lucide-react-native";
+import {
+  CalendarClock,
+  Bell,
+  Clapperboard,
+  Check,
+  Plus,
+  Radio,
+  RefreshCw,
+  Square,
+} from "lucide-react-native";
 import { Action, Empty, Field, Pill } from "../components/ui";
 import { LiveTransmitter } from "../components/live-transmitter";
 import { LiveViewer } from "../components/live-viewer";
@@ -32,7 +41,11 @@ import type { RootStack } from "../lib/types";
 import { color, font, styles } from "../theme";
 
 type Tab = "watch" | "broadcast";
-export function LiveScreen({ route }: { route?: { params?: { tab?: Tab } } }) {
+export function LiveScreen({
+  route,
+}: {
+  route?: { params?: { tab?: Tab; streamId?: string } };
+}) {
   const { api, guest, session } = useZiipa();
   const publicApi = useCallback(
     <T,>(path: string): Promise<T> =>
@@ -53,6 +66,7 @@ export function LiveScreen({ route }: { route?: { params?: { tab?: Tab } } }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [consent, setConsent] = useState(false);
+  const [record, setRecord] = useState(false);
   const [busy, setBusy] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -66,13 +80,14 @@ export function LiveScreen({ route }: { route?: { params?: { tab?: Tab } } }) {
   const loadingRef = useRef(false);
   const busyRef = useRef("");
   const attempted = useRef(false);
+  const linkedSelection = useRef<string | null>(null);
   const startPromise = useRef<Promise<LiveIngest> | null>(null);
   const endPromise = useRef<Promise<void> | null>(null);
   const createRequest = useRef<{
     request_id: string;
     title: string;
     description: string;
-    record: false;
+    record: boolean;
   } | null>(null);
   const enabled = focused && foreground;
   enabledRef.current = enabled;
@@ -93,12 +108,28 @@ export function LiveScreen({ route }: { route?: { params?: { tab?: Tab } } }) {
     if (route?.params?.tab) setTab(route.params.tab);
   }, [route?.params?.tab]);
   useEffect(() => {
+    const requested = route?.params?.streamId;
+    if (!focused || !requested) return;
+    if (attempted.current || busyRef.current) {
+      setError(
+        "End or finish the current broadcast action before opening the linked stream.",
+      );
+      return;
+    }
+    transmitter.current?.stopLocal();
+    choose(null);
+    setConsent(false);
+    setTab("broadcast");
+    linkedSelection.current = requested;
+  }, [focused, route?.params?.streamId]);
+  useEffect(() => {
     mounted.current = true;
     const app = AppState.addEventListener("change", (value) => {
       // iOS permission sheets temporarily report inactive. The native
       // transmitter independently stops active capture on interruptions.
-      if (value === 'active') setForeground(true);
-      else if (value === 'background' || Platform.OS === 'web') setForeground(false);
+      if (value === "active") setForeground(true);
+      else if (value === "background" || Platform.OS === "web")
+        setForeground(false);
     });
     const timer = setInterval(() => setClock(Date.now()), 1000);
     return () => {
@@ -190,6 +221,22 @@ export function LiveScreen({ route }: { route?: { params?: { tab?: Tab } } }) {
       setPublics(feed);
       setMine(own);
       if (!busyRef.current) setError("");
+      const linkedId = linkedSelection.current;
+      if (linkedId && !busyRef.current && !attempted.current) {
+        const linked = own.find((value) => value.id === linkedId);
+        linkedSelection.current = null;
+        if (linked) {
+          choose(linked);
+          setConsent(false);
+          setTab("broadcast");
+          setTransport(
+            "Opened your linked broadcast for review. Camera and Go live still require your explicit actions.",
+          );
+        } else
+          setError(
+            "The linked broadcast is unavailable in your owned broadcast list. No new broadcast was created.",
+          );
+      }
       const current = selectedRef.current;
       if (current && !busyRef.current) {
         try {
@@ -278,7 +325,7 @@ export function LiveScreen({ route }: { route?: { params?: { tab?: Tab } } }) {
           request_id: Crypto.randomUUID(),
           title: title.trim(),
           description: description.trim(),
-          record: false,
+          record,
         };
       } catch {
         setError(
@@ -398,6 +445,38 @@ export function LiveScreen({ route }: { route?: { params?: { tab?: Tab } } }) {
           onPress={() => void switchTab("broadcast")}
         />
       </View>
+      <Action
+        secondary
+        title="Calendar · plan stream reminders"
+        icon={CalendarClock}
+        disabled={!!busy || attempted.current}
+        onPress={() =>
+          navigation.navigate("Calendar", {
+            kind: "stream",
+            streamId: selected?.id,
+          })
+        }
+      />
+      {session && !guest && (
+        <View style={{ gap: 10 }}>
+          <Action
+            secondary
+            title="Private recordings and clips"
+            icon={Clapperboard}
+            disabled={!!busy || attempted.current}
+            onPress={() =>
+              navigation.navigate("Recordings", { streamId: selected?.id })
+            }
+          />
+          <Action
+            secondary
+            title="Private updates · opt-in notifications"
+            icon={Bell}
+            disabled={!!busy || attempted.current}
+            onPress={() => navigation.navigate("Notifications")}
+          />
+        </View>
+      )}
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
@@ -508,9 +587,42 @@ export function LiveScreen({ route }: { route?: { params?: { tab?: Tab } } }) {
                 multiline
                 placeholder="Let your community know what to expect"
               />
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{
+                  checked: record,
+                  disabled: !!busy || !!createRequest.current,
+                }}
+                disabled={!!busy || !!createRequest.current}
+                onPress={() => setRecord(!record)}
+                style={[styles.row, { paddingVertical: 12 }]}
+              >
+                <View
+                  style={{
+                    width: 25,
+                    height: 25,
+                    borderWidth: 1,
+                    borderColor: color.lime,
+                    borderRadius: 6,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: record ? color.purple : "transparent",
+                  }}
+                >
+                  {record && <Check size={18} color="white" />}
+                </View>
+                <Text style={[styles.body, { flex: 1 }]}>
+                  Record this broadcast. I have permission to record its
+                  participants, music and media and consent to importing the
+                  recording as a private Ziipa draft.
+                </Text>
+              </Pressable>
               <Text style={styles.small}>
-                Recording is off. Preparing reserves a provider session; your
-                camera stays off and nothing is transmitted.
+                Recording is {record ? "on for the provider session" : "off"}.
+                Preparing reserves a session; your camera stays off and nothing
+                is transmitted. Provider recording access/retention is separate
+                from private Ziipa drafts. Imported recordings and automated
+                clips are never published without a reviewed campaign.
               </Text>
               <Action
                 title={
@@ -548,13 +660,22 @@ export function LiveScreen({ route }: { route?: { params?: { tab?: Tab } } }) {
                   {liveStatusLabel(selected, clock)}
                 </Text>
                 <Text style={styles.body}>{selected.detail}</Text>
+                <Text style={styles.small}>
+                  {selected.record
+                    ? "Provider recording was selected. Before going live, open Private recordings and clips to separately enable the private import/excerpt workflow. Provider retention and access remain separate from Ziipa privacy."
+                    : "Recording is off for this broadcast. Prepare a new broadcast with recording selected to create a recording; it cannot be added retroactively."}
+                </Text>
               </View>
               {selected.status !== "ended" &&
                 !["creating", "provisioning_unknown", "ending"].includes(
                   selected.status,
                 ) && (
                   <>
-                    <LiveDestinations broadcast={selected} disabled={!!busy || attempted.current} onConnections={() => navigation.navigate('Publishing')} />
+                    <LiveDestinations
+                      broadcast={selected}
+                      disabled={!!busy || attempted.current}
+                      onConnections={() => navigation.navigate("Publishing")}
+                    />
                     <Pressable
                       accessibilityRole="checkbox"
                       accessibilityState={{
@@ -598,13 +719,13 @@ export function LiveScreen({ route }: { route?: { params?: { tab?: Tab } } }) {
                       onStop={stopBroadcast}
                       onTransport={report}
                     />
-                    {(
+                    {
                       <Text style={styles.small}>
                         Leaving this screen or putting the app in the background
                         stops the camera and requests provider shutdown. A
                         network interruption can delay server confirmation.
                       </Text>
-                    )}
+                    }
                   </>
                 )}
               {selected.status !== "ended" && (
@@ -632,6 +753,7 @@ export function LiveScreen({ route }: { route?: { params?: { tab?: Tab } } }) {
                     setTransport("");
                     setTitle("");
                     setDescription("");
+                    setRecord(false);
                   }}
                 />
               )}

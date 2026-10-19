@@ -40,11 +40,11 @@ export function ReelMedia({
   return (
     <View style={StyleSheet.absoluteFill}>
       <Cover item={item} style={{ flex: 1 }} />
-      {active && (loading || error) && (
+      {active && (loading || !!error) && (
         <Text style={r.caption}>{error || "Loading media…"}</Text>
       )}
       {active &&
-        source &&
+        !!source &&
         (item.content_type?.startsWith("audio/") ? (
           <ReelAudio
             key={localUri || item.media_url}

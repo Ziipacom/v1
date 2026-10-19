@@ -1,4 +1,55 @@
-# Ziipa Agent and private inference — 13 October 2026
+# Ziipa live, private clips and notifications — 19 October 2026
+
+Mobile and web portal now share Recordings and Notifications screens. Opt-in
+signed Livepeer callbacks feed an owned private recording importer and bounded
+FFmpeg excerpt queue. Clips remain private drafts until reviewed for distribution.
+Optional session-bound device notifications cover reminders, recording completion
+and completed campaigns, with encrypted registrations and durable delivery
+receipts. No arbitrary agent messaging, automatic public broadcast or automatic
+clip publication is enabled.
+
+Chrome's normal `/portal` flow now opens the authenticated shared Studio as a
+full-page same-origin application, avoiding the embedded frame loading failure.
+The website cookie still supplies authentication; no bearer token is exposed.
+The optional `?layout=frame` view retains recovery controls.
+
+Apply migrations through `20261019_0011`, rebuild the shared Studio and restart
+API/workflow/renderer from the same release. Hosted recording/push flags remain
+off until provider and real-device acceptance. The local review has browser-push
+keys and workers available; no device is automatically enrolled. Livepeer owner
+sign-in and an existing CORS-disabled server key are verified. With explicit owner
+approval, that key is now encrypted for the Windows owner in protected local
+AppData settings outside OneDrive/Git, and is passed only to the API and recording
+workflow. A real authenticated read returned HTTP 200;
+no streams or webhooks were created. The signed public webhook still requires
+the new API deployment: its public route currently returns HTTP 404.
+Native push needs a new signed binary with EAS/APNs/FCM configuration. No paid
+service, public broadcast, real-device push or public deployment was performed.
+See [live/recordings/push operation](backend/LIVE-RECORDINGS-PUSH.md).
+
+## Platform versions and creator calendar
+
+The shared mobile/portal Studio prepares actual original, portrait, square and
+landscape video versions, selects an approved version per destination and retains
+exact file digests and separate delivery receipts. Only the selected Ziipa version
+becomes a Ziipa post; other versions remain private campaign derivatives. The
+source draft is not replaced. All selected versions require review.
+
+The private Calendar adds IANA timezone schedules, bounded daily/weekly repeats,
+daylight-saving gap/fold handling, durable in-app reminders, private `.ics` export
+and linked-stream preflight. Campaign dates remain controlled by their own
+approval. Calendar events never create provider resources, start camera capture or
+enable a public broadcast. Optional push reminders and signed recording-to-clips
+automation now have separate consent and provider settings, described above.
+
+Apply migrations through `20261019_0011`, rebuild the shared Studio and run the
+renderer and workflow process from the same release. Local review enables
+`CREATION_CAMPAIGN_ENABLED`, `OS_CALENDAR_ENABLED` and `OS_WORKFLOW_ENABLED`.
+New hosted flags remain false until deployment acceptance. No paid scheduler or
+new service was added. See [CREATION-WORKFLOWS.md](CREATION-WORKFLOWS.md) and
+[RELEASE-READINESS.md](RELEASE-READINESS.md) for operation and measured acceptance.
+
+## Earlier Agent and private inference — 13 October 2026
 
 The shared portal/mobile Media OS now has an **Agent** tab for durable, opt-in
 autonomous private tasks. A real local API → worker → authenticated inference
@@ -167,6 +218,13 @@ PostgreSQL: `127.0.0.1:55439`, database/user `ziipa`, development password `ziip
 The frontend forwards `/api` to FastAPI on port 8018 during development. No email is sent; waitlist signup saves a local database record. Account creation does not automatically join the beta waitlist. Browser storage is not used for credentials or authoritative data.
 
 ## Before public deployment
+
+Creation Campaigns now connect saved Studio videos to private preparation,
+reviewed transcripts/captions, scheduled approval and separate distribution
+receipts through the shared mobile/portal UI. See
+[CREATION-WORKFLOWS.md](CREATION-WORKFLOWS.md) for setup, provider boundaries and
+the remaining Media OS implementation sequence. New hosted flags remain off by
+default; local acceptance does not establish a cloud deployment or store release.
 
 The provider adapters, signed uploads, versioned database baseline, email verification, password recovery, privacy controls, account export/deletion, session revocation, request logging, optional Sentry monitoring, and testnet wallet flows are implemented. External provider accounts, secrets, DNS records, production policy review, store signing identities, social-network app approvals, and funded Base Sepolia deployment still require operator-controlled setup. Follow the launch gates in `HYBRID-DEPLOYMENT.md`; do not treat a free-tier demo as an unrestricted production launch.
 

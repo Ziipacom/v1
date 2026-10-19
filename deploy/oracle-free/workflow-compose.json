@@ -6,7 +6,10 @@
       "platform": "linux/arm64",
       "pull_policy": "never",
       "command": ["python", "workflow_worker.py"],
-      "env_file": [{ "path": "/etc/ziipa/render-worker.env", "required": true, "format": "raw" }],
+      "env_file": [
+        { "path": "/etc/ziipa/render-worker.env", "required": true, "format": "raw" },
+        { "path": "/etc/ziipa/workflow-worker.env", "required": false, "format": "raw" }
+      ],
       "environment": {
         "ENVIRONMENT": "production",
         "SECURE_COOKIES": "true",
@@ -14,11 +17,13 @@
         "WEB3_ENABLE_LOCAL": "false",
         "MEDIA_STORAGE_BACKEND": "r2",
         "RENDER_ENABLED": "true",
+        "RENDER_WORK_DIR": "/tmp/ziipa-workflows",
         "OS_WORKFLOW_ENABLED": "true",
         "OS_WORKFLOW_POLL_SECONDS": "60",
         "OS_WORKFLOW_RECONCILE_SECONDS": "3600",
         "OS_ASSISTANT_LOCAL_AI_ENABLED": "false",
-        "SOCIAL_PUBLIC_SYNC_ENABLED": "true"
+        "TRANSCRIPTION_ENABLED": "false",
+        "PUSH_EXPO_ENABLED": "false"
       },
       "user": "10001:10001",
       "init": true,
@@ -29,10 +34,10 @@
       "mem_limit": "512m",
       "memswap_limit": "512m",
       "pids_limit": 64,
-      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=16777216,mode=1777"],
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=134217728,mode=1777"],
       "shm_size": "8m",
       "ulimits": { "core": 0, "nofile": { "soft": 256, "hard": 256 } },
-      "stop_grace_period": "60s",
+      "stop_grace_period": "300s",
       "restart": "no",
       "logging": { "driver": "local", "options": { "max-size": "5m", "max-file": "2" } }
     }

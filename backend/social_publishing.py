@@ -21,7 +21,7 @@ import uuid
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.exceptions import RedisError
 from sqlalchemy import ForeignKey, String, Text, JSON, DateTime, UniqueConstraint, select, delete
@@ -635,6 +635,10 @@ class TikTokOptions(BaseModel):
 class PublishInput(BaseModel):
     item_id: uuid.UUID
     expected_media_id: uuid.UUID
+    expected_source_sha256: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
+    campaign_id: uuid.UUID | None = None
+    campaign_revision: int | None = Field(default=None, ge=1)
+    campaign_approval_hash: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
     expected_target_id: str = Field(min_length=1, max_length=100)
     render_id: uuid.UUID | None = None
     provider: SocialProvider
@@ -647,6 +651,13 @@ class PublishInput(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=5000)
     tiktok: TikTokOptions | None = None
+
+    @model_validator(mode='after')
+    def complete_campaign_binding(self):
+        if any(v is not None for v in (self.campaign_id, self.campaign_revision, self.campaign_approval_hash)) and not all(
+                v is not None for v in (self.campaign_id, self.campaign_revision, self.campaign_approval_hash)):
+            raise ValueError('Campaign handoff requires its complete reviewed authority binding.')
+        return self
 
 
 class TikTokReviewInput(BaseModel):
@@ -1088,7 +1099,12 @@ async def publish(data: PublishInput, user: User = Depends(current_user), sessio
     item = session.scalar(select(CreatorItem).where(CreatorItem.id == str(data.item_id), CreatorItem.owner_id == user.id))
     if not item:
         raise HTTPException(404, 'Your creation was not found.')
-    if item.visibility != 'published':
+    if data.campaign_id is not None:
+        # Draft renditions are usable only by the exact owner-reviewed campaign;
+        # incoming campaign fields alone never grant access or publication.
+        from creation_campaigns import validate_publishing_authority
+        validate_publishing_authority(session, user.id, data)
+    elif item.visibility != 'published':
         raise HTTPException(409, 'Publish this source creation in Ziipa first.')
     if item.data.get('media_id') != str(data.expected_media_id):
         raise HTTPException(409, 'The source file changed after your approval. Refresh the creation and approve the current file.')
@@ -1115,7 +1131,8 @@ async def publish(data: PublishInput, user: User = Depends(current_user), sessio
                 'status': {'privacyStatus': data.privacy, 'selfDeclaredMadeForKids': data.made_for_kids}}
     fingerprint = hashlib.sha256(json.dumps({'item': item.id, 'media': media.id, 'render_id': str(data.render_id) if data.render_id else None,
                                   'render_fingerprint': render_fingerprint, 'target': grant.selected_target_id,
-                                  'metadata': metadata, 'tiktok': data.tiktok.model_dump() if data.tiktok else None}, sort_keys=True).encode()).hexdigest()
+                                  'metadata': metadata, 'tiktok': data.tiktok.model_dump() if data.tiktok else None,
+                                  **({'expected_source_sha256': data.expected_source_sha256} if data.expected_source_sha256 else {})}, sort_keys=True).encode()).hexdigest()
     existing = session.scalar(select(PublishingJob).where(PublishingJob.owner_id == user.id,
                                                          PublishingJob.idempotency_key == str(data.idempotency_key)))
     retry_job = None
@@ -1158,6 +1175,10 @@ async def publish(data: PublishInput, user: User = Depends(current_user), sessio
             job.detail = 'Retrying preparation after your renewed upload approval. No prior delivery was attempted.'
         session.commit()
         body = await asyncio.to_thread(original_bytes, media, owner_id)
+        if data.expected_source_sha256 and hashlib.sha256(body).hexdigest() != data.expected_source_sha256:
+            raise HTTPException(409, 'The selected export bytes changed after approval. Render and review the current artifact before publishing.')
+        from creation_campaigns import validate_publishing_authority
+        validate_publishing_authority(session, owner_id, data)
         tiktok_duration = None
         if data.provider == 'tiktok':
             if hashlib.sha256(body).hexdigest() != data.tiktok.source_sha256:
@@ -1166,7 +1187,7 @@ async def publish(data: PublishInput, user: User = Depends(current_user), sessio
         source_media_id, source_item_id = media.id, item.id
         def revalidate_render():
             current_item = session.scalar(select(CreatorItem).where(CreatorItem.id == source_item_id, CreatorItem.owner_id == owner_id))
-            if not current_item or current_item.visibility != 'published':
+            if not current_item or current_item.visibility != 'published' and data.campaign_id is None:
                 raise HTTPException(409, 'The published source creation was removed or made private before delivery.')
             if current_item.data.get('media_id') != str(data.expected_media_id):
                 raise HTTPException(409, 'The source file changed after your approval. Refresh and approve the current file.')
@@ -1186,6 +1207,7 @@ async def publish(data: PublishInput, user: User = Depends(current_user), sessio
             async def checkpoint(provider_data):
                 nonlocal attempted, job
                 session.expire_all()
+                validate_publishing_authority(session, owner_id, data)
                 revalidate_render()
                 latest = grant_for(session, owner_id, data.provider, lock=True)
                 current = session.get(PublishingJob, job_id)
@@ -1209,6 +1231,7 @@ async def publish(data: PublishInput, user: User = Depends(current_user), sessio
                             json.dumps(metadata) + f'\r\n--{boundary}\r\nContent-Type: {media.content_type}\r\n\r\n').encode()
                 content = preamble + body + f'\r\n--{boundary}--\r\n'.encode()
                 session.expire_all()
+                validate_publishing_authority(session, owner_id, data)
                 revalidate_render()
                 latest_grant = grant_for(session, owner_id, data.provider, lock=True)
                 if (not latest_grant or latest_grant.id != grant_id or latest_grant.status != 'authorized' or
@@ -1303,6 +1326,8 @@ async def refresh_adapter_job(job, grant, user, session):
             async def checkpoint(provider_data):
                 nonlocal checkpointed, job
                 session.expire_all()
+                from creation_campaigns import validate_job_campaign_authority
+                validate_job_campaign_authority(session, session.get(PublishingJob, job_id))
                 latest = grant_for(session, owner_id, provider, lock=True)
                 current = session.get(PublishingJob, job_id)
                 if (not current or not latest or latest.id != grant_id or latest.status != 'authorized' or
@@ -1314,6 +1339,8 @@ async def refresh_adapter_job(job, grant, user, session):
                 session.commit()
                 checkpointed, job = True, current
             adapter = tiktok_adapter if provider == 'tiktok' else bluesky_adapter if provider == 'bluesky' else meta_adapter()
+            from creation_campaigns import validate_job_campaign_authority
+            validate_job_campaign_authority(session, job)
             result = await adapter.poll(decrypt_tokens(grant), job.target_id,
                 {'external_id': job.external_id, 'provider_data': job.provider_data or {}, 'status': job.status,
                  'origin': approved_api_origin(), 'save_tokens': save_tokens},

@@ -70,3 +70,11 @@ Replace those build-ID placeholders with actual reviewed EAS build IDs. Android 
 Personal Play accounts created after November 13, 2023 currently require at least 12 continuously opted-in closed testers for 14 days before applying for production access. Verify the owner account's actual requirements; internal testing does not substitute. [Google testing requirements](https://support.google.com/googleplay/android-developer/answer/14151465)
 
 Stop a release on signer/identifier mismatch, failed preflight, incomplete API, unverified privacy/safety claims, missing device acceptance or failed reviewer access. Preserve the verified internal APK while resolving these conditions.
+
+## Dependency audit follow-up — 2026-10-19
+
+The notification milestone's read-only `npm audit --json` reports 24 findings (20 high, three moderate, one critical). Neither `expo-notifications@57.0.23`, `expo-constants@57.0.22` nor the added `badgin` package is named in that report. A pre-install lock comparison was unavailable, so this is not a claim that the historical advisory count is unchanged.
+
+The critical [shell-quote advisory](https://github.com/advisories/GHSA-pqg4-j6r4-53mv) affects the existing React Native → React DevTools dependency (`shell-quote@1.10.0`; patched in 1.11.0). React Native loads that DevTools entry under `__DEV__`; no reachable production quote-to-shell call was found in this review. Other high findings primarily concern Expo/Metro tooling, glob parsing, development-server compression and [node-forge signing verification](https://github.com/advisories/GHSA-86w9-cpqp-85rv), which had no patched version in the advisory at audit time. Keep development servers private.
+
+The runtime React Navigation → query-string → [decode-uri-component denial-of-service advisory](https://github.com/advisories/GHSA-vcc3-ghjq-m6fr) also needs a controlled update (decoder fixed in 0.5.0). Ziipa currently does not enable arbitrary URL linking; notification taps use a fixed screen and validated receipt ID. Before a public release, review supported transitive patches, regenerate the lock deliberately, rerun device/export tests and record the remaining exceptions. Do not use `npm audit fix --force`: its suggested Expo/RN downgrades would break this SDK57 app. No dependency fixes were applied in this audit.

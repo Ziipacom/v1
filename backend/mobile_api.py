@@ -112,12 +112,16 @@ def login_native(data: Login, session: Session = Depends(db)):
 
 
 @router.post('/api/mobile/auth/logout', dependencies=[Depends(guard)])
-def logout_native(request: Request):
+def logout_native(request: Request, session: Session = Depends(db)):
     scheme, _, token = request.headers.get('authorization', '').partition(' ')
     if scheme.lower() != 'bearer' or not token:
         raise HTTPException(401, 'Mobile session required')
     key = session_key('mobile_session:', token)
     uid = cache.get(key)
+    if uid:
+        from notification_services import revoke_session_devices
+        revoke_session_devices(session, int(uid), key)
+        session.commit()
     forget_session(int(uid) if uid else None, key)
     return {'ok': True}
 
@@ -228,11 +232,19 @@ async def delete_account(data: DeleteAccount, user: User = Depends(current_user)
     from media_workflows import delete_workflows_data
     from assistant_api import delete_assistant_data
     from agent_api import delete_agent_data
+    from creation_campaigns import delete_campaigns_data
+    from calendar_services import delete_calendar_data
+    from live_recordings import delete_live_recordings
+    from notification_services import delete_notification_data
     from personal_media import delete_os_data
     from media_rewards import lock_user, delete_rewards_data
     from rewards_redemption import delete_settlement_data
     lock_user(session, user)
     delete_workflows_data(session, user.id)
+    delete_calendar_data(session, user.id)
+    delete_live_recordings(session, user.id)
+    delete_notification_data(session, user.id)
+    delete_campaigns_data(session, user.id)
     delete_agent_data(session, user.id)
     delete_assistant_data(session, user.id)
     delete_os_data(session, user.id)

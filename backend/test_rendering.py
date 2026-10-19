@@ -306,3 +306,70 @@ def test_enqueue_signal_follows_commit_and_redis_failure_preserves_job(database,
     duplicate = render_api.queue_render(render_api.RenderInput(item_id=item.id), user, session)
     assert duplicate['id'] == job.id and len(signals) == 2
     assert len(committed) == 1  # A repeated wake does not create another job.
+
+
+def test_rendition_fingerprint_is_explicit_while_legacy_original_is_unchanged(database):
+    _, session, user, _, _ = database
+    item, _, _ = creation(session, user)
+    legacy = render.input_snapshot(session, item)
+    assert 'rendition' not in legacy
+    assert legacy == render.input_snapshot(session, item, 'original')
+    fingerprints = {render.input_fingerprint(session, item, name) for name in render.RENDITIONS}
+    assert len(fingerprints) == 4
+    for name in ('portrait', 'square', 'landscape'):
+        snapshot = render.input_snapshot(session, item, name)
+        assert snapshot['rendition']['fit'] == 'contain'
+        assert (snapshot['rendition']['width'], snapshot['rendition']['height']) == render.RENDITIONS[name]
+    with pytest.raises(HTTPException):
+        render.input_snapshot(session, item, 'unreviewed-crop')
+
+
+@pytest.mark.parametrize('name', ['portrait', 'square', 'landscape'])
+def test_actual_ffmpeg_rendition_dimensions_padding_and_exact_output(runtime, database, tmp_path, name):
+    ffmpeg, _ = runtime
+    factory, session, user, _, backend = database
+    work = tmp_path / name; work.mkdir()
+    _generate(ffmpeg, work)
+    item, source, _ = creation(session, user)
+    # Use a uniform full blue frame to distinguish contain padding from cropping.
+    item.data = {**item.data, 'overlays': [], 'captions': [], 'trim_start': 0, 'trim_end': 0.5}
+    original = (work / 'generated.mp4').read_bytes()
+    backend.path(source.id).write_bytes(original); source.size = len(original)
+    snapshot = render.input_snapshot(session, item, name)
+    job = render.RenderJob(owner_id=user.id, item_id=item.id, input_fingerprint=render.snapshot_hash(snapshot), snapshot=snapshot)
+    session.add(job); session.commit()
+    render.process_job(factory, *render.claim_job(session))
+    session.expire_all(); job = session.get(render.RenderJob, job.id)
+    assert job.status == 'ready', job.detail
+    width, height = render.RENDITIONS[name]
+    assert (job.output_width, job.output_height) == (width, height)
+    assert render.resolve_rendered_media(session, user.id, item, job.id).id == job.output_media_id
+    output = backend.path(job.output_media_id)
+    assert job.output_sha256 == __import__('hashlib').sha256(output.read_bytes()).hexdigest()
+    assert backend.path(source.id).read_bytes() == original
+    shutil.copyfile(output, work / 'rendition.mp4')
+    render._run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-y', '-threads', '2', '-i', 'rendition.mp4',
+                '-frames:v', '1', '-threads', '2', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'frame.rgb'], work, 15)
+    frame = (work / 'frame.rgb').read_bytes()
+    def pixel(x, y):
+        index = (y * width + x) * 3
+        return tuple(frame[index:index+3])
+    assert max(pixel(2, 2)) < 15  # Real padding remains black rather than cropped blue.
+    assert pixel(width // 2, height // 2)[2] > 180
+    assert render.receipt(job, session)['rendition'] == name
+    item.data = {**item.data, 'captions': [{'start': 0, 'end': 0.5, 'text': 'Changed edit'}]}; session.commit()
+    assert render.receipt(job, session)['status'] == 'stale'
+
+
+def test_named_rendition_api_deduplicates_and_rejects_forged_format(database, monkeypatch):
+    _, session, user, _, _ = database
+    item, _, _ = creation(session, user)
+    monkeypatch.setattr(render_api, 'readiness', lambda: {'can_render': True})
+    original = render_api.queue_render(render_api.RenderInput(item_id=item.id), user, session)
+    portrait = render_api.queue_render(render_api.RenderInput(item_id=item.id, rendition='portrait'), user, session)
+    assert original['id'] != portrait['id'] and portrait['rendition'] == 'portrait'
+    assert render_api.queue_render(render_api.RenderInput(item_id=item.id, rendition='portrait'), user, session)['id'] == portrait['id']
+    # Existing owner queue bound still applies to an actual third rendition.
+    with pytest.raises(HTTPException) as error:
+        render_api.queue_render(render_api.RenderInput(item_id=item.id, rendition='square'), user, session)
+    assert error.value.status_code == 429

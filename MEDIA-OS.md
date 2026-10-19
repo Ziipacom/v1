@@ -33,6 +33,12 @@ Wallet signatures, testnet minting, IPFS provenance and existing publishing/expo
 remain in their existing Studio tools. An Assistant proposal cannot bypass their
 rights, channel selection, signing or consent checks.
 
+The subsequent [Creation Campaigns release](CREATION-WORKFLOWS.md) connects private
+preparation, reviewed transcripts/captions, exact rendered artifacts, explicit
+schedule/destination approval and delivery receipts in the shared Studio. It uses
+separate campaign authority; the Assistant/Agent and the reminder/render/sync
+workflow tool allowlists remain unchanged.
+
 ## Assistant modes and privacy
 
 Guided commands work without an inference service:
@@ -66,6 +72,13 @@ save conversation. Clear conversation to remove other messages and old proposals
 Personal data is included in account export and removed during account deletion.
 
 ## Run locally
+
+Creation Campaigns also support real portrait/square/landscape exports and exact
+per-destination review. The shared Calendar adds private timezone-aware plans,
+bounded recurrence, in-app reminders and read-only streaming preflight. It uses
+the same workflow process with `OS_CALENDAR_ENABLED=true`; no separate scheduler
+is required. Calendar plans never approve or reschedule a campaign, start a device
+camera, or enable public ingest. See [CREATION-WORKFLOWS.md](CREATION-WORKFLOWS.md).
 
 Use the existing Ziipa PostgreSQL and Redis services. Apply the additive migration
 before starting API/workers:

@@ -76,6 +76,14 @@ const config: ExpoConfig = {
     ],
   },
   plugins: [
+    [
+      "expo-notifications",
+      {
+        defaultChannel: "ziipa-private-updates",
+        color: "#5420ab",
+        enableBackgroundRemoteNotifications: false,
+      },
+    ],
     ["expo-secure-store", { configureAndroidBackup: true }],
     [
       "expo-camera",

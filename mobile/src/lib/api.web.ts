@@ -23,7 +23,10 @@ export async function readSession() {
         user,
       };
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) return null;
+      if (error instanceof ApiError && error.status === 401) {
+        await clearSession();
+        return null;
+      }
       throw error;
     }
   }
@@ -34,11 +37,14 @@ export async function writeSession(session: Session) {
 }
 export async function clearSession() {
   saved = null;
-  if (portalMode)
-    window.parent.postMessage(
-      { source: "ziipa-studio", type: "signed-out" },
-      window.location.origin,
-    );
+  if (portalMode) {
+    if (window.parent === window) window.location.replace("/portal");
+    else
+      window.parent.postMessage(
+        { source: "ziipa-studio", type: "signed-out" },
+        window.location.origin,
+      );
+  }
 }
 export async function request<T>(
   path: string,
