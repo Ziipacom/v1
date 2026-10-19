@@ -1,12 +1,41 @@
 """Transaction-only calendar reminder delivery. No camera or provider calls."""
 from sqlalchemy import func, select
 
-from app import User
+from app import User, cache
 import calendar_services as service
 from calendar_services import CalendarEvent, CalendarOccurrence
 
 
+_successful_scan = False
+
+
+def heartbeat_key():
+    from media_workflows import coordination_scope
+    return 'ziipa:calendar-worker:' + coordination_scope()
+
+
+def heartbeat(coordinator=None):
+    """Only a successful calendar scan may renew this feature's capability."""
+    if not service.config.enabled or not _successful_scan:
+        return
+    try:
+        (cache if coordinator is None else coordinator).set(heartbeat_key(), 'ready', ex=180)
+    except Exception:
+        pass
+
+
+def worker_ready():
+    if not service.config.enabled:
+        return False
+    try:
+        return cache.get(heartbeat_key()) in ('ready', b'ready')
+    except Exception:
+        return False
+
+
 def tick(session_factory, now=None):
+    global _successful_scan
+    _successful_scan = False
     if not service.config.enabled:
         return 0
     current = service.aware(now or service.now())
@@ -50,6 +79,7 @@ def tick(session_factory, now=None):
                             details={'source': 'private_calendar'})
             session.commit()
             completed += 1
+    _successful_scan = True
     return completed
 
 

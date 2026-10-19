@@ -45,15 +45,10 @@ def fields_json(data):
 
 @router.get('/config')
 def calendar_config():
-    from media_workflows import cache, config as workflow_config, heartbeat_key
-    ready = False
-    if service.config.enabled and workflow_config.enabled:
-        try:
-            ready = bool(cache.get(heartbeat_key()))
-        except Exception:
-            pass
+    from calendar_worker import worker_ready
+    ready = worker_ready()
     return {'enabled': service.config.enabled, 'worker_ready': ready,
-        'reminders_enabled': bool(service.config.enabled and workflow_config.enabled),
+        'reminders_enabled': bool(service.config.enabled),
         'automatic_broadcast': False, 'automatic_campaign_delivery': False,
         'recurrence': ['none', 'daily', 'weekly'], 'max_occurrences': 52,
         'dst_policy': 'Reject an initial gap, skip recurring gaps, and use the selected earlier/later fold.',

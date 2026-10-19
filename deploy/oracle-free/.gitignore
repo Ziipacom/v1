@@ -5,3 +5,4 @@
 !inference-gateway.env.example
 !agent-inference.env.example
 !workflow.env.example
+!scheduler.env.example

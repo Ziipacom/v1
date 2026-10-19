@@ -133,6 +133,11 @@ def vapid_key():
 
 
 def capabilities():
+    """API-side configuration only; never requires a worker-only Expo token.
+
+    Use notification_worker.provider_readiness() to advertise running delivery
+    capability. These flags alone do not attest to a matching worker.
+    """
     crypto = False
     web = False
     try:
@@ -148,6 +153,44 @@ def capabilities():
             'expo_ready': bool(config.enabled and crypto and config.expo_enabled),
             'web_ready': bool(config.enabled and crypto and web),
             'vapid_public_key': config.vapid_public_key if config.enabled and crypto and web else None}
+
+
+def expo_sender_token():
+    """Enhanced-security Expo token: sender only, never in API/heartbeats."""
+    value = config.expo_access_token.get_secret_value()
+    if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9._~-]{20,512}', value):
+        raise ValueError('Enhanced-security Expo sender configuration is required')
+    return value
+
+
+def sender_capabilities():
+    ready = capabilities()
+    try:
+        expo_sender_token()
+    except Exception:
+        ready['expo_ready'] = False
+    return ready
+
+
+def provider_heartbeat_proof(provider, expires_at):
+    """Opaque configuration binding, not key material or a token fingerprint.
+
+    A separate derived key avoids reusing the device encryption key for HMAC.
+    Expo's proof attests to the worker's authenticated sender check, while the
+    API needs only the shared encryption key and its own native opt-in flag.
+    """
+    if provider not in ('web', 'expo') or type(expires_at) is not int:
+        raise ValueError('Invalid push heartbeat proof')
+    from media_workflows import coordination_scope
+    key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None,
+        info=b'ziipa:push-worker-readiness:v2').derive(b64decode(config.encryption_key.get_secret_value(), 32))
+    context = {'version': 2, 'provider': provider, 'expires_at': expires_at,
+        'coordination_scope': coordination_scope(),
+        'sender_security': 'enhanced_access_token' if provider == 'expo' else 'aes128gcm_vapid'}
+    if provider == 'web':
+        context['web'] = {'public_key': config.vapid_public_key, 'subject': config.vapid_subject,
+            'allowed_origins': sorted(allowed_web_origins())}
+    return hmac.new(key, json.dumps(context, sort_keys=True, separators=(',', ':')).encode(), hashlib.sha256).hexdigest()
 
 
 def allowed_web_origins():

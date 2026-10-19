@@ -131,6 +131,88 @@ jobs:
       - name: Verify actual rendering in the production Linux image
         run: docker run --rm --network none --cpus 1 --memory 1g --memory-swap 1g -e ZIIPA_RENDER_RESOURCE_TEST=1 --mount "type=bind,source=$PWD/test_rendering.py,target=/app/test_rendering.py,readonly" ziipa-api-ci python -m pytest test_rendering.py -q -p no:cacheprovider
 
+  native-arm-worker:
+    # Standard ARM runners are free for public repositories. Fail closed if a
+    # fork becomes private or repository visibility is absent from the event.
+    if: ${{ github.event.repository.visibility == 'public' && github.event.repository.private == false }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require native ARM and build the production image
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in aarch64|arm64) ;; *) exit 1 ;; esac
+          docker build --platform linux/arm64 --tag ziipa-native-arm-ci \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --file backend/Dockerfile backend
+          test "$(docker image inspect --format '{{.Architecture}}' ziipa-native-arm-ci)" = arm64
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' ziipa-native-arm-ci)" = "$GITHUB_SHA"
+      - name: Native ARM 90-second rendering acceptance
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 10001:10001 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --cpus 1 --memory 1g --memory-swap 1g --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=268435456,mode=1777 \
+            --mount "type=bind,source=$PWD/backend/test_rendering.py,target=/app/test_rendering.py,readonly" \
+            -e DATABASE_URL=sqlite:// -e REDIS_URL=redis://127.0.0.1:6379/0 -e ENVIRONMENT=test \
+            -e ZIIPA_RENDER_RESOURCE_TEST=1 \
+            ziipa-native-arm-ci python -m pytest test_rendering.py \
+            -q -s -p no:cacheprovider --basetemp=/tmp/acceptance \
+            | tee "$RUNNER_TEMP/ziipa-arm-render.log"
+          # Missing FFmpeg/fonts must fail acceptance, not silently skip it.
+          ! grep -Eq '[0-9]+ skipped' "$RUNNER_TEMP/ziipa-arm-render.log"
+      - name: Native ARM 100 MiB private recording import acceptance
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 10001:10001 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --cpus 0.25 --memory 512m --memory-swap 512m --pids-limit 64 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=134217728,mode=1777 \
+            --mount "type=bind,source=$PWD/deploy/oracle-free,target=/deploy/oracle-free,readonly" \
+            --mount "type=bind,source=$PWD/backend/test_oracle_deployment.py,target=/app/test_oracle_deployment.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/test_live_recordings.py,target=/app/test_live_recordings.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/test_rendering.py,target=/app/test_rendering.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/test_render_deployment.py,target=/app/test_render_deployment.py,readonly" \
+            -e DATABASE_URL=sqlite:// -e REDIS_URL=redis://127.0.0.1:6379/0 -e ENVIRONMENT=test \
+            -e ZIIPA_ORACLE_WORKFLOW_RESOURCE_TEST=1 \
+            ziipa-native-arm-ci python -m pytest test_oracle_deployment.py \
+            -k maximum_recording_import -q -s -p no:cacheprovider --basetemp=/tmp/acceptance \
+            | tee "$RUNNER_TEMP/ziipa-arm-recording.log"
+          ! grep -Eq '[0-9]+ skipped' "$RUNNER_TEMP/ziipa-arm-recording.log"
+      - name: Native ARM isolated workflow and push protocols
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 10001:10001 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --cpus 0.25 --memory 512m --memory-swap 512m --pids-limit 64 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=134217728,mode=1777 \
+            --mount "type=bind,source=$PWD/backend/test_live_recordings.py,target=/app/test_live_recordings.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/test_rendering.py,target=/app/test_rendering.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/test_notifications.py,target=/app/test_notifications.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/test_notification_integration.py,target=/app/test_notification_integration.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/test_recording_readiness.py,target=/app/test_recording_readiness.py,readonly" \
+            -e DATABASE_URL=sqlite:// -e REDIS_URL=redis://127.0.0.1:6379/0 -e ENVIRONMENT=test \
+            ziipa-native-arm-ci python -m pytest test_live_recordings.py test_notifications.py \
+            test_notification_integration.py test_recording_readiness.py \
+            -q -s -p no:cacheprovider --basetemp=/tmp/acceptance \
+            | tee "$RUNNER_TEMP/ziipa-arm-protocols.log"
+          ! grep -Eq '[0-9]+ skipped' "$RUNNER_TEMP/ziipa-arm-protocols.log"
+      # These synthetic, offline tests do not start a worker, access production
+      # data, or replace resource acceptance on the eventual Oracle host.
+
   contracts:
     runs-on: ubuntu-latest
     defaults:

@@ -18,6 +18,7 @@ ios/
 *.mobileprovision
 credentials.json
 google-service-account*.json
+google-services*.json
 store-owner-inputs.local.json
 audit*.json
 tests/

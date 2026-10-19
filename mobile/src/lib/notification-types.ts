@@ -10,10 +10,29 @@ export type PushConfig = {
   worker_ready: boolean;
   expo_ready: boolean;
   web_ready: boolean;
+  readiness_protocol?: number;
+  expo_configured?: boolean;
+  web_configured?: boolean;
   vapid_public_key: string | null;
   categories: NotificationCategory[];
   notice: string;
 };
+export function notificationProviderReadiness(
+  config: PushConfig,
+  provider: "web" | "expo",
+) {
+  const ready = config[`${provider}_ready`];
+  const configured = config[`${provider}_configured`];
+  if (ready)
+    return config.readiness_protocol === 2
+      ? "ready"
+      : "configured (worker unverified)";
+  return configured === true
+    ? "configured; worker not ready"
+    : configured === false
+      ? "needs setup"
+      : "not ready";
+}
 export type PushPreferences = {
   enabled: boolean;
   categories: NotificationCategory[];

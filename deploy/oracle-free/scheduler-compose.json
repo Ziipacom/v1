@@ -1,0 +1,27 @@
+{
+  "name": "ziipa-oracle-scheduler-micro",
+  "services": {
+    "scheduler-worker": {
+      "image": "ziipa-scheduler:oracle-amd64",
+      "platform": "linux/amd64",
+      "pull_policy": "never",
+      "command": ["python", "scheduler_worker.py"],
+      "env_file": [{"path": "/etc/ziipa/scheduler-worker.env", "required": true, "format": "raw"}],
+      "environment": {
+        "ENVIRONMENT": "production", "SECURE_COOKIES": "true", "ENABLE_DEMO_CATALOG": "false",
+        "WEB3_ENABLE_LOCAL": "false", "MEDIA_STORAGE_BACKEND": "local", "UPLOADS_DIR": "/tmp/ziipa-unused",
+        "SCHEDULER_ENABLED": "true", "OS_CALENDAR_ENABLED": "true",
+        "RENDER_ENABLED": "false", "OS_WORKFLOW_ENABLED": "false", "CREATION_CAMPAIGN_ENABLED": "false",
+        "LIVE_RECORDINGS_ENABLED": "false", "TRANSCRIPTION_ENABLED": "false", "OS_AGENT_ENABLED": "false",
+        "OS_ASSISTANT_LOCAL_AI_ENABLED": "false", "SOCIAL_PUBLIC_SYNC_ENABLED": "false"
+      },
+      "user": "10001:10001", "init": true, "read_only": true,
+      "cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"],
+      "cpus": "0.125", "mem_limit": "384m", "memswap_limit": "384m", "pids_limit": 48,
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=33554432,mode=1777"], "shm_size": "8m",
+      "ulimits": {"core": 0, "nofile": {"soft": 128, "hard": 128}},
+      "stop_grace_period": "90s", "restart": "no",
+      "logging": {"driver": "local", "options": {"max-size": "2m", "max-file": "2"}}
+    }
+  }
+}

@@ -1,0 +1,9 @@
+FROM python:3.13-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY requirements.lock.txt requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.lock.txt
+COPY . .
+RUN useradd --create-home --uid 10001 ziipa && chown -R ziipa:ziipa /app
+USER 10001:10001
+CMD ["python", "scheduler_worker.py"]

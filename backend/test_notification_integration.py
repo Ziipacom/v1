@@ -70,6 +70,7 @@ def h(monkeypatch):
         monkeypatch.setattr(calendar, 'now', lambda: NOW)
         monkeypatch.setattr(notifications.config, 'enabled', True)
         monkeypatch.setattr(notifications.config, 'expo_enabled', True)
+        monkeypatch.setattr(notifications.config, 'expo_access_token', SecretStr('synthetic-expo-integration-token'))
         monkeypatch.setattr(notifications.config, 'encryption_key', SecretStr(base64.urlsafe_b64encode(b'n' * 32).decode()))
         monkeypatch.setattr(calendar.config, 'enabled', True)
         monkeypatch.setattr(notification_worker, 'send_expo', lambda *a: pytest.fail('Auth/source integration must not send a notification'))

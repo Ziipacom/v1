@@ -22,8 +22,7 @@
         "OS_WORKFLOW_POLL_SECONDS": "60",
         "OS_WORKFLOW_RECONCILE_SECONDS": "3600",
         "OS_ASSISTANT_LOCAL_AI_ENABLED": "false",
-        "TRANSCRIPTION_ENABLED": "false",
-        "PUSH_EXPO_ENABLED": "false"
+        "TRANSCRIPTION_ENABLED": "false"
       },
       "user": "10001:10001",
       "init": true,

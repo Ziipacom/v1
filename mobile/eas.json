@@ -6,6 +6,8 @@
       "distribution": "internal",
       "environment": "development",
       "env": {
+        "EXPO_OWNER": "ziipa",
+        "EXPO_EAS_PROJECT_ID": "a130b762-6812-4963-9ebd-5d103a24084e",
         "APP_VARIANT": "preview",
         "EXPO_PUBLIC_API_URL": "https://api.ziipa.com",
         "EXPO_PUBLIC_ENABLE_DEMO": "true",
@@ -17,6 +19,8 @@
       "environment": "preview",
       "android": { "buildType": "apk" },
       "env": {
+        "EXPO_OWNER": "ziipa",
+        "EXPO_EAS_PROJECT_ID": "a130b762-6812-4963-9ebd-5d103a24084e",
         "APP_VARIANT": "preview",
         "EXPO_PUBLIC_API_URL": "https://api.ziipa.com",
         "EXPO_PUBLIC_ENABLE_DEMO": "true",
@@ -30,6 +34,8 @@
       "autoIncrement": true,
       "android": { "buildType": "app-bundle" },
       "env": {
+        "EXPO_OWNER": "ziipa",
+        "EXPO_EAS_PROJECT_ID": "a130b762-6812-4963-9ebd-5d103a24084e",
         "APP_VARIANT": "production",
         "EXPO_PUBLIC_PORTAL_MODE": "false",
         "EXPO_PUBLIC_API_URL": "https://api.ziipa.com",

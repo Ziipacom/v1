@@ -39,6 +39,7 @@ credentials.json
 store-owner-inputs.local.json
 artifacts/
 google-service-account*.json
+google-services*.json
 *.keystore
 audit*.json
 

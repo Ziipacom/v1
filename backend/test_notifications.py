@@ -56,6 +56,7 @@ def h(monkeypatch):
         monkeypatch.setattr(s, 'now', lambda: NOW)
         monkeypatch.setattr(s.config, 'enabled', True)
         monkeypatch.setattr(s.config, 'expo_enabled', True)
+        monkeypatch.setattr(s.config, 'expo_access_token', SecretStr('synthetic-expo-sender-token'))
         monkeypatch.setattr(s.config, 'encryption_key', SecretStr(encoded(b'k' * 32)))
         monkeypatch.setattr(api, 'notify', lambda: None)
         app = FastAPI(); app.include_router(api.router)
@@ -298,6 +299,7 @@ def test_real_expo_transport_fixed_url_no_proxy_redirect_credentials_echo(h, mon
     def handle(request):
         seen.append(request)
         assert str(request.url) == w.EXPO_SEND
+        assert request.headers['authorization'] == 'Bearer synthetic-expo-sender-token'
         body = json.loads(request.content)
         assert body['title'] == 'Ziipa' and body['data']['route'] == 'Notifications'
         return httpx.Response(200, json={'data': {'status': 'ok', 'id': 'synthetic-ticket'}})
@@ -464,3 +466,246 @@ def test_expo_read_timeout_ambiguous_and_connect_timeout_retry(h, monkeypatch):
     assert w.expo_request(w.EXPO_SEND, {})['status'] == 'uncertain'
     monkeypatch.setattr(w.httpx, 'Client', client_for(httpx.ConnectTimeout))
     assert w.expo_request(w.EXPO_SEND, {})['status'] == 'retry'
+
+
+def configure_web(monkeypatch):
+    private = ec.generate_private_key(ec.SECP256R1())
+    monkeypatch.setattr(s.config, 'vapid_private_key', SecretStr(encoded(private.private_bytes(
+        serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))))
+    monkeypatch.setattr(s.config, 'vapid_public_key', encoded(private.public_key().public_bytes(
+        serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)))
+    monkeypatch.setattr(s.config, 'vapid_subject', 'mailto:push@example.test')
+
+
+def heartbeat_cache(monkeypatch):
+    values, writes = {}, []
+    def setex(key, ttl, value):
+        writes.append((key, ttl, value)); values[key] = value
+    cache = SimpleNamespace(get=lambda key: values.get(key), setex=setex)
+    monkeypatch.setattr(s, 'cache', cache)
+    monkeypatch.setattr(w, 'heartbeat_key', lambda: 'synthetic-push-heartbeat')
+    return values, writes, cache
+
+
+def test_web_only_worker_cannot_advertise_expo_for_native_enabled_api(h, monkeypatch):
+    configure_web(monkeypatch)
+    values, writes, _ = heartbeat_cache(monkeypatch)
+    monkeypatch.setattr(s.config, 'expo_enabled', False)
+    monkeypatch.setattr(s.config, 'expo_access_token', SecretStr(''))
+    w.heartbeat()
+    stored = json.loads(values[w.heartbeat_key()])
+    assert set(stored['providers']) == {'web'} and writes[-1][1] == 180
+    # Simulate API config independently opting into native while the actual
+    # worker is Web-only. A generic liveness heartbeat must not bridge that gap.
+    monkeypatch.setattr(s.config, 'expo_enabled', True)
+    config = h.client.get(PREFIX + '/config').json()
+    assert config['web_configured'] and config['expo_configured']
+    assert config['web_ready'] and config['worker_ready'] and not config['expo_ready']
+
+
+def test_matching_provider_proofs_allow_api_without_worker_only_expo_token(h, monkeypatch):
+    configure_web(monkeypatch)
+    values, _, cache = heartbeat_cache(monkeypatch)
+    # Explicit coordinator keeps the standalone idle-renewal path compatible.
+    w.heartbeat(coordinator=cache)
+    stored = values[w.heartbeat_key()]
+    assert set(json.loads(stored)['providers']) == {'web', 'expo'}
+    for secret in (s.config.encryption_key.get_secret_value(), s.config.vapid_private_key.get_secret_value(),
+                   s.config.expo_access_token.get_secret_value(), s.config.vapid_public_key):
+        assert secret not in stored
+    monkeypatch.setattr(s.config, 'expo_access_token', SecretStr(''))
+    config = h.client.get(PREFIX + '/config').json()
+    assert config['web_ready'] and config['expo_ready'] and config['worker_ready']
+    assert config['readiness_protocol'] == 2
+    assert w.provider_readiness(coordinator=cache) == {'web_ready': True, 'expo_ready': True}
+    assert not s.sender_capabilities()['expo_ready']  # API is not a sender.
+    assert 'expo_access_token' not in config and 'providers' not in config
+
+
+@pytest.mark.parametrize('token', ['', 'short', 'invalid token with whitespace', 'x' * 513])
+def test_missing_authenticated_expo_sender_cannot_advertise_native_or_send(h, monkeypatch, token):
+    configure_web(monkeypatch)
+    _, _, _ = heartbeat_cache(monkeypatch)
+    monkeypatch.setattr(s.config, 'expo_access_token', SecretStr(token))
+    monkeypatch.setattr(w.httpx, 'Client', lambda **kwargs: pytest.fail('Unauthenticated Expo network request'))
+    w.heartbeat()
+    assert w.provider_readiness() == {'web_ready': True, 'expo_ready': False}
+    assert w.expo_request(w.EXPO_SEND, {}) == {'status': 'configuration_required'}
+    assert w.expo_request(w.EXPO_RECEIPTS, {}) == {'status': 'configuration_required'}
+
+
+def test_sender_configuration_outage_preserves_pending_job_without_handoff(h, monkeypatch):
+    optin(h); register(h); enqueue(h)
+    monkeypatch.setattr(s.config, 'expo_access_token', SecretStr(''))
+    monkeypatch.setattr(w, 'send_expo', lambda *args: pytest.fail('Unconfigured sender handed off notification'))
+    w.tick(h.factory)
+    row = delivery(h)
+    assert row.status == 'retry' and row.attempts == 0 and row.submitted_at is None
+
+
+def test_worker_crypto_mismatch_and_api_provider_optout_fail_closed(h, monkeypatch):
+    configure_web(monkeypatch)
+    heartbeat_cache(monkeypatch)
+    w.heartbeat()
+    key = s.config.encryption_key
+    monkeypatch.setattr(s.config, 'encryption_key', SecretStr(encoded(b'z' * 32)))
+    config = h.client.get(PREFIX + '/config').json()
+    assert config['web_configured'] and config['expo_configured']
+    assert not config['web_ready'] and not config['expo_ready'] and not config['worker_ready']
+    monkeypatch.setattr(s.config, 'encryption_key', key)
+    monkeypatch.setattr(s.config, 'expo_enabled', False)
+    assert w.provider_readiness() == {'web_ready': True, 'expo_ready': False}
+    monkeypatch.setattr(s.config, 'enabled', False)
+    assert w.provider_readiness() == {'web_ready': False, 'expo_ready': False}
+
+
+def test_web_vapid_config_mismatch_does_not_hide_independent_expo_sender(h, monkeypatch):
+    configure_web(monkeypatch)
+    heartbeat_cache(monkeypatch)
+    w.heartbeat()
+    # Both key pairs are internally valid. Their mismatch across processes,
+    # rather than merely a malformed private/public pair, must be detected.
+    configure_web(monkeypatch)
+    assert s.capabilities()['web_ready']
+    assert w.provider_readiness() == {'web_ready': False, 'expo_ready': True}
+    w.heartbeat()
+    monkeypatch.setattr(s.config, 'vapid_subject', 'https://ziipa.com')
+    assert w.provider_readiness() == {'web_ready': False, 'expo_ready': True}
+    w.heartbeat()
+    monkeypatch.setattr(s.config, 'web_allowed_origins', 'https://fcm.googleapis.com')
+    assert w.provider_readiness() == {'web_ready': False, 'expo_ready': True}
+
+
+def test_provider_off_heartbeat_clears_previously_advertised_capabilities(h, monkeypatch):
+    configure_web(monkeypatch)
+    values, _, _ = heartbeat_cache(monkeypatch)
+    w.heartbeat()
+    assert w.worker_ready()
+    monkeypatch.setattr(s.config, 'enabled', False)
+    w.heartbeat()
+    assert json.loads(values[w.heartbeat_key()])['providers'] == {}
+    monkeypatch.setattr(s.config, 'enabled', True)
+    assert not w.worker_ready()
+
+
+@pytest.mark.parametrize('invalid', [
+    'ready', '', '{', '[]', 'x' * 513,
+    json.dumps({'version': 1, 'expires_at': int(NOW.timestamp()) + 180, 'providers': {}}),
+    json.dumps({'version': 2, 'expires_at': int(NOW.timestamp()) - 1, 'providers': {}}),
+    json.dumps({'version': 2, 'expires_at': int(NOW.timestamp()) + 3600, 'providers': {}}),
+    json.dumps({'version': 2, 'expires_at': True, 'providers': {}}),
+    json.dumps({'version': 2, 'expires_at': int(NOW.timestamp()) + 180, 'providers': {'arbitrary': 'a' * 64}}),
+    json.dumps({'version': 2, 'expires_at': int(NOW.timestamp()) + 180, 'providers': {'web': 'a' * 64}, 'extra': True}),
+])
+def test_legacy_malformed_expired_or_future_heartbeat_never_implies_provider_readiness(h, monkeypatch, invalid):
+    configure_web(monkeypatch)
+    values, _, _ = heartbeat_cache(monkeypatch)
+    values[w.heartbeat_key()] = invalid
+    assert w.provider_readiness() == {'web_ready': False, 'expo_ready': False}
+    assert not w.worker_ready()
+
+
+def test_proof_expiry_is_bound_and_cannot_be_extended_in_redis(h, monkeypatch):
+    configure_web(monkeypatch)
+    values, _, _ = heartbeat_cache(monkeypatch)
+    w.heartbeat()
+    assert w.worker_ready()
+    value = json.loads(values[w.heartbeat_key()])
+    value['expires_at'] += 1
+    values[w.heartbeat_key()] = json.dumps(value)
+    assert not w.worker_ready()
+    w.heartbeat()
+    monkeypatch.setattr(s, 'now', lambda: NOW + timedelta(seconds=181))
+    assert not w.worker_ready()
+
+
+def test_copied_heartbeat_proof_cannot_cross_coordination_scopes_with_shared_crypto(h, monkeypatch):
+    import media_workflows
+    configure_web(monkeypatch)
+    values, _, _ = heartbeat_cache(monkeypatch)
+    # The cache key is deliberately fixed by the fixture: simulate copying a
+    # valid value into another database scope's key, not just a missing key.
+    monkeypatch.setattr(media_workflows, 'coordination_scope', lambda: 'synthetic-worker-scope')
+    w.heartbeat()
+    assert w.worker_ready()
+    stored = values[w.heartbeat_key()]
+    assert 'synthetic-worker-scope' not in stored  # Only opaque proofs leave the process.
+    monkeypatch.setattr(media_workflows, 'coordination_scope', lambda: 'synthetic-other-scope')
+    assert w.provider_readiness() == {'web_ready': False, 'expo_ready': False}
+    assert not w.worker_ready()
+
+
+def mixed_provider_queue(h, monkeypatch, native_count=1):
+    configure_web(monkeypatch)
+    monkeypatch.setattr(s, 'resolve_public', lambda host: [(2, '8.8.8.8')])
+    optin(h); register(h)
+    for _ in range(native_count):
+        enqueue(h)
+    register(h, device(provider='web', expo_token=None, subscription=web_subscription()))
+    enqueue(h)
+
+
+def test_web_only_worker_filters_before_candidate_limit_and_never_mutates_native_work(h, monkeypatch):
+    mixed_provider_queue(h, monkeypatch, native_count=21)
+    with h.factory() as session:
+        native = list(session.scalars(select(s.NotificationDelivery).where(s.NotificationDelivery.provider == 'expo')))
+        for index, row in enumerate(native):
+            row.created_at = NOW - timedelta(hours=1) + timedelta(seconds=index)
+        # An expired uncertain native lease must not be recovered by this role,
+        # and old native history must not be pruned by Web-only maintenance.
+        native[0].status = 'sending'; native[0].submitted_at = NOW - timedelta(minutes=3)
+        native[0].lease_token = 'synthetic-expired-native-lease'; native[0].lease_until = NOW - timedelta(minutes=1)
+        native[1].status = 'uncertain'; native[1].updated_at = NOW - timedelta(days=91)
+        session.commit()
+        snapshot = [(row.id, row.status, row.attempts, row.next_run, row.lease_token, row.lease_until, row.updated_at)
+            for row in native]
+    monkeypatch.setattr(s.config, 'expo_enabled', False)
+    monkeypatch.setattr(w, 'send_expo', lambda *args: pytest.fail('Web-only role sent native push'))
+    sent = []
+    monkeypatch.setattr(w, 'send_web', lambda *args: sent.append('web') or {'status': 'provider_accepted'})
+    assert w.tick(h.factory, limit=1, providers=('web',)) == 1
+    assert sent == ['web']
+    with h.factory() as session:
+        after = [session.get(s.NotificationDelivery, identifier) for identifier, *_ in snapshot]
+        assert [(row.id, row.status, row.attempts, row.next_run, row.lease_token, row.lease_until, row.updated_at)
+            for row in after] == snapshot
+        web = session.scalar(select(s.NotificationDelivery).where(s.NotificationDelivery.provider == 'web'))
+        assert web.status == 'provider_accepted'
+    assert w.claim(h.factory, providers=('web',)) is None
+
+
+def test_inactive_provider_deadlines_do_not_wake_or_claim_web_only_role(h, monkeypatch):
+    mixed_provider_queue(h, monkeypatch)
+    with h.factory() as session:
+        for row in session.scalars(select(s.NotificationDelivery)):
+            row.next_run = NOW + timedelta(minutes=10) if row.provider == 'web' else NOW - timedelta(minutes=5)
+        session.commit()
+        assert s.aware(w.next_wakeup_at(session, providers=('web',))) == NOW + timedelta(minutes=10)
+        assert s.aware(w.next_wakeup_at(session)) == NOW - timedelta(minutes=5)
+    assert w.claim(h.factory, providers={'web'}) is None
+    # Default full-worker behavior remains able to claim the due native row.
+    claimed = w.claim(h.factory)
+    assert claimed is not None
+    with h.factory() as session:
+        assert session.get(s.NotificationDelivery, claimed[0]).provider == 'expo'
+
+
+def test_filtered_worker_heartbeat_cannot_advertise_unserved_provider(h, monkeypatch):
+    configure_web(monkeypatch)
+    values, _, cache = heartbeat_cache(monkeypatch)
+    assert s.sender_capabilities()['expo_ready']
+    w.heartbeat(coordinator=cache, providers=('web',))
+    assert set(json.loads(values[w.heartbeat_key()])['providers']) == {'web'}
+    assert w.provider_readiness() == {'web_ready': True, 'expo_ready': False}
+
+
+@pytest.mark.parametrize('providers', [(), [], set(), 'web', ('unknown',), ('web', 'web'), ('web', 1), {'web': True}])
+def test_scheduler_provider_subset_is_fixed_nonempty_and_validated_before_any_io(providers):
+    with pytest.raises(ValueError):
+        w.claim(None, providers=providers)
+    with pytest.raises(ValueError):
+        w.tick(None, providers=providers)
+    with pytest.raises(ValueError):
+        w.next_wakeup_at(None, providers=providers)
+    with pytest.raises(ValueError):
+        w.heartbeat(providers=providers)

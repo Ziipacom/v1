@@ -302,6 +302,8 @@ def run_worker(stop, *, once=False, coordinator=cache, session_factory=SessionLo
                         next_due = next_wakeup_at(session)
                 from campaign_worker import heartbeat as campaign_heartbeat
                 campaign_heartbeat(coordinator)
+                from calendar_worker import heartbeat as calendar_heartbeat
+                calendar_heartbeat(coordinator)
                 from live_recordings_worker import heartbeat as recording_heartbeat
                 recording_heartbeat(coordinator)
                 from notification_worker import heartbeat as notification_heartbeat

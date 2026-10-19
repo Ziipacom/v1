@@ -22,6 +22,7 @@ import {
 import {
   notificationCategories,
   notificationPreferenceInput,
+  notificationProviderReadiness,
   notificationRoot,
   notificationStatus,
   type NotificationCategory,
@@ -263,8 +264,8 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
           <Text style={styles.small}>
             Server {config.enabled ? "enabled" : "disabled"} · worker{" "}
             {config.worker_ready ? "ready" : "not ready"} · native{" "}
-            {config.expo_ready ? "configured" : "needs setup"} · browser{" "}
-            {config.web_ready ? "configured" : "needs setup"}
+            {notificationProviderReadiness(config, "expo")} · browser{" "}
+            {notificationProviderReadiness(config, "web")}
           </Text>
         </View>
       )}

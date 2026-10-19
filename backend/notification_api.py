@@ -28,11 +28,15 @@ def notify():
 
 @router.get('/config')
 def get_config():
-    from notification_worker import worker_ready
-    ready = service.capabilities()
-    return {key: ready[key] for key in ('enabled', 'expo_ready', 'web_ready', 'vapid_public_key')} | {
-        'worker_ready': worker_ready(), 'categories': list(service.CATEGORIES),
-        'notice': 'Optional generic device alerts only. Provider acceptance does not prove display. Existing activity stays in Ziipa even when push is unavailable.'}
+    from notification_worker import provider_readiness
+    configured = service.capabilities()
+    ready = provider_readiness()
+    return {key: configured[key] for key in ('enabled', 'vapid_public_key')} | ready | {
+        'readiness_protocol': 2,
+        'worker_ready': any(ready.values()),
+        'web_configured': configured['web_ready'], 'expo_configured': configured['expo_ready'],
+        'categories': list(service.CATEGORIES),
+        'notice': 'Provider readiness requires a running worker with matching encryption/provider configuration. Native delivery also requires its enhanced-security Expo sender token. Configuration and provider acceptance do not prove device display. Existing activity stays in Ziipa when push is unavailable.'}
 
 
 @router.get('/preferences')

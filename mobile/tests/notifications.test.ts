@@ -5,11 +5,47 @@ import vm from "node:vm";
 import {
   notificationOpened,
   notificationPreferenceInput,
+  notificationProviderReadiness,
   notificationStatus,
   webPushKey,
+  type PushConfig,
 } from "../src/lib/notification-types.ts";
 
 const deliveryId = "a2f9fbb5-d803-4ebd-a795-f98cc025d2e4";
+test("provider labels distinguish matching worker readiness, configuration and legacy API uncertainty", () => {
+  const config: PushConfig = {
+    enabled: true,
+    worker_ready: true,
+    web_ready: true,
+    expo_ready: false,
+    web_configured: true,
+    expo_configured: false,
+    readiness_protocol: 2,
+    vapid_public_key: null,
+    categories: [],
+    notice: "",
+  };
+  assert.equal(notificationProviderReadiness(config, "web"), "ready");
+  assert.equal(notificationProviderReadiness(config, "expo"), "needs setup");
+  assert.equal(
+    notificationProviderReadiness({ ...config, web_ready: false }, "web"),
+    "configured; worker not ready",
+  );
+  assert.equal(
+    notificationProviderReadiness(
+      { ...config, readiness_protocol: undefined },
+      "web",
+    ),
+    "configured (worker unverified)",
+  );
+  assert.equal(
+    notificationProviderReadiness(
+      { ...config, expo_configured: undefined },
+      "expo",
+    ),
+    "not ready",
+  );
+});
 test("notification opt-in binds selected supported categories and a current preference revision", () => {
   assert.throws(() =>
     notificationPreferenceInput(true, ["calendar"], 1, false),

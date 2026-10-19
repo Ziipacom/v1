@@ -17,7 +17,8 @@ SPEC.loader.exec_module(storage_preflight)
 FLAGS = frozenset({'OS_CALENDAR_ENABLED', 'CREATION_CAMPAIGN_ENABLED',
                    'LIVE_RECORDINGS_ENABLED', 'PUSH_ENABLED', 'SOCIAL_PUBLIC_SYNC_ENABLED'})
 PUSH_KEYS = frozenset({'PUSH_ENCRYPTION_KEY', 'PUSH_VAPID_PRIVATE_KEY', 'PUSH_VAPID_PUBLIC_KEY'})
-OPTIONAL = PUSH_KEYS | {'PUSH_VAPID_SUBJECT', 'LIVEPEER_API_KEY'}
+OPTIONAL = PUSH_KEYS | {'PUSH_VAPID_SUBJECT', 'LIVEPEER_API_KEY',
+                        'PUSH_EXPO_ENABLED', 'PUSH_EXPO_ACCESS_TOKEN'}
 
 
 def decoded(value: str, length: int | None = None) -> bytes:
@@ -49,6 +50,16 @@ def parse_environment(contents: str) -> dict[str, str]:
         raise ValueError('The workflow provider key has invalid syntax.')
     if values['LIVE_RECORDINGS_ENABLED'] == 'true' and not live_key:
         raise ValueError('Recording imports require their separately approved workflow provider key.')
+    native = values.get('PUSH_EXPO_ENABLED', 'false')
+    expo_token = values.get('PUSH_EXPO_ACCESS_TOKEN', '')
+    if native not in {'true', 'false'}:
+        raise ValueError('The optional native push flag must be explicit lowercase true or false.')
+    if expo_token and not re.fullmatch(r'[A-Za-z0-9._~-]{20,512}', expo_token):
+        raise ValueError('The optional native push credential has invalid syntax.')
+    if native == 'true' and (values['PUSH_ENABLED'] != 'true' or not expo_token):
+        raise ValueError('Native push requires enabled notification consent handling and its separately approved Expo access token.')
+    if native == 'false' and expo_token:
+        raise ValueError('Do not copy native push credentials while native push is disabled.')
     push_present = any(values.get(key, '') for key in PUSH_KEYS)
     if values['PUSH_ENABLED'] == 'true' or push_present:
         try:

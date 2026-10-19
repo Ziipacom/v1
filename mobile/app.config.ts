@@ -4,6 +4,11 @@ const production = process.env.APP_VARIANT === "production";
 const portal = process.env.EXPO_PUBLIC_PORTAL_MODE === "true";
 const identifier = process.env.ZIIPA_APP_ID || "com.ziipa.app";
 const projectId = process.env.EXPO_EAS_PROJECT_ID;
+// Owner-provided Firebase client configuration (an EAS file variable or local
+// path), never the FCM service-account private key. Web exports do not use it.
+const googleServicesFile = portal
+  ? undefined
+  : process.env.GOOGLE_SERVICES_JSON?.trim();
 // Omit unreviewed export declarations instead of assuming an exemption.
 const encryptionDeclaration = process.env.ZIIPA_USES_NON_EXEMPT_ENCRYPTION;
 const encryptionReviewed = process.env.ZIIPA_ENCRYPTION_REVIEWED === "true";
@@ -58,6 +63,7 @@ const config: ExpoConfig = {
   android: {
     allowBackup: false,
     package: production ? identifier : `${identifier}.preview`,
+    ...(googleServicesFile ? { googleServicesFile } : {}),
     versionCode: 1,
     adaptiveIcon: {
       foregroundImage: "./assets/brand/app-icon.png",

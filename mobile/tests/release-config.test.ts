@@ -1,12 +1,39 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import test from "node:test";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const checker = fileURLToPath(
   new URL("../scripts/check-release.cjs", import.meta.url),
 );
 const configPath = new URL("../app.config.ts", import.meta.url).href;
+const fixtureDirectory = mkdtempSync(join(tmpdir(), "ziipa-release-firebase-"));
+after(() => {
+  // Only delete this test's freshly created, bounded temporary directory.
+  assert.equal(dirname(resolve(fixtureDirectory)), resolve(tmpdir()));
+  assert.match(fixtureDirectory, /ziipa-release-firebase-[^/\\]+$/);
+  rmSync(fixtureDirectory, { recursive: true, force: true });
+});
+function firebaseFile(name: string, value: unknown) {
+  const path = join(fixtureDirectory, name);
+  writeFileSync(path, JSON.stringify(value));
+  return path;
+}
+const clientConfiguration = {
+  project_info: { project_number: "123456789", project_id: "synthetic-ziipa" },
+  client: [
+    {
+      client_info: {
+        mobilesdk_app_id: "1:123456789:android:synthetic",
+        android_client_info: { package_name: "com.ziipa.app" },
+      },
+    },
+  ],
+};
+const firebasePath = firebaseFile("android-client.json", clientConfiguration);
 const baseline: Record<string, string> = {
   APP_VARIANT: "production",
   EXPO_PUBLIC_API_URL: "https://api.ziipa.com",
@@ -28,6 +55,7 @@ const baseline: Record<string, string> = {
   ZIIPA_SIGNING_REVIEWED: "true",
   ZIIPA_ENCRYPTION_REVIEWED: "true",
   ZIIPA_USES_NON_EXEMPT_ENCRYPTION: "false",
+  GOOGLE_SERVICES_JSON: firebasePath,
 };
 function environment(changes: Record<string, string>) {
   // No tokens, signing passwords, or unrelated developer identity are inherited.
@@ -62,6 +90,91 @@ test("production fails closed for owner, signer, export review, preview identity
     assert.equal(check(changes).status, 1);
   }
   assert.equal(check().status, 0); // Syntax/acknowledgments only; no remote request or credential creation.
+});
+
+test("Android release preflight rejects missing, mismatched and private-key Firebase files without echoing them", () => {
+  const wrongPackage = firebaseFile("wrong-package.json", {
+    ...clientConfiguration,
+    client: [
+      {
+        client_info: {
+          mobilesdk_app_id: "1:123456789:android:synthetic",
+          android_client_info: { package_name: "com.other.app" },
+        },
+      },
+    ],
+  });
+  const serviceAccount = firebaseFile("private-key.json", {
+    ...clientConfiguration,
+    type: "service_account",
+    private_key: "synthetic-do-not-display",
+  });
+  for (const file of [
+    "",
+    join(fixtureDirectory, "missing.json"),
+    wrongPackage,
+    serviceAccount,
+  ]) {
+    const result = check({
+      EAS_BUILD_PLATFORM: "android",
+      GOOGLE_SERVICES_JSON: file,
+    });
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /Firebase Android client file matching ZIIPA_APP_ID/,
+    );
+    assert.doesNotMatch(
+      result.stderr,
+      /synthetic-do-not-display|wrong-package\.json|private-key\.json|missing\.json/,
+    );
+  }
+  assert.equal(check({ EAS_BUILD_PLATFORM: "android" }).status, 0);
+  assert.equal(
+    check({ EAS_BUILD_PLATFORM: "ios", GOOGLE_SERVICES_JSON: "" }).status,
+    0,
+  );
+});
+
+test("Firebase file wiring is native-only, optional for preview and never embeds file contents", () => {
+  function evaluate(changes: Record<string, string>) {
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "-e",
+        "const {default:c}=await import(process.argv[1]); console.log(JSON.stringify({file:c.android.googleServicesFile,package:c.android.package}));",
+        configPath,
+      ],
+      { env: environment(changes), encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(
+      result.stdout,
+      /project_number|mobilesdk_app_id|private_key/,
+    );
+    return JSON.parse(result.stdout);
+  }
+  assert.equal(evaluate({}).file, undefined);
+  assert.deepEqual(
+    evaluate({ APP_VARIANT: "production", GOOGLE_SERVICES_JSON: firebasePath }),
+    {
+      file: firebasePath,
+      package: "com.ziipa.app",
+    },
+  );
+  assert.equal(
+    evaluate({ GOOGLE_SERVICES_JSON: firebasePath }).package,
+    "com.ziipa.app.preview",
+  );
+  assert.equal(
+    evaluate({
+      EXPO_PUBLIC_PORTAL_MODE: "true",
+      GOOGLE_SERVICES_JSON: firebasePath,
+    }).file,
+    undefined,
+  );
 });
 test("production variant cannot bypass the check with another EAS profile", () => {
   assert.equal(

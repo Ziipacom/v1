@@ -222,7 +222,8 @@ def test_workflow_package_has_separate_optional_credentials_and_bounded_writable
     assert service['environment']['OS_WORKFLOW_ENABLED'] == 'true'
     assert service['environment']['RENDER_WORK_DIR'] == '/tmp/ziipa-workflows'
     assert not workflow_preflight.FLAGS.intersection(service['environment'])  # No shadowing optional feature choices.
-    assert service['environment']['PUSH_EXPO_ENABLED'] == service['environment']['TRANSCRIPTION_ENABLED'] == 'false'
+    assert service['environment']['TRANSCRIPTION_ENABLED'] == 'false'
+    assert 'PUSH_EXPO_ENABLED' not in service['environment']  # Optional file must not be shadowed.
     assert service['environment']['OS_ASSISTANT_LOCAL_AI_ENABLED'] == 'false'
     assert service['mem_limit'] == service['memswap_limit'] == '512m' and service['cpus'] == '0.25'
     assert service['platform'] == 'linux/arm64' and service['pull_policy'] == 'never'

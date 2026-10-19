@@ -25,6 +25,8 @@ from notification_services import NotificationDelivery as Delivery, Notification
 MAX_RESPONSE = 16384
 EXPO_SEND = 'https://exp.host/--/api/v2/push/send'
 EXPO_RECEIPTS = 'https://exp.host/--/api/v2/push/getReceipts'
+HEARTBEAT_SECONDS = 180
+MAX_HEARTBEAT_BYTES = 512
 
 
 def heartbeat_key():
@@ -32,29 +34,68 @@ def heartbeat_key():
     return 'ziipa:push-worker:' + coordination_scope()
 
 
-def heartbeat():
-    if service.config.enabled:
-        try:
-            service.cache.setex(heartbeat_key(), 180, 'ready')
-        except Exception:
-            pass
+def heartbeat(coordinator=None, *, providers=None):
+    allowed = selected_providers(providers)
+    try:
+        expires = int(service.now().timestamp()) + HEARTBEAT_SECONDS
+        ready = service.sender_capabilities()
+        providers = {provider: service.provider_heartbeat_proof(provider, expires)
+            for provider in allowed if ready[provider + '_ready']}
+        # An explicit empty provider set also clears a previous configuration's
+        # readiness on the next heartbeat. No credential/config values are kept.
+        target = coordinator if coordinator is not None else service.cache
+        target.setex(heartbeat_key(), HEARTBEAT_SECONDS,
+            json.dumps({'version': 2, 'expires_at': expires, 'providers': providers}, separators=(',', ':')))
+    except Exception:
+        pass
+
+
+def provider_readiness(coordinator=None):
+    result = {'web_ready': False, 'expo_ready': False}
+    configured = service.capabilities()
+    if not configured['enabled'] or not configured['encryption_ready']:
+        return result
+    try:
+        target = coordinator if coordinator is not None else service.cache
+        raw = target.get(heartbeat_key())
+        if not isinstance(raw, (str, bytes)) or len(raw.encode('utf-8') if isinstance(raw, str) else raw) > MAX_HEARTBEAT_BYTES:
+            return result
+        value = json.loads(raw)
+        if (not isinstance(value, dict) or set(value) != {'version', 'expires_at', 'providers'}
+                or type(value['version']) is not int or value['version'] != 2
+                or type(value['expires_at']) is not int):
+            return result
+        expires, current = value['expires_at'], int(service.now().timestamp())
+        if not current < expires <= current + HEARTBEAT_SECONDS + 15:
+            return result
+        providers = value['providers']
+        if (not isinstance(providers, dict) or len(providers) > 2
+                or any(provider not in ('web', 'expo') or not isinstance(proof, str)
+                    or not re.fullmatch(r'[0-9a-f]{64}', proof) for provider, proof in providers.items())):
+            return result
+        for provider, proof in providers.items():
+            if configured[provider + '_ready']:
+                import hmac
+                result[provider + '_ready'] = hmac.compare_digest(
+                    proof, service.provider_heartbeat_proof(provider, expires))
+    except Exception:
+        pass
+    return result
 
 
 def worker_ready():
-    if not service.config.enabled:
-        return False
-    try:
-        return bool(service.cache.get(heartbeat_key()))
-    except Exception:
-        return False
+    return any(provider_readiness().values())
 
 
 def expo_request(url, data):
     """Fixed destination, no proxies, redirects, credentials in diagnostics."""
     headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
-    token = service.config.expo_access_token.get_secret_value()
-    if token:
-        headers['Authorization'] = 'Bearer ' + token
+    if url not in (EXPO_SEND, EXPO_RECEIPTS) or not service.config.enabled or not service.config.expo_enabled:
+        return {'status': 'configuration_required'}
+    try:
+        headers['Authorization'] = 'Bearer ' + service.expo_sender_token()
+    except Exception:
+        return {'status': 'configuration_required'}
     try:
         with httpx.Client(timeout=httpx.Timeout(10, connect=5), trust_env=False, follow_redirects=False) as client:
             with client.stream('POST', url, json=data, headers=headers) as response:
@@ -231,7 +272,7 @@ def current_permission(session, row):
     if str(owner) != str(row.owner_id):
         service.revoke_device(session, device)
         return device, 'revoked'
-    if not service.capabilities().get(row.provider + '_ready'):
+    if not service.sender_capabilities().get(row.provider + '_ready'):
         return device, 'configuration_required'
     return device, None
 
@@ -241,10 +282,23 @@ def finish(row, status, detail, *, next_run=None):
     row.lease_token, row.lease_until, row.updated_at = '', None, service.now()
 
 
-def claim(session_factory):
+def selected_providers(providers=None):
+    """Internal scheduler allowlist; never infer a provider from queued work."""
+    if providers is None:
+        return ('web', 'expo')
+    if (not isinstance(providers, (tuple, list, set, frozenset)) or not 1 <= len(providers) <= 2
+            or any(not isinstance(provider, str) or provider not in ('web', 'expo') for provider in providers)
+            or len(set(providers)) != len(providers)):
+        raise ValueError('Choose a nonempty subset of supported push providers')
+    return tuple(provider for provider in ('web', 'expo') if provider in providers)
+
+
+def claim(session_factory, *, providers=None):
+    allowed = selected_providers(providers)
     current = service.now()
     with session_factory() as session:
         candidates = list(session.execute(select(Delivery.id, Delivery.owner_id).where(
+            Delivery.provider.in_(allowed),
             Delivery.status.in_(service.ACTIVE),
             or_(Delivery.lease_until.is_(None), Delivery.lease_until <= current),
             or_(Delivery.next_run <= current, Delivery.status == 'sending'))
@@ -253,7 +307,8 @@ def claim(session_factory):
         with session_factory() as session:
             if not service.owner_lock(session, owner_id):
                 continue
-            row = session.scalar(select(Delivery).where(Delivery.id == identifier).with_for_update(skip_locked=True).execution_options(populate_existing=True))
+            row = session.scalar(select(Delivery).where(Delivery.id == identifier,
+                Delivery.provider.in_(allowed)).with_for_update(skip_locked=True).execution_options(populate_existing=True))
             if not row or row.status not in service.ACTIVE or row.lease_until and service.aware(row.lease_until) > current:
                 continue
             if row.status == 'sending':
@@ -326,6 +381,10 @@ def process(session_factory, claimed):
         elif outcome == 'retry':
             finish(row, 'retry', 'The provider explicitly rejected this attempt or the connection did not begin. A bounded retry is scheduled.',
                 next_run=service.now() + timedelta(seconds=min(3600, 30 * 2 ** row.attempts)))
+        elif outcome == 'configuration_required':
+            finish(row, 'awaiting_receipt' if receipt else 'retry',
+                'Authenticated notification sender configuration is unavailable. No new handoff was attempted.',
+                next_run=service.now() + timedelta(minutes=1))
         elif outcome == 'revoked':
             device = session.get(PushDevice, row.device_id)
             if device:
@@ -338,14 +397,15 @@ def process(session_factory, claimed):
         session.commit()
 
 
-def tick(session_factory, limit=3):
+def tick(session_factory, limit=3, *, providers=None):
+    allowed = selected_providers(providers)
     if not service.config.enabled:
         return 0
     started, completed = time.monotonic(), 0
     for _ in range(max(0, min(limit, 3))):
         if time.monotonic() - started > 25:
             break
-        claimed = claim(session_factory)
+        claimed = claim(session_factory, providers=allowed)
         if not claimed:
             break
         try:
@@ -355,21 +415,22 @@ def tick(session_factory, limit=3):
             # checkpoint/lease determines safe recovery after an interrupted call.
             pass
         completed += 1
-    heartbeat()
-    prune_history(session_factory)
+    heartbeat(providers=allowed)
+    prune_history(session_factory, providers=allowed)
     return completed
 
 
-def prune_history(session_factory):
+def prune_history(session_factory, *, providers=None):
     """Keep receipts (including uncertain handoffs) 90 days; bounded batches.
 
     Old event dedupe tombstones survive at least as long as all their receipts.
     Producers already have their own durable occurrence/completion identities.
     This maintenance never erases active work or retries a historical event.
     """
+    allowed = selected_providers(providers)
     cutoff = service.now() - timedelta(days=90)
     with session_factory() as session:
-        stale = list(session.scalars(select(Delivery.id).where(Delivery.status.not_in(service.ACTIVE),
+        stale = list(session.scalars(select(Delivery.id).where(Delivery.provider.in_(allowed), Delivery.status.not_in(service.ACTIVE),
             Delivery.updated_at < cutoff).order_by(Delivery.updated_at).limit(100)))
         if stale:
             session.execute(delete(Delivery).where(Delivery.id.in_(stale)))
@@ -381,9 +442,10 @@ def prune_history(session_factory):
         session.commit()
 
 
-def next_wakeup_at(session):
+def next_wakeup_at(session, *, providers=None):
+    allowed = selected_providers(providers)
     if not service.config.enabled:
         return None
     value = session.scalar(select(func.min(case((Delivery.lease_until.is_not(None), Delivery.lease_until),
-        else_=Delivery.next_run))).where(Delivery.status.in_(service.ACTIVE)))
+        else_=Delivery.next_run))).where(Delivery.status.in_(service.ACTIVE), Delivery.provider.in_(allowed)))
     return service.aware(value)

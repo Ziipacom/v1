@@ -8,6 +8,39 @@ if (!strict) {
 }
 const errors = [];
 const env = process.env;
+// Check only Android when EAS supplies a target. A local all-platform release
+// check also validates Android; iOS builds do not need a Firebase client file.
+if (!env.EAS_BUILD_PLATFORM || env.EAS_BUILD_PLATFORM === "android") {
+  try {
+    const fs = require("node:fs");
+    const file = env.GOOGLE_SERVICES_JSON?.trim();
+    if (!file || fs.statSync(file).size > 65536) throw new Error();
+    const firebase = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (
+      firebase.type === "service_account" ||
+      "private_key" in firebase ||
+      !/^[0-9]+$/.test(firebase.project_info?.project_number || "") ||
+      typeof firebase.project_info?.project_id !== "string" ||
+      !firebase.project_info.project_id ||
+      !Array.isArray(firebase.client) ||
+      !firebase.client.some(
+        (entry) =>
+          entry?.client_info?.android_client_info?.package_name ===
+            env.ZIIPA_APP_ID &&
+          typeof entry?.client_info?.mobilesdk_app_id === "string" &&
+          entry.client_info.mobilesdk_app_id.startsWith(
+            `1:${firebase.project_info.project_number}:android:`,
+          ),
+      )
+    )
+      throw new Error();
+  } catch {
+    // Never echo file paths, JSON contents or provider credentials.
+    errors.push(
+      "GOOGLE_SERVICES_JSON must point to a Firebase Android client file matching ZIIPA_APP_ID, not a service-account private key. Configure FCM V1 sending credentials separately in the owner EAS project.",
+    );
+  }
+}
 for (const name of [
   "EXPO_PUBLIC_API_URL",
   "EXPO_PUBLIC_PRIVACY_URL",

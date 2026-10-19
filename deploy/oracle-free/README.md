@@ -242,9 +242,10 @@ unprotected or unrecognized configuration blocks startup without printing values
 
 The example explicitly leaves `LIVE_RECORDINGS_ENABLED`, `PUSH_ENABLED`,
 `CREATION_CAMPAIGN_ENABLED` and `OS_CALENDAR_ENABLED` false. The existing public
-profile sync setting remains true and can be disabled in this file. Only the
-Livepeer server key and the dedicated Web Push encryption/VAPID keys/contact
-are allowed as optional credentials. They reach the workflow container only;
+profile sync setting remains true and can be disabled in this file. Allowed
+optional credentials are the Livepeer server key, dedicated Web Push
+encryption/VAPID keys/contact, and the separately gated Expo access token described
+below. They reach the workflow container only;
 the renderer, agent, inference service and website do not receive this file.
 Secrets must be separately authorized for this host: permission to save a key
 locally does not authorize transferring it to Oracle or Render.
@@ -262,7 +263,15 @@ Web Push requires the same dedicated encryption/VAPID keys and
 `PUSH_VAPID_SUBJECT=https://ziipa.com` on API and workflow. The stdlib-only offline
 preflight checks key encoding/size; the application must also report the actual
 P256 key pair and transport ready before opt-in device acceptance. Native Expo
-push, transcription, local AI and external publishing credentials are deliberately
+push remains disabled by default. The optional workflow-only
+`PUSH_EXPO_ENABLED=true` requires `PUSH_ENABLED=true`, the complete dedicated push
+keys, and a bounded nonempty `PUSH_EXPO_ACCESS_TOKEN`. Authorize that credential
+specifically for this workflow host and the matching API only after the owner
+EAS project, FCM/APNs configuration and replacement native binary are verified.
+Never copy it while the native flag is false. Old optional files without these
+two native settings retain the disabled default. Provider/device acceptance is
+still separate; syntax validation does not establish Expo project ownership.
+Transcription, local AI and external publishing credentials remain deliberately
 excluded from this free profile. Campaign preparation can use manual text and
 rendering; it does not acquire provider publishing authority from this package.
 Changing the profile for those capabilities requires separate resource, privacy
