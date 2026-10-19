@@ -24,7 +24,7 @@ PROFILES = {
         'swap_limit_bytes': 0, 'pids_limit': 48, 'tmpfs_bytes': 32 * MIB},
     'compact256': {'memory_limit_bytes': 256 * MIB, 'required_available_bytes': 384 * MIB,
         'minimum_total_bytes': 768 * MIB, 'os_reserve_bytes': 128 * MIB,
-        'memory_peak_limit_bytes': 224 * MIB, 'cpu_quota': 12500, 'cpu_period': 100000,
+        'memory_peak_limit_bytes': 224 * MIB, 'cpu_quota': 12000, 'cpu_period': 100000,
         'swap_limit_bytes': 0, 'pids_limit': 48, 'tmpfs_bytes': 32 * MIB},
 }
 CONFIG = Path('/etc/ziipa')

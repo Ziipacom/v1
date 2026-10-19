@@ -43,7 +43,7 @@
       "security_opt": [
         "no-new-privileges:true"
       ],
-      "cpus": "0.125",
+      "cpus": "0.12",
       "mem_limit": "256m",
       "memswap_limit": "256m",
       "pids_limit": 48,

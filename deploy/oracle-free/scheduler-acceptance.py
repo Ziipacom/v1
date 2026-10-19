@@ -17,6 +17,7 @@ import subprocess
 import sys
 import uuid
 
+sys.dont_write_bytecode = True
 PACKAGE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location('ziipa_scheduler_acceptance_profiles', PACKAGE / 'scheduler-profiles.py')
 profiles = importlib.util.module_from_spec(SPEC)
@@ -39,7 +40,7 @@ root=pathlib.Path('/sys/fs/cgroup')
 assert (root/'memory.max').read_text().strip()=='__MEMORY_BYTES__'
 assert (root/'memory.swap.max').read_text().strip()=='0'
 quota,period=map(int,(root/'cpu.max').read_text().split())
-assert quota==12500 and period==100000
+assert quota==__CPU_QUOTA__ and period==100000
 assert (root/'pids.max').read_text().strip()=='48'
 assert os.statvfs('/tmp').f_blocks*os.statvfs('/tmp').f_frsize==33554432
 assert shutil.which('ffmpeg') is None and shutil.which('node') is None
@@ -54,10 +55,11 @@ assert peak<__PEAK_BYTES__, 'Insufficient container memory headroom'
 sys.exit(code)
 """
     script = script.replace('__MEMORY_BYTES__', str(limits['memory_limit_bytes'])).replace(
-        '__PEAK_BYTES__', str(limits['memory_peak_limit_bytes'])).replace('__PROFILE__', profile_name)
+        '__PEAK_BYTES__', str(limits['memory_peak_limit_bytes'])).replace('__PROFILE__', profile_name).replace(
+        '__CPU_QUOTA__', str(limits['cpu_quota']))
     result = ['docker', 'run', '--rm', '--pull=never', '--platform=linux/amd64',
         '--network=none', '--read-only', '--user=10001:10001', '--cap-drop=ALL',
-        '--security-opt=no-new-privileges:true', '--cpus=0.125', '--memory=' + str(memory_mib) + 'm',
+        '--security-opt=no-new-privileges:true', '--cpus=' + str(limits['cpu_quota'] / limits['cpu_period']), '--memory=' + str(memory_mib) + 'm',
         '--memory-swap=' + str(memory_mib) + 'm', '--pids-limit=48', '--shm-size=8m', '--ulimit=core=0',
         '--ulimit=nofile=128:128', '--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=33554432,mode=1777',
         '--mount', f'type=bind,src={test_file},dst=/acceptance/test_scheduler_worker.py,readonly',

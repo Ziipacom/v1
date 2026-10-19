@@ -50,16 +50,18 @@ container and requires **384 MiB available** before start. Both reserve the same
 128 MiB for the operating system beyond the full container allocation and require
 at least 768 MiB actual total RAM. Neither profile permits arbitrary memory/CPU
 overrides, swap, extra ports, another Ziipa worker or disabling OS monitoring.
-The CPU, 32 MiB temporary filesystem, 48 PIDs, non-root/read-only boundaries and
-supported calendar/push functions are identical. Compact acceptance additionally
+Standard CPU remains 0.125 (12.5%). Compact uses the stricter fixed **0.12 CPU**
+(12%): exactly 12000 quota / 100000 period. The 32 MiB temporary filesystem,
+48 PIDs, non-root/read-only boundaries and supported functions are identical.
+Compact acceptance additionally
 requires a whole-container peak below 224 MiB, leaving 32 MiB inside its cap.
 
 Select compact mode explicitly; do not edit the existing 384 MiB Compose file:
 
 ```sh
-sudo python3 deploy/oracle-free/scheduler-acceptance.py --profile compact256 \
+sudo python3 -B deploy/oracle-free/scheduler-acceptance.py --profile compact256 \
   --image ziipa-scheduler:REVIEWED_RELEASE_TAG --record-native-receipt
-sudo python3 deploy/oracle-free/scheduler-preflight.py --profile compact256
+sudo python3 -B deploy/oracle-free/scheduler-preflight.py --profile compact256
 ```
 
 The first command runs the actual synthetic suite under exact compact cgroup
@@ -87,6 +89,14 @@ implicitly stops a preserved service. This profile is source-ready until its
 specific image passes native host and opted-in device acceptance; a prior
 384 MiB rehearsal is not proof of 256 MiB viability.
 
+The 3210d78 compact native attempt was rejected because the host rounded its
+requested 0.125 CPU to 13000/100000 (13%). That failed attempt provides no native
+acceptance receipt. The fixed 0.12 CPU successor requires fresh exact-image,
+profile-source and native test acceptance; never accept the rounded 13% value.
+Use `python3 -B` for every host deployment/acceptance/preflight entry point.
+Preflight and acceptance also disable bytecode internally before dynamic imports
+so generated `__pycache__` files cannot change the protected release manifest.
+
 After destination-specific owner authorization, install exactly one root-owned
 regular mode-0600 file, `/etc/ziipa/scheduler-worker.env`, inside root-owned,
 non-group/world-writable directories. Copy the template and fill it without shell
@@ -96,13 +106,18 @@ The optional `PUSH_EXPO_ENABLED=false` and empty `PUSH_EXPO_ACCESS_TOKEN` settin
 may be omitted from old Web-only files. Native opt-in requires explicit true,
 enabled push and a bounded enhanced-security Expo sender token. Do not copy that
 token while disabled. Verified owner EAS project, FCM/APNs configuration,
-replacement binary, opted-in device acceptance and destination-specific secret
-approval are prerequisites; a logged-in Expo account alone is insufficient.
+replacement binary, provider binding and destination-specific secret approval
+are prerequisites; a logged-in Expo account alone is insufficient. For controlled
+sender bootstrap, keep API enrollment disabled and verify zero active devices and
+pending deliveries. Enable the approved worker and verify its matching readiness
+first, then enable API enrollment last. Only afterward may the owner explicitly
+consent, enroll the device and complete actual device acceptance. Sender readiness
+alone never makes a release complete and never replaces per-device consent.
 No R2/storage, Livepeer/webhook, social, email, wallet or agent/inference
 credentials are accepted. Never reuse the render/workflow worker environment.
 
 ```sh
-python3 deploy/oracle-free/scheduler-preflight.py
+python3 -B deploy/oracle-free/scheduler-preflight.py
 ```
 
 This intentionally fails until the protected accepted-image receipt exists.
@@ -130,7 +145,7 @@ are exposed; all push content remains fixed and non-sensitive.
    only the reviewed test file; never mount a live environment or credential file:
 
    ```sh
-   python3 deploy/oracle-free/scheduler-acceptance.py
+   python3 -B deploy/oracle-free/scheduler-acceptance.py
    ```
 
    Require successful idempotent reminders/outbox, no general worker readiness,

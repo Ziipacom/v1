@@ -17,6 +17,7 @@ import subprocess
 import sys
 from urllib.parse import parse_qs, urlsplit
 
+sys.dont_write_bytecode = True
 
 PACKAGE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location('ziipa_scheduler_storage_checks', PACKAGE / 'preflight.py')

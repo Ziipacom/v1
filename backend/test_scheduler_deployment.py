@@ -184,6 +184,8 @@ def test_fixed_compact_capacity_keeps_the_same_os_reserve_without_changing_defau
     assert standard['required_available_bytes'] == 512 * 1024**2
     assert compact['memory_limit_bytes'] == 256 * 1024**2
     assert compact['required_available_bytes'] == 384 * 1024**2
+    assert (standard['cpu_quota'], standard['cpu_period']) == (12500, 100000)
+    assert (compact['cpu_quota'], compact['cpu_period']) == (12000, 100000)
     for value in (standard, compact):
         assert value['required_available_bytes'] - value['memory_limit_bytes'] == value['os_reserve_bytes'] == 128 * 1024**2
         assert value['minimum_total_bytes'] == 768 * 1024**2
@@ -200,20 +202,23 @@ def test_fixed_compact_capacity_keeps_the_same_os_reserve_without_changing_defau
             profiles.profile(name)
 
 
-def test_compact_manifest_changes_only_project_name_and_memory_caps():
+def test_compact_manifest_changes_only_project_name_and_fixed_resource_caps():
     standard = json.loads((PACKAGE / 'scheduler-compose.json').read_text())
     compact = json.loads((PACKAGE / 'scheduler-compact-compose.json').read_text())
     assert compact['name'] != standard['name']
     service = compact['services']['scheduler-worker']
     assert service['mem_limit'] == service['memswap_limit'] == '256m'
+    assert service['cpus'] == '0.12'
     compact['name'] = standard['name']
     service['mem_limit'] = service['memswap_limit'] = '384m'
+    service['cpus'] = '0.125'
     assert compact == standard
     standard_unit = (PACKAGE / 'ziipa-scheduler-worker.service').read_text()
     compact_unit = (PACKAGE / 'ziipa-scheduler-compact-worker.service').read_text()
     for value in (standard_unit, compact_unit):
         assert '/usr/bin/flock --nonblock /run/ziipa-scheduler-worker.lock' in value
         assert 'Conflicts=' not in value and 'EnvironmentFile=' not in value
+        assert 'ExecStartPre=/usr/bin/python3 -B ' in value
         assert 'scheduler_worker.py' not in value  # only the fixed reviewed Compose service
     assert 'scheduler-preflight.py --profile compact256' in compact_unit
     assert 'scheduler-compact-compose.json' in compact_unit
@@ -316,21 +321,25 @@ def test_acceptance_and_profiles_are_python310_compatible_and_hash_without_file_
     path = tmp_path / 'test-source'
     path.write_bytes(b'exact acceptance source')
     assert profiles.test_sha256(path) == hashlib.sha256(path.read_bytes()).hexdigest()
+    for name in ('scheduler-preflight.py', 'scheduler-acceptance.py'):
+        source = (PACKAGE / name).read_text()
+        assert source.index('sys.dont_write_bytecode = True') < source.index('SPEC.loader.exec_module')
 
 
 def test_compact_acceptance_enforces_exact_cgroup_limits_not_just_a_label():
     spec = importlib.util.spec_from_file_location('scheduler_compact_acceptance', PACKAGE / 'scheduler-acceptance.py')
     acceptance = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(acceptance)
-    for name, memory, peak in (('standard384', 384, 350), ('compact256', 256, 224)):
+    for name, memory, peak, cpu, quota in (('standard384', 384, 350, '0.125', 12500), ('compact256', 256, 224, '0.12', 12000)):
         command = acceptance.command('sha256:' + 'a' * 64, '/reviewed/tests.py', profile_name=name)
         assert '--memory=' + str(memory) + 'm' in command
         assert '--memory-swap=' + str(memory) + 'm' in command
-        assert '--cpus=0.125' in command and '--network=none' in command
+        assert '--cpus=' + cpu in command and '--network=none' in command
         assert '--pids-limit=48' in command and '--read-only' in command
         script = command[-1]
         assert "=='" + str(memory * 1024**2) + "'" in script
         assert 'peak<' + str(peak * 1024**2) in script
+        assert 'quota==' + str(quota) + ' and period==100000' in script
         assert "'pids.max'" in script and '33554432' in script
         assert '--env-file' not in command and '/etc/ziipa' not in ' '.join(command)
 
