@@ -19,7 +19,17 @@ def upgrade():
     if 'provider_data' not in columns:
         op.add_column('publishing_jobs', sa.Column('provider_data', sa.JSON(), nullable=True))
     op.execute(sa.text("UPDATE publishing_jobs SET provider_data = '{}' WHERE provider_data IS NULL"))
-    op.alter_column('publishing_jobs', 'provider_data', existing_type=sa.JSON(), nullable=False)
+    provider_column = next(c for c in sa.inspect(bind).get_columns('publishing_jobs') if c['name'] == 'provider_data')
+    # Fresh installations already create the current NOT NULL model. Do not
+    # issue redundant ALTER COLUMN syntax unsupported by older SQLite runtimes.
+    # Legacy SQLite prototypes need a scoped table rebuild; PostgreSQL keeps
+    # its original in-place alteration and all existing data/constraints.
+    if provider_column['nullable']:
+        if bind.dialect.name == 'sqlite':
+            with op.batch_alter_table('publishing_jobs') as batch:
+                batch.alter_column('provider_data', existing_type=sa.JSON(), nullable=False)
+        else:
+            op.alter_column('publishing_jobs', 'provider_data', existing_type=sa.JSON(), nullable=False)
 
 
 def downgrade():
