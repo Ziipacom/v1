@@ -42,6 +42,51 @@ automatically created from the current tag by preflight.
 
 ## Narrow configuration and matching release
 
+### Optional fixed compact profile
+
+The original `standard384` profile above remains the default: 384 MiB container,
+512 MiB available before start. A separate `compact256` profile uses a **256 MiB**
+container and requires **384 MiB available** before start. Both reserve the same
+128 MiB for the operating system beyond the full container allocation and require
+at least 768 MiB actual total RAM. Neither profile permits arbitrary memory/CPU
+overrides, swap, extra ports, another Ziipa worker or disabling OS monitoring.
+The CPU, 32 MiB temporary filesystem, 48 PIDs, non-root/read-only boundaries and
+supported calendar/push functions are identical. Compact acceptance additionally
+requires a whole-container peak below 224 MiB, leaving 32 MiB inside its cap.
+
+Select compact mode explicitly; do not edit the existing 384 MiB Compose file:
+
+```sh
+sudo python3 deploy/oracle-free/scheduler-acceptance.py --profile compact256 \
+  --image ziipa-scheduler:REVIEWED_RELEASE_TAG --record-native-receipt
+sudo python3 deploy/oracle-free/scheduler-preflight.py --profile compact256
+```
+
+The first command runs the actual synthetic suite under exact compact cgroup
+limits, with no network, credentials or device messages. It checks the host floor
+and refuses active Ziipa worker containers. Only a successful **native** run may
+exclusively create `/etc/ziipa/scheduler-native-compact256.json`, root:root0600 in
+protected directories. Schema2 binds the profile, all fixed resource limits,
+immutable image ID, exact SHA256 of the deployed acceptance test source and a
+SHA256 map of the selected host profile's Python/Compose/systemd source bytes.
+This permits a separately verified unchanged runtime image to retain its original
+runtime release while the reviewed deployment/test source advances; do not claim
+those two revisions are identical without comparing the runtime manifest.
+Existing receipts are never overwritten or treated as a request to replay a pass;
+Desktop rehearsal cannot write one. The compact preflight requires that exact
+receipt **and** the existing protected `scheduler-image.sha256` image-ID receipt.
+A standard384 or legacy image-only receipt cannot authorize compact mode. A new
+test source/image requires a new reviewed acceptance, not a hand-edited receipt.
+
+After the separately approved settings transfer and bounded runtime acceptance,
+use only `ziipa-scheduler-compact-worker.service`, backed by
+`scheduler-compact-compose.json`. Do not start the standard unit too. Both units
+hold the same exclusive `/run/ziipa-scheduler-worker.lock`; their preflights also
+refuse the opposite unit or any media/agent worker. No `Conflicts=` directive
+implicitly stops a preserved service. This profile is source-ready until its
+specific image passes native host and opted-in device acceptance; a prior
+384 MiB rehearsal is not proof of 256 MiB viability.
+
 After destination-specific owner authorization, install exactly one root-owned
 regular mode-0600 file, `/etc/ziipa/scheduler-worker.env`, inside root-owned,
 non-group/world-writable directories. Copy the template and fill it without shell

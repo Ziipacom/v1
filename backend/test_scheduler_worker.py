@@ -2,6 +2,7 @@
 import base64
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+import json
 import os
 from pathlib import Path
 import threading
@@ -10,6 +11,7 @@ import uuid
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import SecretStr
+import httpx
 import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
@@ -211,6 +213,140 @@ def test_due_reminders_are_capped_at_fifty_per_scan(h):
             .where(calendar.CalendarOccurrence.status == 'reminder_ready')) == 50
         assert session.scalar(select(func.count()).select_from(calendar.CalendarOccurrence)
             .where(calendar.CalendarOccurrence.status == 'scheduled')) == 3
+
+
+def test_full_reminder_scan_max_devices_real_transports_and_bounded_recovery(h, monkeypatch):
+    """Exercise actual crypto/HTTP adapters against fake sockets, not a RAM filler.
+
+    Fifty due reminders with ten opted-in devices exceed the owner's 200-row
+    outbox cap. Each scheduler scan still hands off at most three jobs; explicit
+    rejection can retry, ambiguous handoff cannot, and receipt reads are safe.
+    """
+    factory, cache, owner_id = h
+    enable_web_push(monkeypatch)
+    monkeypatch.setattr(notifications.config, 'expo_enabled', True)
+    monkeypatch.setattr(notifications.config, 'expo_access_token', SecretStr('synthetic-stress-expo-sender-token'))
+    current = [NOW]
+    monkeypatch.setattr(notifications, 'now', lambda: current[0])
+    monkeypatch.setattr(calendar, 'now', lambda: current[0])
+    monkeypatch.setattr(worker, 'utcnow', lambda: current[0])
+    # No DNS, sockets or provider connections are possible in this fixture.
+    monkeypatch.setattr(notifications, 'resolve_public', lambda _host: [(2, '203.0.113.10')])
+    web_public = b64(ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
+        serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint))
+    with factory() as session:
+        event = session.scalar(select(calendar.CalendarEvent))
+        event.data = {**event.data, 'title': 'Private title ' + 'x' * 126,
+                      'notes': ('Private venue permission and plans. ' * 60)[:2000]}
+        for offset in range(1, 50):
+            session.add(calendar.CalendarOccurrence(event_id=event.id, owner_id=owner_id, event_revision=1,
+                starts_at=NOW + timedelta(minutes=5 + offset), ends_at=NOW + timedelta(hours=2), remind_at=NOW))
+        session.add(notifications.NotificationPreference(owner_id=owner_id, enabled=True, categories=['calendar']))
+        session.flush()
+        for index in range(notifications.MAX_DEVICES):
+            provider = 'web' if index % 2 == 0 else 'expo'
+            fields = {'installation_id': str(uuid.uuid4()), 'provider': provider,
+                      'label': ('Synthetic review device ' + str(index)).ljust(60, 'x'), 'consent': True}
+            if provider == 'web':
+                fields['subscription'] = {'endpoint': 'https://fcm.googleapis.com/fcm/send/synthetic-' + uuid.uuid4().hex,
+                    'expirationTime': None, 'keys': {'auth': b64(b'a' * 16), 'p256dh': web_public}}
+            else:
+                fields['expo_token'] = 'ExpoPushToken[' + uuid.uuid4().hex + ']'
+            session_key = 'mobile_session:' + uuid.uuid4().hex
+            cache.values[session_key] = str(owner_id)
+            notifications.register_device(session, owner_id, notifications.DeviceInput.model_validate(fields), session_key)
+        session.commit()
+    effects = {'web': 0, 'expo': 0, 'receipts': 0, 'web_rejected': False,
+               'expo_rejected': False, 'receipt_pending': False, 'uncertain_id': None}
+    expo_attempts = {}
+
+    class FakeWebConnection:
+        def __init__(self, host, _resolved):
+            assert host == 'fcm.googleapis.com'
+        def request(self, method, path, *, body, headers):
+            assert method == 'POST' and path.startswith('/fcm/send/synthetic-')
+            assert isinstance(body, bytes) and len(body) < 4096
+            assert b'Private title' not in body and b'Private venue' not in body
+            effects['web'] += 1
+        def getresponse(self):
+            code = 201 if effects['web_rejected'] else 503
+            effects['web_rejected'] = True
+            class Response:
+                status = code
+                def read(self, _size): return b''
+                def getheaders(self): return []
+            return Response()
+        def close(self): pass
+
+    def expo_transport(request):
+        assert request.headers['authorization'] == 'Bearer synthetic-stress-expo-sender-token'
+        data = json.loads(request.content)
+        if str(request.url) == notification_worker.EXPO_SEND:
+            effects['expo'] += 1
+            identifier = data['data']['delivery_id']
+            expo_attempts[identifier] = expo_attempts.get(identifier, 0) + 1
+            assert data['data']['route'] == 'Notifications' and data['data']['category'] == 'calendar'
+            assert 'Private title' not in request.content.decode() and 'Private venue' not in request.content.decode()
+            if not effects['expo_rejected']:
+                effects['expo_rejected'] = True
+                return httpx.Response(429, json={})
+            if effects['uncertain_id'] is None:
+                effects['uncertain_id'] = identifier
+                raise httpx.ReadTimeout('synthetic ambiguous handoff', request=request)
+            return httpx.Response(200, json={'data': {'status': 'ok', 'id': identifier}})
+        assert str(request.url) == notification_worker.EXPO_RECEIPTS
+        effects['receipts'] += 1
+        assert len(data['ids']) == 1
+        if not effects['receipt_pending']:
+            effects['receipt_pending'] = True
+            return httpx.Response(200, json={'data': {}})
+        return httpx.Response(200, json={'data': {data['ids'][0]: {'status': 'ok'}}})
+
+    real_http_client = httpx.Client
+    monkeypatch.setattr(notification_worker, 'PinnedPushConnection', FakeWebConnection)
+    monkeypatch.setattr(notification_worker.httpx, 'Client', lambda **options:
+        real_http_client(transport=httpx.MockTransport(expo_transport), **options))
+    worker.run_worker(threading.Event(), once=True, coordinator=cache, session_factory=factory)
+    assert effects['web'] + effects['expo'] + effects['receipts'] == 3
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(calendar.CalendarOccurrence)
+            .where(calendar.CalendarOccurrence.status == 'reminder_ready')) == 50
+        assert session.scalar(select(func.count()).select_from(notifications.NotificationEvent)) == 50
+        assert session.scalar(select(func.count()).select_from(notifications.NotificationDelivery)) == notifications.MAX_OWNER_QUEUE
+
+    # Drain only bounded batches, advancing a deterministic clock for retries and
+    # receipts instead of sleeping or contacting a provider. More than a complete
+    # scan's pending work is retained in SQL, never loaded as one large batch.
+    for minutes in (0, 15, 30):
+        current[0] = NOW + timedelta(minutes=minutes)
+        for _ in range(80):
+            before = effects['web'] + effects['expo'] + effects['receipts']
+            completed = notification_worker.tick(factory)
+            assert effects['web'] + effects['expo'] + effects['receipts'] - before <= 3
+            if completed == 0:
+                break
+        else:
+            pytest.fail('A bounded outbox phase did not quiesce')
+    with factory() as session:
+        states = {status: count for status, count in session.execute(
+            select(notifications.NotificationDelivery.status, func.count())
+            .group_by(notifications.NotificationDelivery.status))}
+        assert states == {'provider_accepted': notifications.MAX_OWNER_QUEUE - 1, 'uncertain': 1}
+        uncertain = session.get(notifications.NotificationDelivery, effects['uncertain_id'])
+        assert uncertain.attempts == 1 and uncertain.next_run is None
+        assert session.scalar(select(func.max(notifications.NotificationDelivery.attempts))) == 2
+        assert session.scalar(select(func.max(notifications.NotificationDelivery.receipt_checks))) == 2
+    assert effects['web'] == 101 and effects['expo'] == 101 and effects['receipts'] == 100
+    assert expo_attempts[effects['uncertain_id']] == 1
+    before = dict(effects)
+    stop = StopAfter(3)
+    worker.run_worker(stop, coordinator=cache, session_factory=factory, clock=lambda: stop.time)
+    assert effects == before and stop.waits == 3
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(notifications.NotificationEvent)) == 50
+        assert session.scalar(select(func.count()).select_from(notifications.NotificationDelivery)) == notifications.MAX_OWNER_QUEUE
+    assert notification_worker.provider_readiness(cache) == {'web_ready': True, 'expo_ready': True}
+    assert media_workflows.heartbeat_key() not in cache.values
 
 
 def test_wake_during_scan_is_observed_and_failed_scan_never_renews(h, monkeypatch):
