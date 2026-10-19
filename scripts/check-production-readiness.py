@@ -3,7 +3,9 @@
 
 Run: python scripts/check-production-readiness.py
 Exit 0: public deployment checks passed; 1: missing/unready routes; 2: CLI error.
-Only fixed HTTPS GETs are sent. No credentials, cookies, OAuth authorization,
+Only fixed HTTPS GETs are sent. The one permitted redirect is the exact
+Studio static canonicalization /studio/index.html -> 307 /studio/ on ziipa.com.
+No other redirect is followed. No credentials, cookies, OAuth authorization,
 account creation, uploads or broadcasts are performed. A 401 on protected
 configuration routes proves the authentication boundary, not provider/worker
 readiness. Response bodies, cookies, redirects and public key values are never
@@ -124,7 +126,7 @@ def validate(kind, status, content_type, body):
 
 def check(case, timeout, retries):
     url, kind = case
-    # No cookie jar, environment proxy credentials, redirect following or auth.
+    # No cookie jar, environment proxy credentials, automatic redirects or auth.
     opener = build_opener(ProxyHandler({}), NoRedirects())
     result = {"url": url, "check": kind, "passed": False}
     for attempt in range(retries + 1):
@@ -139,6 +141,23 @@ def check(case, timeout, retries):
                 response = opener.open(request, timeout=timeout)
             except HTTPError as error:
                 response = error  # Inspect status, never print upstream error content.
+            if (kind == 'studio' and url == WEBSITE + '/studio/index.html'
+                    and response.status == 307 and response.headers.get('Location') == '/studio/'):
+                response.close()
+                remaining = timeout - (time.monotonic() - started)
+                if remaining <= 0:
+                    raise TimeoutError('Response deadline exceeded')
+                # Cloudflare removes index.html from static HTML URLs. Follow
+                # only this fixed canonical path, with no cookies or auth and
+                # the same no-redirect opener. Its body still needs Studio's
+                # exact asset prefix; login pages/fallback HTML do not pass.
+                canonical = Request(WEBSITE + '/studio/', method='GET', headers={
+                    'Accept': 'text/html', 'User-Agent': 'Ziipa-readonly-deployment-check/1.0'})
+                try:
+                    response = opener.open(canonical, timeout=remaining)
+                except HTTPError as error:
+                    response = error
+                result['canonical_studio_redirect'] = True
             with response:
                 status = response.status
                 raw_type = response.headers.get_content_type().lower()

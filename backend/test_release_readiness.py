@@ -3,6 +3,10 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+from email.message import Message
+from io import BytesIO
+
+import pytest
 
 from sqlalchemy import create_engine, inspect
 
@@ -59,3 +63,52 @@ def test_new_feature_tables_migrate_fresh_and_idempotently_to_single_head():
         assert not {'expo_token', 'endpoint', 'auth', 'p256dh'} & private_columns
     finally:
         engine.dispose()
+
+
+class PublicResponse(BytesIO):
+    def __init__(self, status=200, body=b'<!doctype html><html><script src="/studio/_expo/app.js"></script></html>', location=None):
+        super().__init__(body)
+        self.status = status
+        self.headers = Message()
+        self.headers['Content-Type'] = 'text/html'
+        if location is not None:
+            self.headers['Location'] = location
+
+
+def public_opener(monkeypatch, responses):
+    requests = []
+
+    class Opener:
+        def open(self, request, timeout):
+            requests.append(request)
+            assert len(requests) <= len(responses), 'An unexpected redirect was followed'
+            assert not {'cookie', 'authorization'} & {key.lower() for key in request.headers}
+            return responses[len(requests) - 1]
+
+    monkeypatch.setattr(checks, 'build_opener', lambda *args: Opener())
+    return requests
+
+
+def test_public_studio_allows_only_its_exact_static_canonical_redirect(monkeypatch):
+    requests = public_opener(monkeypatch, [PublicResponse(307, b'', '/studio/'), PublicResponse()])
+    result = checks.check((checks.WEBSITE + '/studio/index.html', 'studio'), 5, 0)
+    assert result['passed'] and result['status'] == 200 and result['canonical_studio_redirect']
+    assert [request.full_url for request in requests] == [checks.WEBSITE + '/studio/index.html', checks.WEBSITE + '/studio/']
+
+
+@pytest.mark.parametrize('status,location', [(302, '/studio/'), (308, '/studio/'),
+    (307, '/portal'), (307, '//evil.example/studio/'), (307, 'https://evil.example/studio/'),
+    (307, '/studio/?next=private'), (307, '/studio/other'), (307, 'https://ziipa.com/studio/')])
+def test_public_smoke_never_follows_general_or_cross_origin_redirects(monkeypatch, status, location):
+    requests = public_opener(monkeypatch, [PublicResponse(status, b'', location)])
+    result = checks.check((checks.WEBSITE + '/studio/index.html', 'studio'), 5, 0)
+    assert not result['passed'] and len(requests) == 1
+    assert 'canonical_studio_redirect' not in result
+
+
+@pytest.mark.parametrize('response', [PublicResponse(307, b'', '/portal'),
+    PublicResponse(200, b'<!doctype html><html>Sign in</html>')])
+def test_canonical_studio_still_rejects_second_redirect_or_login_fallback(monkeypatch, response):
+    requests = public_opener(monkeypatch, [PublicResponse(307, b'', '/studio/'), response])
+    result = checks.check((checks.WEBSITE + '/studio/index.html', 'studio'), 5, 0)
+    assert not result['passed'] and len(requests) == 2

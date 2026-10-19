@@ -71,3 +71,15 @@ test('API helper rejects arbitrary URLs before credentials can leave the API', a
   await assert.rejects(api.request('/api/../secrets'));
   assert.equal(calls.length,0);
 });
+
+test('Studio frame readiness accepts only the same-origin document and its exact static canonical route',()=>{
+  const exports={};
+  const source=readFileSync(new URL('../components/creator/portal-studio.tsx',import.meta.url),'utf8');
+  vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports,require:()=>({})});
+  const ready=exports.isStudioFrameLocation;
+  assert.equal(ready({origin:'https://ziipa.com',pathname:'/studio/index.html'},'https://ziipa.com'),true);
+  assert.equal(ready({origin:'https://ziipa.com',pathname:'/studio/'},'https://ziipa.com'),true);
+  for(const pathname of ['/','/portal','/studio','/studio/other.html','/studio/index.html/','about:blank']) assert.equal(ready({origin:'https://ziipa.com',pathname},'https://ziipa.com'),false);
+  assert.equal(ready({origin:'https://evil.example',pathname:'/studio/'},'https://ziipa.com'),false);
+  assert.equal(ready(undefined,'https://ziipa.com'),false);
+});

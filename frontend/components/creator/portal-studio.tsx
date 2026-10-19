@@ -6,6 +6,10 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import './portal-studio.css';
 
+export function isStudioFrameLocation(value: {origin:string;pathname:string} | undefined, origin: string) {
+  return value?.origin === origin && (value.pathname === '/studio/index.html' || value.pathname === '/studio/');
+}
+
 export function PortalStudio({member,onLogout,logoutBusy,onSessionEnded}:{member:{name:string};onLogout:()=>Promise<void>;logoutBusy:boolean;onSessionEnded:()=>void}) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [compact,setCompact] = useState(false);
@@ -27,7 +31,7 @@ export function PortalStudio({member,onLogout,logoutBusy,onSessionEnded}:{member
   function studioLoaded() {
     try {
       const location = frame.current?.contentWindow?.location;
-      if (location?.origin === window.location.origin && location.pathname === '/studio/index.html') {
+      if (isStudioFrameLocation(location, window.location.origin)) {
         setReady(true); setSlow(false);
       }
     } catch { setSlow(true); }
