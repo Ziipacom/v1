@@ -1,3 +1,5 @@
+import { useDesktopLayout } from "../components/desktop-layout";
+import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
 import { useState } from "react";
 import {
   ImageBackground,
@@ -37,6 +39,7 @@ import { color, font, styles } from "../theme";
 export function ProfileScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Profile">) {
+  const { desktop, contentWidth } = useDesktopLayout();
   const { session, guest, data } = useZiipa();
   const [category, setCategory] = useState<Category>("music");
   const [saved, setSaved] = useState(false);
@@ -53,11 +56,23 @@ export function ProfileScreen({
     <View style={styles.screen}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 108 + insets.bottom }}
+        contentContainerStyle={
+          desktop ? workspace.page : { paddingBottom: 108 + insets.bottom }
+        }
       >
+        {desktop && (
+          <WorkspaceHeading
+            title="Your profile"
+            description="Your published creations and saved inspiration."
+          />
+        )}
         <ImageBackground
           source={coverSource(banner, session?.access_token)}
-          style={{ height: 216 + insets.top }}
+          style={
+            desktop
+              ? { height: 180, borderRadius: 12, overflow: "hidden" }
+              : { height: 216 + insets.top }
+          }
           imageStyle={{ opacity: 0.8 }}
         >
           <SafeAreaView
@@ -267,7 +282,13 @@ export function ProfileScreen({
             <WorldGlyph id={category} size={19} />
           </View>
         </View>
-        <View style={{ paddingHorizontal: 23, gap: 10 }}>
+        <View
+          style={
+            desktop
+              ? { flexDirection: "row", flexWrap: "wrap", gap: 18 }
+              : { paddingHorizontal: 23, gap: 10 }
+          }
+        >
           {items.map((item) => (
             <Pressable
               key={item.id}
@@ -277,8 +298,18 @@ export function ProfileScreen({
                 navigation.navigate("Watch", { itemId: item.id, category })
               }
               style={{
-                height: 179,
-                borderRadius: 25,
+                ...(desktop
+                  ? {
+                      width: Math.max(
+                        200,
+                        Math.floor(
+                          (Math.min(contentWidth, 1240) - 56 - 36) / 3,
+                        ),
+                      ),
+                      height: 250,
+                    }
+                  : { height: 179 }),
+                borderRadius: desktop ? 12 : 25,
                 overflow: "hidden",
                 borderWidth: 1,
                 borderColor: "#5D506E",

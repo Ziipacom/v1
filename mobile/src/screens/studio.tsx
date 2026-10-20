@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import {
+  Animated,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -8,6 +15,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   ChevronDown,
   ChevronRight,
+  Images,
   LayoutGrid,
   Megaphone,
   Menu,
@@ -103,121 +111,144 @@ export function StudioScreen({
             })
           }
         />
-        {menuVisible ? <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            alignItems: "flex-end",
-            gap: 8,
-            paddingTop: 12,
-            paddingRight: 20,
-            paddingBottom: 22,
-          }}
-          style={{
-            position: "absolute",
-            top: 0,
-            right: 0,
-            width: 172,
-            maxWidth: "52%",
-            bottom: editing ? 240 : 70,
-          }}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Create new creation"
-            onPress={add}
-            style={s.menuRow}
+        {menuVisible ? (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{
+              alignItems: "flex-end",
+              gap: 8,
+              paddingTop: 12,
+              paddingRight: 20,
+              paddingBottom: 22,
+            }}
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              width: 172,
+              maxWidth: "52%",
+              bottom: editing ? 240 : 70,
+            }}
           >
-            <Text style={s.menuText}>Create</Text>
-            <View style={s.circleSlot}>
-              <SquarePlus size={25} color={color.text} strokeWidth={1.5} />
-            </View>
-          </Pressable>
-          {menuOrder
-            .map((id) => worlds.find((w) => w.id === id))
-            .filter((w) => !!w)
-            .map((w) => (
-              <Pressable
-                key={w.id}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  w.id === "live" ? "Open live broadcasts" : `Edit ${w.title}`
-                }
-                accessibilityState={{ selected: editing && selected === w.id }}
-                onPress={() => {
-                  if (w.id === "live") {
-                    navigation.navigate("Live");
-                    return;
-                  }
-                  setSelected(w.id);
-                  setPage(0);
-                  setEditing(true);
-                }}
-                style={s.menuRow}
-              >
-                <Text style={s.menuText}>{w.title}</Text>
-                <View
-                  style={[
-                    s.circleSlot,
-                    s.circle,
-                    editing &&
-                      selected === w.id && {
-                        borderColor: "#B28CDD",
-                        backgroundColor: "#32145A",
-                      },
-                  ]}
-                >
-                  <WorldGlyph id={w.id} size={25} />
-                </View>
-              </Pressable>
-            ))}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open connected networks"
-            onPress={() => navigation.navigate("Connections")}
-            style={s.menuRow}
-          >
-            <Text style={s.menuText}>Networks</Text>
-            <View style={[s.circleSlot, s.circle]}>
-              <Network size={25} color={color.text} strokeWidth={1.5} />
-            </View>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open your Personal Media OS"
-            onPress={() => navigation.navigate("MediaOS")}
-            style={s.menuRow}
-          >
-            <Text style={s.menuText}>Media OS</Text>
-            <View
-              style={[s.circleSlot, s.circle, { backgroundColor: "#32145A" }]}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Create new creation"
+              onPress={add}
+              style={s.menuRow}
             >
-              <Sparkles size={25} color={color.lime} strokeWidth={1.5} />
-            </View>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Hide Studio menu"
-            accessibilityState={{ expanded: true }}
-            onPress={() => setMenuVisible(false)}
-            onHoverIn={Platform.OS === "web" ? () => setMenuVisible(false) : undefined}
-            style={s.menuRow}
-          >
-            <Text style={s.menuText}>Close</Text>
-            <View style={s.circleSlot}>
-              <ChevronDown size={29} color={color.text} strokeWidth={1.5} />
-            </View>
-          </Pressable>
-        </ScrollView> : (
+              <Text style={s.menuText}>Create</Text>
+              <View style={s.circleSlot}>
+                <SquarePlus size={25} color={color.text} strokeWidth={1.5} />
+              </View>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open media gallery"
+              onPress={() => navigation.navigate("Main")}
+              style={s.menuRow}
+            >
+              <Text style={s.menuText}>Gallery</Text>
+              <View style={[s.circleSlot, s.circle]}>
+                <Images size={25} color={color.text} strokeWidth={1.5} />
+              </View>
+            </Pressable>
+            {menuOrder
+              .map((id) => worlds.find((w) => w.id === id))
+              .filter((w) => !!w)
+              .map((w) => (
+                <Pressable
+                  key={w.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    w.id === "live" ? "Open live broadcasts" : `Edit ${w.title}`
+                  }
+                  accessibilityState={{
+                    selected: editing && selected === w.id,
+                  }}
+                  onPress={() => {
+                    if (w.id === "live") {
+                      navigation.navigate("Live");
+                      return;
+                    }
+                    setSelected(w.id);
+                    setPage(0);
+                    setEditing(true);
+                  }}
+                  style={s.menuRow}
+                >
+                  <Text style={s.menuText}>{w.title}</Text>
+                  <View
+                    style={[
+                      s.circleSlot,
+                      s.circle,
+                      editing &&
+                        selected === w.id && {
+                          borderColor: "#B28CDD",
+                          backgroundColor: "#32145A",
+                        },
+                    ]}
+                  >
+                    <WorldGlyph id={w.id} size={25} />
+                  </View>
+                </Pressable>
+              ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open connected networks"
+              onPress={() => navigation.navigate("Connections")}
+              style={s.menuRow}
+            >
+              <Text style={s.menuText}>Networks</Text>
+              <View style={[s.circleSlot, s.circle]}>
+                <Network size={25} color={color.text} strokeWidth={1.5} />
+              </View>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open your Personal Media OS"
+              onPress={() => navigation.navigate("MediaOS")}
+              style={s.menuRow}
+            >
+              <Text style={s.menuText}>Media OS</Text>
+              <View
+                style={[s.circleSlot, s.circle, { backgroundColor: "#32145A" }]}
+              >
+                <Sparkles size={25} color={color.lime} strokeWidth={1.5} />
+              </View>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Hide Studio menu"
+              accessibilityState={{ expanded: true }}
+              onPress={() => setMenuVisible(false)}
+              onHoverIn={
+                Platform.OS === "web" ? () => setMenuVisible(false) : undefined
+              }
+              style={s.menuRow}
+            >
+              <Text style={s.menuText}>Close</Text>
+              <View style={s.circleSlot}>
+                <ChevronDown size={29} color={color.text} strokeWidth={1.5} />
+              </View>
+            </Pressable>
+          </ScrollView>
+        ) : (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Open Studio menu"
             accessibilityState={{ expanded: false }}
             onPress={() => setMenuVisible(true)}
-            style={[s.menuRow, {
-              position: "absolute", top: 12, right: 20,
-              paddingLeft: 14, borderRadius: 36,
-              backgroundColor: "#140D24B8",
-            }]}
+            style={[
+              s.menuRow,
+              {
+                position: "absolute",
+                top: 12,
+                right: 20,
+                paddingLeft: 14,
+                borderRadius: 36,
+                backgroundColor: "#140D24B8",
+              },
+            ]}
           >
             <Text style={s.menuText}>Menu</Text>
             <View style={[s.circleSlot, s.circle]}>

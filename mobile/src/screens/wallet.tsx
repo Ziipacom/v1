@@ -1,3 +1,4 @@
+import { useDesktopLayout } from "../components/desktop-layout";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -81,6 +82,7 @@ type Transfer = {
   symbol?: string;
 };
 export function WalletScreen({ navigation, initialItem }: Props) {
+  const { desktop } = useDesktopLayout();
   const { session, api, data } = useZiipa();
   const [step, setStep] = useState(0);
   const [view, setView] = useState<"wizard" | "vault">("wizard");
@@ -513,7 +515,18 @@ export function WalletScreen({ navigation, initialItem }: Props) {
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={s.header}>
+        <View
+          style={[
+            s.header,
+            desktop && {
+              height: 72,
+              width: "100%",
+              maxWidth: 1120,
+              alignSelf: "center",
+              paddingHorizontal: 28,
+            },
+          ]}
+        >
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Back to Studio"
@@ -544,7 +557,19 @@ export function WalletScreen({ navigation, initialItem }: Props) {
           </Pressable>
         </View>
         {view === "wizard" && (
-          <View accessibilityLabel={`Step ${step + 1} of 4`} style={s.progress}>
+          <View
+            accessibilityLabel={`Step ${step + 1} of 4`}
+            style={[
+              s.progress,
+              desktop && {
+                width: "100%",
+                maxWidth: 680,
+                alignSelf: "center",
+                marginTop: 0,
+                marginBottom: 16,
+              },
+            ]}
+          >
             {[0, 1, 2, 3].map((i) => (
               <View
                 key={i}
@@ -563,12 +588,27 @@ export function WalletScreen({ navigation, initialItem }: Props) {
             view === "wizard"
               ? [
                   s.wizard,
+                  desktop && {
+                    width: "100%",
+                    maxWidth: 720,
+                    alignSelf: "center",
+                    justifyContent: "flex-start",
+                    paddingTop: 10,
+                  },
                   step === 3 && {
                     justifyContent: "flex-start",
                     paddingTop: 20,
                   },
                 ]
-              : s.vault
+              : [
+                  s.vault,
+                  desktop && {
+                    width: "100%",
+                    maxWidth: 1120,
+                    alignSelf: "center",
+                    paddingHorizontal: 28,
+                  },
+                ]
           }
         >
           {view === "wizard" ? (
@@ -1361,7 +1401,17 @@ export function WalletScreen({ navigation, initialItem }: Props) {
           </View>
         )}
         {view === "wizard" && (
-          <View style={s.buttons}>
+          <View
+            style={[
+              s.buttons,
+              desktop && {
+                width: "100%",
+                maxWidth: 720,
+                alignSelf: "center",
+                paddingBottom: 24,
+              },
+            ]}
+          >
             {step > 0 && (
               <Pressable
                 disabled={busy}

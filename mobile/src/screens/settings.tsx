@@ -1,3 +1,5 @@
+import { useDesktopLayout } from "../components/desktop-layout";
+import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
 import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
@@ -25,6 +27,7 @@ import {
 export function SettingsScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Settings">) {
+  const { desktop, contentWidth } = useDesktopLayout();
   const { session, data, preferences, refresh, logout, forgetSession, api } =
     useZiipa();
   const [words, setWords] = useState(data.preferences.muted_words.join(", "));
@@ -122,14 +125,198 @@ export function SettingsScreen({
       ],
     );
   }
+  const identityPanel = (
+    <View style={[styles.panel, desktop && workspace.panel]}>
+      <Text style={styles.heading}>{session?.user.name}</Text>
+      <Text style={styles.body}>{session?.user.email}</Text>
+      <Text style={styles.small}>
+        The same account is used in the web portal and mobile app.
+      </Text>
+    </View>
+  );
+  const safetyPanel = (
+    <View style={[styles.panel, desktop && workspace.panel]}>
+      <Text style={styles.heading}>Your boundaries</Text>
+      <Field
+        label="Muted words and phrases"
+        value={words}
+        onChangeText={setWords}
+        multiline
+        maxLength={5000}
+        placeholder="Separate entries with commas"
+        editable={!busy}
+      />
+      <Text style={styles.small}>
+        Matching posts and comments are hidden from your experience. This does
+        not replace platform moderation.
+      </Text>
+      <View style={styles.between}>
+        <Text style={styles.body}>Show sample collections</Text>
+        <Switch
+          accessibilityLabel="Show sample collections"
+          value={showDemos}
+          onValueChange={setShowDemos}
+          trackColor={{ true: color.purple }}
+          disabled={busy}
+        />
+      </View>
+      <Action
+        title="Save preferences"
+        icon={ShieldCheck}
+        onPress={() => void run(saveSafety)}
+        busy={busy}
+      />
+      {data.preferences.blocked_user_ids.length > 0 && (
+        <Text style={styles.heading}>Blocked creators</Text>
+      )}
+      {data.preferences.blocked_user_ids.map((id) => (
+        <Action
+          key={id}
+          secondary
+          title={`Unblock creator #${id}`}
+          disabled={busy}
+          onPress={() =>
+            void run(async () => {
+              await api("/api/safety/block", { user_id: id, blocked: false });
+              await refresh();
+            })
+          }
+        />
+      ))}
+      {data.preferences.blocked_creators.map((name) => (
+        <Action
+          key={name}
+          secondary
+          title={`Unhide ${name}`}
+          disabled={busy}
+          onPress={() =>
+            void run(async () => {
+              await preferences({
+                blocked_creators: data.preferences.blocked_creators.filter(
+                  (n) => n !== name,
+                ),
+              });
+              await refresh();
+            })
+          }
+        />
+      ))}
+    </View>
+  );
+  const privacyPanel = (
+    <View style={[styles.panel, desktop && workspace.panel]}>
+      <Text style={styles.heading}>Privacy controls</Text>
+      <Text style={styles.small}>
+        Choose who can view your profile and whether Ziipa can use your activity
+        for discovery.
+      </Text>
+      <Action
+        secondary
+        title={`Profile visibility · ${privacy.profile_visibility}`}
+        disabled={busy}
+        onPress={() => {
+          const values = ["public", "members", "private"];
+          const next =
+            values[
+              (values.indexOf(privacy.profile_visibility) + 1) % values.length
+            ];
+          setPrivacy({ ...privacy, profile_visibility: next });
+        }}
+      />
+      {(
+        [
+          ["discoverable", "Appear in creator discovery"],
+          ["personalized_feeds", "Personalize my feeds"],
+          ["marketing_emails", "Product and creator emails"],
+        ] as const
+      ).map(([key, label]) => (
+        <View style={styles.between} key={key}>
+          <Text style={[styles.body, { flex: 1 }]}>{label}</Text>
+          <Switch
+            accessibilityLabel={label}
+            value={privacy[key]}
+            onValueChange={(value) => setPrivacy({ ...privacy, [key]: value })}
+            trackColor={{ true: color.purple }}
+            disabled={busy}
+          />
+        </View>
+      ))}
+      <Action
+        title="Save privacy controls"
+        icon={ShieldCheck}
+        busy={busy}
+        onPress={() =>
+          void run(async () => {
+            setPrivacy(
+              await api<typeof privacy>("/api/account/privacy", privacy),
+            );
+            setMessage("Your privacy controls are saved.");
+          })
+        }
+      />
+      <Action
+        secondary
+        title="Export my Ziipa data"
+        disabled={busy}
+        onPress={() =>
+          void run(async () => {
+            const exported = await api<Record<string, unknown>>(
+              "/api/account/export",
+            );
+            await Share.share({
+              title: "My Ziipa data export",
+              message: JSON.stringify(exported, null, 2),
+            });
+          })
+        }
+      />
+    </View>
+  );
+  const policyPanel = (
+    <View style={[styles.panel, desktop && workspace.panel]}>
+      <Text style={styles.heading}>Good to know</Text>
+      {(["privacy", "terms", "community"] as const).map((kind) => (
+        <Action
+          key={kind}
+          secondary
+          title={
+            kind === "privacy"
+              ? "Privacy information"
+              : kind === "terms"
+                ? "Terms of use"
+                : "Community rules"
+          }
+          onPress={() => navigation.navigate("Legal", { kind })}
+        />
+      ))}
+      <Action
+        secondary
+        title="Contact Ziipa"
+        onPress={() =>
+          void Linking.openURL(`mailto:${supportEmail}`).catch(() =>
+            setError(`Email ${supportEmail} for help.`),
+          )
+        }
+      />
+    </View>
+  );
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
       style={styles.screen}
-      contentContainerStyle={styles.page}
+      contentContainerStyle={
+        desktop ? [workspace.page, workspace.narrow] : styles.page
+      }
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.title}>Make it{"\n"}your space.</Text>
+      {desktop ? (
+        <WorkspaceHeading
+          title="Account & settings"
+          description="Manage your profile, privacy and safety preferences."
+        />
+      ) : (
+        <Text style={styles.title}>Make it{"\n"}your space.</Text>
+      )}
       <Action
         title="Private updates · notification preferences"
         secondary
@@ -150,177 +337,34 @@ export function SettingsScreen({
             onPress={() => navigation.navigate("Administration")}
           />
         )}
-      <View style={styles.panel}>
-        <Text style={styles.heading}>{session?.user.name}</Text>
-        <Text style={styles.body}>{session?.user.email}</Text>
-        <Text style={styles.small}>
-          The same account is used in the web portal and mobile app.
-        </Text>
-      </View>
-      <View style={styles.panel}>
-        <Text style={styles.heading}>Your boundaries</Text>
-        <Field
-          label="Muted words and phrases"
-          value={words}
-          onChangeText={setWords}
-          multiline
-          maxLength={5000}
-          placeholder="Separate entries with commas"
-          editable={!busy}
-        />
-        <Text style={styles.small}>
-          Matching posts and comments are hidden from your experience. This does
-          not replace platform moderation.
-        </Text>
-        <View style={styles.between}>
-          <Text style={styles.body}>Show sample collections</Text>
-          <Switch
-            accessibilityLabel="Show sample collections"
-            value={showDemos}
-            onValueChange={setShowDemos}
-            trackColor={{ true: color.purple }}
-            disabled={busy}
-          />
-        </View>
-        <Action
-          title="Save preferences"
-          icon={ShieldCheck}
-          onPress={() => void run(saveSafety)}
-          busy={busy}
-        />
-        {data.preferences.blocked_user_ids.length > 0 && (
-          <Text style={styles.heading}>Blocked creators</Text>
-        )}
-        {data.preferences.blocked_user_ids.map((id) => (
-          <Action
-            key={id}
-            secondary
-            title={`Unblock creator #${id}`}
-            disabled={busy}
-            onPress={() =>
-              void run(async () => {
-                await api("/api/safety/block", { user_id: id, blocked: false });
-                await refresh();
-              })
-            }
-          />
-        ))}
-        {data.preferences.blocked_creators.map((name) => (
-          <Action
-            key={name}
-            secondary
-            title={`Unhide ${name}`}
-            disabled={busy}
-            onPress={() =>
-              void run(async () => {
-                await preferences({
-                  blocked_creators: data.preferences.blocked_creators.filter(
-                    (n) => n !== name,
-                  ),
-                });
-                await refresh();
-              })
-            }
-          />
-        ))}
-      </View>
-      <View style={styles.panel}>
-        <Text style={styles.heading}>Privacy controls</Text>
-        <Text style={styles.small}>
-          Choose who can view your profile and whether Ziipa can use your
-          activity for discovery.
-        </Text>
-        <Action
-          secondary
-          title={`Profile visibility · ${privacy.profile_visibility}`}
-          disabled={busy}
-          onPress={() => {
-            const values = ["public", "members", "private"];
-            const next =
-              values[
-                (values.indexOf(privacy.profile_visibility) + 1) % values.length
-              ];
-            setPrivacy({ ...privacy, profile_visibility: next });
-          }}
-        />
-        {(
-          [
-            ["discoverable", "Appear in creator discovery"],
-            ["personalized_feeds", "Personalize my feeds"],
-            ["marketing_emails", "Product and creator emails"],
-          ] as const
-        ).map(([key, label]) => (
-          <View style={styles.between} key={key}>
-            <Text style={[styles.body, { flex: 1 }]}>{label}</Text>
-            <Switch
-              accessibilityLabel={label}
-              value={privacy[key]}
-              onValueChange={(value) =>
-                setPrivacy({ ...privacy, [key]: value })
-              }
-              trackColor={{ true: color.purple }}
-              disabled={busy}
-            />
+      {desktop ? (
+        <View
+          style={[
+            workspace.columns,
+            contentWidth < 1100 && { flexDirection: "column" },
+          ]}
+        >
+          <View style={workspace.main}>
+            {identityPanel}
+            {privacyPanel}
           </View>
-        ))}
-        <Action
-          title="Save privacy controls"
-          icon={ShieldCheck}
-          busy={busy}
-          onPress={() =>
-            void run(async () => {
-              setPrivacy(
-                await api<typeof privacy>("/api/account/privacy", privacy),
-              );
-              setMessage("Your privacy controls are saved.");
-            })
-          }
-        />
-        <Action
-          secondary
-          title="Export my Ziipa data"
-          disabled={busy}
-          onPress={() =>
-            void run(async () => {
-              const exported = await api<Record<string, unknown>>(
-                "/api/account/export",
-              );
-              await Share.share({
-                title: "My Ziipa data export",
-                message: JSON.stringify(exported, null, 2),
-              });
-            })
-          }
-        />
-      </View>
+          <View style={workspace.main}>
+            {safetyPanel}
+            {policyPanel}
+          </View>
+        </View>
+      ) : (
+        <>
+          {identityPanel}
+          {safetyPanel}
+          {privacyPanel}
+        </>
+      )}
+
       {!!error && <Notice error text={error} />}
       {!!message && <Notice text={message} />}
-      <View style={styles.panel}>
-        <Text style={styles.heading}>Good to know</Text>
-        {(["privacy", "terms", "community"] as const).map((kind) => (
-          <Action
-            key={kind}
-            secondary
-            title={
-              kind === "privacy"
-                ? "Privacy information"
-                : kind === "terms"
-                  ? "Terms of use"
-                  : "Community rules"
-            }
-            onPress={() => navigation.navigate("Legal", { kind })}
-          />
-        ))}
-        <Action
-          secondary
-          title="Contact Ziipa"
-          onPress={() =>
-            void Linking.openURL(`mailto:${supportEmail}`).catch(() =>
-              setError(`Email ${supportEmail} for help.`),
-            )
-          }
-        />
-      </View>
+      {!desktop && policyPanel}
+
       <Action
         title="Sign out"
         secondary
@@ -458,6 +502,7 @@ const policies = {
 export function LegalScreen({
   route,
 }: NativeStackScreenProps<RootStack, "Legal">) {
+  const { desktop } = useDesktopLayout();
   const { kind } = route.params;
   const policy = policies[kind];
   const [error, setError] = useState("");
@@ -466,7 +511,9 @@ export function LegalScreen({
     <ScrollView
       showsVerticalScrollIndicator={false}
       style={styles.screen}
-      contentContainerStyle={styles.page}
+      contentContainerStyle={
+        desktop ? [workspace.page, workspace.narrow] : styles.page
+      }
     >
       <Text style={styles.eyebrow}>ZIIPA · TRUST & COMMUNITY</Text>
       <Text style={styles.title}>{policy.title}</Text>
@@ -506,6 +553,7 @@ type Report = {
 export function ModerationScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Moderation">) {
+  const { desktop } = useDesktopLayout();
   const { api } = useZiipa();
   const [reports, setReports] = useState<Report[]>([]);
   const [error, setError] = useState("");
@@ -550,7 +598,9 @@ export function ModerationScreen({
     <ScrollView
       showsVerticalScrollIndicator={false}
       style={styles.screen}
-      contentContainerStyle={styles.page}
+      contentContainerStyle={
+        desktop ? [workspace.page, workspace.narrow] : styles.page
+      }
     >
       <Text style={styles.title}>Moderation inbox</Text>
       <Notice text="Only allowlisted moderators can access this queue. Review the context before removing content. Reports are not proof of a violation." />
@@ -565,7 +615,7 @@ export function ModerationScreen({
         <Text style={styles.body}>No open reports.</Text>
       )}
       {reports.map((r) => (
-        <View key={r.id} style={styles.panel}>
+        <View key={r.id} style={[styles.panel, desktop && workspace.panel]}>
           <Text style={styles.heading}>{r.reason.replace("_", " ")}</Text>
           <Text style={styles.small}>
             Post: {r.item_id}

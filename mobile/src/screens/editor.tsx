@@ -76,6 +76,7 @@ export function ComposerScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStack, "Composer">) {
+  const { desktop, contentWidth } = useDesktopLayout();
   const existing = route.params?.item;
   const remix = route.params?.remix;
   const { data, session, guest, api, refresh, savePreviewDraft } = useZiipa();
@@ -170,14 +171,15 @@ export function ComposerScreen({
   const [targets, setTargets] = useState<SocialProvider[]>(
     existing?.distribution_targets || [],
   );
-  const [tab, setTab] = useState<(typeof steps)[number]["name"]>("Media");
+  const [tab, setTab] = useState<(typeof steps)[number]["name"]>(
+    desktop && existing ? "Edit" : "Media",
+  );
   const [paused, setPaused] = useState(true);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState<Item | null>(null);
   const { height } = useWindowDimensions();
-  const { desktop, contentWidth } = useDesktopLayout();
   // Preserve the desktop warning for this editing session after narrowing the
   // portal. The compact/native layout itself remains unchanged.
   const [desktopEditingSession, setDesktopEditingSession] = useState(desktop);
@@ -658,11 +660,21 @@ export function ComposerScreen({
           <Text
             style={{
               fontFamily: font.regular,
-              fontSize: 10,
+              fontSize: desktop ? 12 : 10,
               color: tab === name ? "white" : color.faint,
             }}
           >
-            {name}
+            {desktop
+              ? (
+                  {
+                    Media: "Media",
+                    Edit: "Trim & captions",
+                    Overlay: "Text & overlays",
+                    Music: "Music",
+                    Share: "Save & publish",
+                  } as const
+                )[name]
+              : name}
           </Text>
         </Pressable>
       ))}
@@ -1304,6 +1316,12 @@ export function ComposerScreen({
               edit to review its exported captions, overlays and soundtrack.
             </Text>
             <Notice text="Save a private draft before opening its export or reviewed release campaign. Nothing is saved automatically." />
+            <Action
+              title="Save private draft"
+              icon={Save}
+              busy={busy}
+              onPress={() => void save("draft")}
+            />
           </ScrollView>
           <View
             style={{
@@ -1318,12 +1336,12 @@ export function ComposerScreen({
               backgroundColor: color.bg,
             }}
           >
+            {stepTabs}
             <ScrollView
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ paddingBottom: 35 }}
             >
-              {stepTabs}
               {inspector}
             </ScrollView>
           </View>

@@ -1,3 +1,5 @@
+import { useDesktopLayout } from "../components/desktop-layout";
+import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
 import { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -11,6 +13,7 @@ export function UtilityScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStack, "Utility">) {
+  const { desktop } = useDesktopLayout();
   const kind = route.params.kind;
   const [audience, setAudience] = useState("");
   const [saved, setSaved] = useState(false);
@@ -27,25 +30,40 @@ export function UtilityScreen({
     <ScrollView
       showsVerticalScrollIndicator={false}
       style={styles.screen}
-      contentContainerStyle={styles.page}
+      contentContainerStyle={
+        desktop ? [workspace.page, workspace.narrow] : styles.page
+      }
     >
-      <View
-        style={{
-          width: 72,
-          height: 72,
-          borderRadius: 36,
-          borderWidth: 1,
-          borderColor: "#947DAF",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#301553",
-        }}
-      >
-        <Icon size={32} color="white" />
-      </View>
-      <Text style={styles.title}>
-        {kind === "promote" ? "Find your audience" : "Your inbox"}
-      </Text>
+      {!desktop && (
+        <View
+          style={{
+            width: 72,
+            height: 72,
+            borderRadius: 36,
+            borderWidth: 1,
+            borderColor: "#947DAF",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "#301553",
+          }}
+        >
+          <Icon size={32} color="white" />
+        </View>
+      )}
+      {desktop ? (
+        <WorkspaceHeading
+          title={kind === "promote" ? "Promotion planning" : "Inbox"}
+          description={
+            kind === "promote"
+              ? "Shape your audience before preparing a campaign."
+              : "Creator conversations and community updates."
+          }
+        />
+      ) : (
+        <Text style={styles.title}>
+          {kind === "promote" ? "Find your audience" : "Your inbox"}
+        </Text>
+      )}
       <Text style={styles.eyebrow}>DESIGN PREVIEW · NOT CONNECTED</Text>
       {kind === "promote" ? (
         <>

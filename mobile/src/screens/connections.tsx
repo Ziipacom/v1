@@ -1,7 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PropsWithChildren,
+} from "react";
 import {
   ActivityIndicator,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -32,6 +39,7 @@ import {
   Unlink,
   Users,
   Video,
+  X,
   type LucideIcon,
 } from "lucide-react-native";
 import { Action, Cover, Empty, Field, Notice } from "../components/ui";
@@ -52,6 +60,7 @@ import { prepareMediaShare } from "../lib/share-creation";
 import { creationCaption, type PreparedMedia } from "../lib/share-types";
 import type { Item, RootStack, SocialProvider } from "../lib/types";
 import { color, font, styles } from "../theme";
+import { useDesktopLayout } from "../components/desktop-layout";
 
 const tabs: { id: NetworkTab; label: string; icon: LucideIcon }[] = [
   { id: "accounts", label: "Accounts", icon: Network },
@@ -67,14 +76,16 @@ function NetworkIcon({
   small?: boolean;
 }) {
   const info = socialProvider(provider);
+  const { desktop } = useDesktopLayout();
   return (
     <View
       style={[
         n.networkIcon,
         {
           backgroundColor: info.color,
-          width: small ? 31 : 46,
-          height: small ? 31 : 46,
+          width: small ? 31 : desktop ? 36 : 46,
+          height: small ? 31 : desktop ? 36 : 46,
+          borderRadius: desktop ? 8 : 25,
         },
       ]}
     >
@@ -93,6 +104,7 @@ function SmallAction({
   onPress: () => void;
   disabled?: boolean;
 }) {
+  const { desktop } = useDesktopLayout();
   return (
     <Pressable
       accessibilityRole="button"
@@ -100,11 +112,73 @@ function SmallAction({
       disabled={disabled}
       accessibilityState={{ disabled }}
       onPress={onPress}
-      style={[n.smallAction, disabled && { opacity: 0.4 }]}
+      style={[
+        n.smallAction,
+        desktop && nd.smallAction,
+        disabled && { opacity: 0.4 },
+      ]}
     >
       <Icon size={16} color={color.text} />
       <Text style={n.smallActionText}>{title}</Text>
     </Pressable>
+  );
+}
+
+function NetworkGrid({ children }: PropsWithChildren) {
+  const { desktop } = useDesktopLayout();
+  return desktop ? <View style={nd.grid}>{children}</View> : <>{children}</>;
+}
+function NetworkWorkspace({ children }: PropsWithChildren) {
+  const { desktop } = useDesktopLayout();
+  return desktop ? (
+    <View style={nd.workspace}>{children}</View>
+  ) : (
+    <>{children}</>
+  );
+}
+function NetworkSheet({
+  title,
+  onClose,
+  children,
+}: PropsWithChildren<{ title: string; onClose: () => void }>) {
+  const { desktop } = useDesktopLayout();
+  if (!desktop)
+    return (
+      <Sheet title={title} onClose={onClose}>
+        {children}
+      </Sheet>
+    );
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={nd.modalBackdrop}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss panel"
+          onPress={onClose}
+          style={StyleSheet.absoluteFill}
+        />
+        <View accessibilityViewIsModal style={nd.dialog}>
+          <View style={nd.dialogHeader}>
+            <Text style={nd.dialogTitle}>{title}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close panel"
+              onPress={onClose}
+              style={nd.close}
+            >
+              <X size={18} color={color.text} />
+            </Pressable>
+          </View>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={nd.dialogBody}
+          >
+            {children}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -121,6 +195,12 @@ export function ConnectionsScreen({
     previewNetworks,
     savePreviewNetworks,
   } = useZiipa();
+  const { desktop, contentWidth } = useDesktopLayout();
+  const workspaceWidth = Math.min(Math.max(0, contentWidth - 56), 1340);
+  const columns = workspaceWidth >= 1120 ? 3 : 2;
+  const desktopCard = desktop
+    ? { width: Math.floor((workspaceWidth - (columns - 1) * 16) / columns) }
+    : undefined;
   const [hub, setHub] = useState<NetworkHub>(() =>
     guest ? previewNetworks : emptyNetworkHub(),
   );
@@ -417,514 +497,610 @@ export function ConnectionsScreen({
         contentContainerStyle={[
           styles.page,
           { padding: 18, paddingBottom: 38, gap: 18 },
+          desktop && nd.page,
         ]}
       >
-        <Action
-          title="Authorize accounts & publish directly"
-          icon={Send}
-          onPress={() => navigation.navigate("Publishing")}
-        />
-        <View style={n.hero}>
-          <View style={styles.between}>
-            <Text style={styles.eyebrow}>ZIIPA • NETWORKS</Text>
-            <Globe2 color="#BA96F0" size={24} />
-          </View>
-          <Text style={[styles.title, { fontSize: 34 }]}>
-            Your world,{"\n"}connected.
-          </Text>
-          <Text style={styles.small}>
-            Create here. Keep your channels, people and publishing in one place.
-          </Text>
+        <NetworkWorkspace>
+          {desktop ? (
+            <View style={nd.header}>
+              <View style={{ flex: 1, minWidth: 280, gap: 6 }}>
+                <Text style={nd.eyebrow}>DISTRIBUTION / NETWORKS</Text>
+                <Text style={nd.title}>Your connected world</Text>
+                <Text style={styles.small}>
+                  Manage profile links, supported feeds and the people you
+                  follow.
+                </Text>
+              </View>
+              <Action
+                title="Direct publishing"
+                icon={Send}
+                onPress={() => navigation.navigate("Publishing")}
+              />
+            </View>
+          ) : (
+            <>
+              <Action
+                title="Authorize accounts & publish directly"
+                icon={Send}
+                onPress={() => navigation.navigate("Publishing")}
+              />
+              <View style={n.hero}>
+                <View style={styles.between}>
+                  <Text style={styles.eyebrow}>ZIIPA • NETWORKS</Text>
+                  <Globe2 color="#BA96F0" size={24} />
+                </View>
+                <Text style={[styles.title, { fontSize: 34 }]}>
+                  Your world,{"\n"}connected.
+                </Text>
+                <Text style={styles.small}>
+                  Create here. Keep your channels, people and publishing in one
+                  place.
+                </Text>
+                <View
+                  style={[
+                    styles.row,
+                    { gap: 8, justifyContent: "space-between" },
+                  ]}
+                >
+                  {hub.providers.map((value) => (
+                    <Pressable
+                      key={value.provider}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Manage ${value.name}`}
+                      onPress={() => editAccount(value)}
+                    >
+                      <NetworkIcon provider={value.provider} small />
+                    </Pressable>
+                  ))}
+                </View>
+                <View style={n.statRow}>
+                  {[
+                    [linked.length, "profiles"],
+                    [hub.media.length, "synced posts"],
+                    [hub.people.length, "following"],
+                  ].map(([count, label]) => (
+                    <View key={label} style={n.stat}>
+                      <Text style={n.statValue}>{count}</Text>
+                      <Text style={n.statLabel}>{label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </>
+          )}
+          {desktop && (
+            <View style={nd.summary}>
+              {[
+                [linked.length, "linked profiles"],
+                [hub.media.length, "synced posts"],
+                [hub.people.length, "public following"],
+              ].map(([count, label]) => (
+                <View key={label} style={nd.summaryItem}>
+                  <Text style={nd.summaryValue}>{count}</Text>
+                  <Text style={nd.summaryLabel}>{label}</Text>
+                </View>
+              ))}
+              <View style={nd.summaryNote}>
+                <ShieldCheck size={15} color={color.lime} />
+                <Text style={nd.summaryLabel}>
+                  Profile links and publishing permissions are separate.
+                </Text>
+              </View>
+            </View>
+          )}
           <View
-            style={[styles.row, { gap: 8, justifyContent: "space-between" }]}
+            style={[n.tabs, desktop && nd.tabs]}
+            accessibilityRole="tablist"
           >
-            {hub.providers.map((value) => (
+            {tabs.map(({ id, label, icon: Icon }) => (
               <Pressable
-                key={value.provider}
-                accessibilityRole="button"
-                accessibilityLabel={`Manage ${value.name}`}
-                onPress={() => editAccount(value)}
+                key={id}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: tab === id }}
+                onPress={() => {
+                  setTab(id);
+                  if (desktop) navigation.setParams({ tab: id });
+                  setError("");
+                  setNotice("");
+                }}
+                style={[
+                  n.tab,
+                  desktop && nd.tab,
+                  tab === id && n.selectedTab,
+                  desktop && tab === id && nd.selectedTab,
+                ]}
               >
-                <NetworkIcon provider={value.provider} small />
+                <Icon size={19} color={tab === id ? "white" : color.muted} />
+                <Text style={[n.tabText, tab === id && { color: "white" }]}>
+                  {label}
+                </Text>
               </Pressable>
             ))}
           </View>
-          <View style={n.statRow}>
-            {[
-              [linked.length, "profiles"],
-              [hub.media.length, "synced posts"],
-              [hub.people.length, "following"],
-            ].map(([count, label]) => (
-              <View key={label} style={n.stat}>
-                <Text style={n.statValue}>{count}</Text>
-                <Text style={n.statLabel}>{label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-        <View style={n.tabs} accessibilityRole="tablist">
-          {tabs.map(({ id, label, icon: Icon }) => (
-            <Pressable
-              key={id}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: tab === id }}
-              onPress={() => {
-                setTab(id);
-                setError("");
-                setNotice("");
-              }}
-              style={[n.tab, tab === id && n.selectedTab]}
-            >
-              <Icon size={19} color={tab === id ? "white" : color.muted} />
-              <Text style={[n.tabText, tab === id && { color: "white" }]}>
-                {label}
+          {guest && (
+            <View style={n.previewNote}>
+              <Text style={[styles.small, { flex: 1 }]}>
+                Preview mode · no accounts are authorized.
               </Text>
-            </Pressable>
-          ))}
-        </View>
-        {guest && (
-          <View style={n.previewNote}>
-            <Text style={[styles.small, { flex: 1 }]}>
-              Preview mode · no accounts are authorized.
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => navigation.navigate("Login")}
-            >
-              <Text style={n.textLink}>Sign in</Text>
-            </Pressable>
-          </View>
-        )}
-        {loading && (
-          <ActivityIndicator
-            color={color.lime}
-            accessibilityLabel="Loading network accounts"
-          />
-        )}
-        {!selected && !sharingItem && !!error && <Notice text={error} error />}
-        {!selected && !sharingItem && !!notice && <Notice text={notice} />}
-        {tab === "accounts" && (
-          <>
-            <View style={styles.between}>
-              <Text style={[styles.heading, { fontSize: 21 }]}>
-                Your channels
-              </Text>
-              <SmallAction
-                title="Sync all"
-                icon={RefreshCw}
-                disabled={!!busy}
-                onPress={() => void run("sync-all", () => sync())}
-              />
-            </View>
-            <Text style={styles.small}>
-              Save a profile shortcut or authorize an account. Only supported,
-              permitted content can sync.
-            </Text>
-            {hub.providers.map((value) => (
-              <View
-                key={value.provider}
-                style={[
-                  n.account,
-                  value.status !== "disconnected" && { borderColor: "#64418A" },
-                ]}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => navigation.navigate("Login")}
               >
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Manage ${value.name} account`}
-                  onPress={() => editAccount(value)}
-                  style={styles.row}
-                >
-                  <NetworkIcon provider={value.provider} />
-                  <View style={{ flex: 1, gap: 3 }}>
-                    <Text style={n.accountName}>{value.name}</Text>
-                    <Text style={styles.small} numberOfLines={1}>
-                      {value.handle || networkInfo[value.provider].scope}
-                    </Text>
-                  </View>
-                  <ChevronRight size={18} color={color.muted} />
-                </Pressable>
-                <View style={styles.between}>
-                  <View style={n.badge}>
+                <Text style={n.textLink}>Sign in</Text>
+              </Pressable>
+            </View>
+          )}
+          {loading && (
+            <ActivityIndicator
+              color={color.lime}
+              accessibilityLabel="Loading network accounts"
+            />
+          )}
+          {!selected && !sharingItem && !!error && (
+            <Notice text={error} error />
+          )}
+          {!selected && !sharingItem && !!notice && <Notice text={notice} />}
+          {tab === "accounts" && (
+            <>
+              <View style={styles.between}>
+                <Text style={[styles.heading, { fontSize: 21 }]}>
+                  Your channels
+                </Text>
+                <SmallAction
+                  title="Sync all"
+                  icon={RefreshCw}
+                  disabled={!!busy}
+                  onPress={() => void run("sync-all", () => sync())}
+                />
+              </View>
+              <Text style={styles.small}>
+                Save a profile shortcut or authorize an account. Only supported,
+                permitted content can sync.
+              </Text>
+              <NetworkGrid>
+                {hub.providers.map((value) => (
+                  <View
+                    key={value.provider}
+                    style={[
+                      n.account,
+                      desktop && nd.card,
+                      desktopCard,
+                      value.status !== "disconnected" && {
+                        borderColor: "#64418A",
+                      },
+                    ]}
+                  >
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Manage ${value.name} account`}
+                      onPress={() => editAccount(value)}
+                      style={styles.row}
+                    >
+                      <NetworkIcon provider={value.provider} />
+                      <View style={{ flex: 1, gap: 3 }}>
+                        <Text style={n.accountName}>{value.name}</Text>
+                        <Text style={styles.small} numberOfLines={1}>
+                          {value.handle || networkInfo[value.provider].scope}
+                        </Text>
+                      </View>
+                      <ChevronRight size={18} color={color.muted} />
+                    </Pressable>
+                    <View style={styles.between}>
+                      <View style={n.badge}>
+                        <View
+                          style={[
+                            n.dot,
+                            {
+                              backgroundColor:
+                                value.status === "connected"
+                                  ? color.lime
+                                  : value.status === "linked"
+                                    ? "#BB92F5"
+                                    : color.faint,
+                            },
+                          ]}
+                        />
+                        <Text style={n.badgeText}>
+                          {value.status === "connected"
+                            ? "Authorized account"
+                            : value.status === "linked"
+                              ? "Public profile linked"
+                              : "Not linked"}
+                        </Text>
+                      </View>
+                      <Text style={n.subtle}>
+                        {value.can_publish
+                          ? "API posting ready"
+                          : "App handoff"}
+                      </Text>
+                    </View>
                     <View
-                      style={[
-                        n.dot,
-                        {
-                          backgroundColor:
-                            value.status === "connected"
-                              ? color.lime
-                              : value.status === "linked"
-                                ? "#BB92F5"
-                                : color.faint,
-                        },
-                      ]}
-                    />
-                    <Text style={n.badgeText}>
-                      {value.status === "connected"
-                        ? "Authorized account"
-                        : value.status === "linked"
-                          ? "Public profile linked"
-                          : "Not linked"}
-                    </Text>
+                      style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}
+                    >
+                      <SmallAction
+                        title={
+                          value.status === "disconnected"
+                            ? `Link ${value.name}`
+                            : `Manage ${value.name}`
+                        }
+                        icon={Link2}
+                        onPress={() => editAccount(value)}
+                      />
+                      <SmallAction
+                        title={`Open ${value.name}`}
+                        icon={ArrowUpRight}
+                        onPress={() =>
+                          void run("open", () =>
+                            openPlatform(
+                              value.provider,
+                              value.profile_url || undefined,
+                            ),
+                          )
+                        }
+                      />
+                      {value.can_sync && (
+                        <SmallAction
+                          title={`Sync ${value.name}`}
+                          icon={RefreshCw}
+                          disabled={!!busy}
+                          onPress={() =>
+                            void run(`sync-${value.provider}`, () =>
+                              sync(value.provider),
+                            )
+                          }
+                        />
+                      )}
+                    </View>
+                    {!!value.last_synced_at && (
+                      <Text style={n.subtle}>
+                        Last sync{" "}
+                        {new Date(value.last_synced_at).toLocaleString()}
+                      </Text>
+                    )}
+                    {!!value.sync_error && (
+                      <Text style={styles.error}>{value.sync_error}</Text>
+                    )}
                   </View>
-                  <Text style={n.subtle}>
-                    {value.can_publish ? "API posting ready" : "App handoff"}
+                ))}
+              </NetworkGrid>
+              <View style={n.privacyNote}>
+                <ShieldCheck size={20} color={color.lime} />
+                <Text style={[styles.small, { flex: 1 }]}>
+                  No social passwords, contact uploads or automatic invites. A
+                  profile link never gives Ziipa permission to post.
+                </Text>
+              </View>
+            </>
+          )}
+          {(tab === "feed" || tab === "people") && (
+            <>
+              <View style={styles.between}>
+                <Text style={[styles.heading, { fontSize: 21 }]}>
+                  {tab === "feed"
+                    ? "Across your networks"
+                    : "People you follow"}
+                </Text>
+                <SmallAction
+                  title="Sync now"
+                  icon={RefreshCw}
+                  disabled={!!busy}
+                  onPress={() => void run("sync-all", () => sync())}
+                />
+              </View>
+              <Field
+                label={tab === "feed" ? "Search synced posts" : "Find people"}
+                placeholder={
+                  tab === "feed"
+                    ? "Search your network media"
+                    : "Name or handle"
+                }
+                value={search}
+                onChangeText={setSearch}
+              />
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8 }}
+              >
+                <SmallAction
+                  title="All networks"
+                  icon={Globe2}
+                  onPress={() => setFilter("all")}
+                />
+                {linked.map((value) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: filter === value.provider }}
+                    key={value.provider}
+                    onPress={() => setFilter(value.provider)}
+                    style={[
+                      n.smallAction,
+                      filter === value.provider && n.selectedTab,
+                    ]}
+                  >
+                    <NetworkIcon provider={value.provider} small />
+                    <Text style={n.smallActionText}>{value.name}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+              <NetworkGrid>
+                {tab === "feed" ? (
+                  media.length ? (
+                    media.map((item) => (
+                      <Pressable
+                        key={`${item.provider}-${item.id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open ${item.title || "post"} on ${networkInfo[item.provider].name}`}
+                        onPress={() =>
+                          void run("open", () =>
+                            openPlatform(item.provider, item.url),
+                          )
+                        }
+                        style={[n.account, desktop && nd.card, desktopCard]}
+                      >
+                        <View style={styles.row}>
+                          <NetworkIcon provider={item.provider} small />
+                          <View style={{ flex: 1 }}>
+                            <Text style={n.accountName}>{item.author}</Text>
+                            <Text style={n.subtle}>@{item.handle}</Text>
+                          </View>
+                          <ExternalLink size={17} color={color.muted} />
+                        </View>
+                        {!!item.thumbnail_url && (
+                          <Image
+                            source={{ uri: item.thumbnail_url }}
+                            style={{
+                              height: 190,
+                              width: "100%",
+                              borderRadius: 18,
+                            }}
+                            contentFit="cover"
+                            accessibilityLabel={
+                              item.title || "Network media preview"
+                            }
+                          />
+                        )}
+                        <Text style={styles.body} numberOfLines={5}>
+                          {item.text || item.title}
+                        </Text>
+                        <Text style={n.subtle}>
+                          {networkInfo[item.provider].name} · {item.kind} ·
+                          Opens original
+                        </Text>
+                      </Pressable>
+                    ))
+                  ) : (
+                    <Empty
+                      title="Bring your feeds together"
+                      body="Link a Bluesky public profile, then sync to see recent posts here. Other networks remain shortcuts until their integration is enabled. Nothing is scraped from private feeds."
+                    />
+                  )
+                ) : people.length ? (
+                  people.map((person) => (
+                    <View
+                      key={`${person.provider}-${person.id}`}
+                      style={[n.account, desktop && nd.card, desktopCard]}
+                    >
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open ${person.name}'s profile`}
+                        onPress={() =>
+                          void run("open", () =>
+                            openPlatform(person.provider, person.profile_url),
+                          )
+                        }
+                        style={styles.row}
+                      >
+                        {person.avatar_url ? (
+                          <Image
+                            source={{ uri: person.avatar_url }}
+                            style={n.avatar}
+                            accessibilityLabel={person.name}
+                          />
+                        ) : (
+                          <View style={[n.avatar, n.placeholderAvatar]}>
+                            <Users size={23} color={color.muted} />
+                          </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <Text style={n.accountName}>
+                            {person.name || person.handle}
+                          </Text>
+                          <Text style={styles.small} numberOfLines={1}>
+                            @{person.handle}
+                          </Text>
+                        </View>
+                        <ArrowUpRight size={19} color={color.muted} />
+                      </Pressable>
+                      <Text style={n.subtle}>
+                        Following on {networkInfo[person.provider].name} · not a
+                        Ziipa friendship
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <Empty
+                    title="Your people, in view"
+                    body="Supported public following appears after sync. Platforms do not expose one universal friend list. Importing following does not follow people in Ziipa or invite them."
+                  />
+                )}
+              </NetworkGrid>
+              {tab === "people" && (
+                <View style={[n.account, { backgroundColor: "#27153D" }]}>
+                  <Text style={[styles.heading, { fontSize: 22 }]}>
+                    Bring your people to Ziipa
                   </Text>
-                </View>
-                <View
-                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}
-                >
-                  <SmallAction
-                    title={
-                      value.status === "disconnected"
-                        ? `Link ${value.name}`
-                        : `Manage ${value.name}`
-                    }
-                    icon={Link2}
-                    onPress={() => editAccount(value)}
+                  <Text style={styles.small}>
+                    Share an invitation yourself. Ziipa never messages your
+                    contacts automatically.
+                  </Text>
+                  <Action
+                    title="Share invite"
+                    icon={Share2}
+                    disabled={!!busy}
+                    onPress={() => void run("invite", invite)}
                   />
                   <SmallAction
-                    title={`Open ${value.name}`}
-                    icon={ArrowUpRight}
+                    title="Copy invite link"
+                    icon={Copy}
                     onPress={() =>
-                      void run("open", () =>
-                        openPlatform(
-                          value.provider,
-                          value.profile_url || undefined,
+                      void run("copy", () =>
+                        copy(
+                          hub.invite_url.startsWith("https://")
+                            ? hub.invite_url
+                            : "https://ziipa.com",
                         ),
                       )
                     }
                   />
-                  {value.can_sync && (
-                    <SmallAction
-                      title={`Sync ${value.name}`}
-                      icon={RefreshCw}
-                      disabled={!!busy}
-                      onPress={() =>
-                        void run(`sync-${value.provider}`, () =>
-                          sync(value.provider),
-                        )
-                      }
-                    />
-                  )}
                 </View>
-                {!!value.last_synced_at && (
-                  <Text style={n.subtle}>
-                    Last sync {new Date(value.last_synced_at).toLocaleString()}
-                  </Text>
-                )}
-                {!!value.sync_error && (
-                  <Text style={styles.error}>{value.sync_error}</Text>
-                )}
-              </View>
-            ))}
-            <View style={n.privacyNote}>
-              <ShieldCheck size={20} color={color.lime} />
-              <Text style={[styles.small, { flex: 1 }]}>
-                No social passwords, contact uploads or automatic invites. A
-                profile link never gives Ziipa permission to post.
-              </Text>
-            </View>
-          </>
-        )}
-        {(tab === "feed" || tab === "people") && (
-          <>
-            <View style={styles.between}>
-              <Text style={[styles.heading, { fontSize: 21 }]}>
-                {tab === "feed" ? "Across your networks" : "People you follow"}
-              </Text>
-              <SmallAction
-                title="Sync now"
-                icon={RefreshCw}
-                disabled={!!busy}
-                onPress={() => void run("sync-all", () => sync())}
-              />
-            </View>
-            <Field
-              label={tab === "feed" ? "Search synced posts" : "Find people"}
-              placeholder={
-                tab === "feed" ? "Search your network media" : "Name or handle"
-              }
-              value={search}
-              onChangeText={setSearch}
-            />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8 }}
-            >
-              <SmallAction
-                title="All networks"
-                icon={Globe2}
-                onPress={() => setFilter("all")}
-              />
-              {linked.map((value) => (
+              )}
+            </>
+          )}
+          {tab === "outbox" && (
+            <>
+              <View style={styles.between}>
+                <Text style={[styles.heading, { fontSize: 21 }]}>
+                  Create once. Share onward.
+                </Text>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityState={{ selected: filter === value.provider }}
-                  key={value.provider}
-                  onPress={() => setFilter(value.provider)}
-                  style={[
-                    n.smallAction,
-                    filter === value.provider && n.selectedTab,
-                  ]}
+                  accessibilityLabel="Create new media"
+                  onPress={() => navigation.navigate("Composer")}
+                  style={n.roundButton}
                 >
-                  <NetworkIcon provider={value.provider} small />
-                  <Text style={n.smallActionText}>{value.name}</Text>
+                  <Plus size={23} color="white" />
                 </Pressable>
-              ))}
-            </ScrollView>
-            {tab === "feed" ? (
-              media.length ? (
-                media.map((item) => (
-                  <Pressable
-                    key={`${item.provider}-${item.id}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open ${item.title || "post"} on ${networkInfo[item.provider].name}`}
-                    onPress={() =>
-                      void run("open", () =>
-                        openPlatform(item.provider, item.url),
-                      )
-                    }
-                    style={n.account}
-                  >
-                    <View style={styles.row}>
-                      <NetworkIcon provider={item.provider} small />
-                      <View style={{ flex: 1 }}>
-                        <Text style={n.accountName}>{item.author}</Text>
-                        <Text style={n.subtle}>@{item.handle}</Text>
-                      </View>
-                      <ExternalLink size={17} color={color.muted} />
-                    </View>
-                    {!!item.thumbnail_url && (
-                      <Image
-                        source={{ uri: item.thumbnail_url }}
-                        style={{ height: 190, width: "100%", borderRadius: 18 }}
-                        contentFit="cover"
-                        accessibilityLabel={
-                          item.title || "Network media preview"
-                        }
-                      />
-                    )}
-                    <Text style={styles.body} numberOfLines={5}>
-                      {item.text || item.title}
-                    </Text>
-                    <Text style={n.subtle}>
-                      {networkInfo[item.provider].name} · {item.kind} · Opens
-                      original
-                    </Text>
-                  </Pressable>
-                ))
-              ) : (
-                <Empty
-                  title="Bring your feeds together"
-                  body="Link a Bluesky public profile, then sync to see recent posts here. Other networks remain shortcuts until their integration is enabled. Nothing is scraped from private feeds."
-                />
-              )
-            ) : people.length ? (
-              people.map((person) => (
-                <View key={`${person.provider}-${person.id}`} style={n.account}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open ${person.name}'s profile`}
-                    onPress={() =>
-                      void run("open", () =>
-                        openPlatform(person.provider, person.profile_url),
-                      )
-                    }
-                    style={styles.row}
-                  >
-                    {person.avatar_url ? (
-                      <Image
-                        source={{ uri: person.avatar_url }}
-                        style={n.avatar}
-                        accessibilityLabel={person.name}
-                      />
-                    ) : (
-                      <View style={[n.avatar, n.placeholderAvatar]}>
-                        <Users size={23} color={color.muted} />
-                      </View>
-                    )}
-                    <View style={{ flex: 1 }}>
-                      <Text style={n.accountName}>
-                        {person.name || person.handle}
-                      </Text>
-                      <Text style={styles.small} numberOfLines={1}>
-                        @{person.handle}
-                      </Text>
-                    </View>
-                    <ArrowUpRight size={19} color={color.muted} />
-                  </Pressable>
-                  <Text style={n.subtle}>
-                    Following on {networkInfo[person.provider].name} · not a
-                    Ziipa friendship
-                  </Text>
-                </View>
-              ))
-            ) : (
-              <Empty
-                title="Your people, in view"
-                body="Supported public following appears after sync. Platforms do not expose one universal friend list. Importing following does not follow people in Ziipa or invite them."
-              />
-            )}
-            {tab === "people" && (
-              <View style={[n.account, { backgroundColor: "#27153D" }]}>
-                <Text style={[styles.heading, { fontSize: 22 }]}>
-                  Bring your people to Ziipa
-                </Text>
-                <Text style={styles.small}>
-                  Share an invitation yourself. Ziipa never messages your
-                  contacts automatically.
-                </Text>
-                <Action
-                  title="Share invite"
-                  icon={Share2}
-                  disabled={!!busy}
-                  onPress={() => void run("invite", invite)}
-                />
-                <SmallAction
-                  title="Copy invite link"
-                  icon={Copy}
-                  onPress={() =>
-                    void run("copy", () =>
-                      copy(
-                        hub.invite_url.startsWith("https://")
-                          ? hub.invite_url
-                          : "https://ziipa.com",
-                      ),
-                    )
-                  }
-                />
               </View>
-            )}
-          </>
-        )}
-        {tab === "outbox" && (
-          <>
-            <View style={styles.between}>
-              <Text style={[styles.heading, { fontSize: 21 }]}>
-                Create once. Share onward.
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Create new media"
-                onPress={() => navigation.navigate("Composer")}
-                style={n.roundButton}
-              >
-                <Plus size={23} color="white" />
-              </Pressable>
-            </View>
-            <Action
-              title="Open direct publishing & receipts"
-              icon={Send}
-              onPress={() => navigation.navigate("Publishing")}
-            />
-            <Notice text="Direct publishing uses separately authorized destination accounts. The options below share your original media manually, so you can finish posting in the destination app." />
-            {ownMedia.length ? (
-              ownMedia.map((item) => (
-                <View key={item.id} style={n.account}>
-                  <View style={styles.row}>
-                    <Cover
-                      item={item}
-                      style={{ width: 65, height: 76, borderRadius: 13 }}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={n.accountName} numberOfLines={2}>
-                        {item.title}
-                      </Text>
-                      <Text style={styles.small}>
-                        {item.demo
-                          ? "Sample draft"
-                          : item.visibility === "published"
-                            ? "Published in Ziipa"
-                            : "Private Ziipa draft"}
-                      </Text>
-                      <Text style={n.subtle}>
-                        {item.distribution_targets?.length || 0} external
-                        destinations selected
-                      </Text>
+              <Action
+                title="Open direct publishing & receipts"
+                icon={Send}
+                onPress={() => navigation.navigate("Publishing")}
+              />
+              <Notice text="Direct publishing uses separately authorized destination accounts. The options below share your original media manually, so you can finish posting in the destination app." />
+              <NetworkGrid>
+                {ownMedia.length ? (
+                  ownMedia.map((item) => (
+                    <View
+                      key={item.id}
+                      style={[n.account, desktop && nd.card, desktopCard]}
+                    >
+                      <View style={styles.row}>
+                        <Cover
+                          item={item}
+                          style={{ width: 65, height: 76, borderRadius: 13 }}
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text style={n.accountName} numberOfLines={2}>
+                            {item.title}
+                          </Text>
+                          <Text style={styles.small}>
+                            {item.demo
+                              ? "Sample draft"
+                              : item.visibility === "published"
+                                ? "Published in Ziipa"
+                                : "Private Ziipa draft"}
+                          </Text>
+                          <Text style={n.subtle}>
+                            {item.distribution_targets?.length || 0} external
+                            destinations selected
+                          </Text>
+                        </View>
+                      </View>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          flexWrap: "wrap",
+                          gap: 8,
+                        }}
+                      >
+                        <SmallAction
+                          title={`Edit ${item.title}`}
+                          icon={Video}
+                          onPress={() =>
+                            navigation.navigate("Composer", { item })
+                          }
+                        />
+                        <SmallAction
+                          title={`Share ${item.title}`}
+                          icon={Share2}
+                          onPress={() => {
+                            setSharingItem(item);
+                            setError("");
+                            setNotice("");
+                          }}
+                        />
+                      </View>
+                      {!!item.distribution?.length &&
+                        item.distribution.map((job) => (
+                          <Text key={job.id} style={styles.small}>
+                            {networkInfo[job.provider].name} ·{" "}
+                            {job.status.replaceAll("_", " ")}
+                          </Text>
+                        ))}
                     </View>
-                  </View>
-                  <View
-                    style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
-                  >
-                    <SmallAction
-                      title={`Edit ${item.title}`}
-                      icon={Video}
-                      onPress={() => navigation.navigate("Composer", { item })}
-                    />
-                    <SmallAction
-                      title={`Share ${item.title}`}
-                      icon={Share2}
-                      onPress={() => {
-                        setSharingItem(item);
-                        setError("");
-                        setNotice("");
-                      }}
-                    />
-                  </View>
-                  {!!item.distribution?.length &&
-                    item.distribution.map((job) => (
-                      <Text key={job.id} style={styles.small}>
-                        {networkInfo[job.provider].name} ·{" "}
+                  ))
+                ) : (
+                  <Empty
+                    title="Your publishing desk"
+                    body="Record or upload a creation. Save it to Ziipa, select destinations and return here to share the original and track delivery."
+                  />
+                )}
+              </NetworkGrid>
+              <Text style={[styles.heading, { fontSize: 21 }]}>
+                Delivery activity
+              </Text>
+              <NetworkGrid>
+                {data.distributions.length ? (
+                  data.distributions.map((job) => (
+                    <View
+                      key={job.id}
+                      style={[n.account, desktop && nd.card, desktopCard]}
+                    >
+                      <View style={styles.row}>
+                        <NetworkIcon provider={job.provider} small />
+                        <Text style={n.accountName}>
+                          {networkInfo[job.provider].name}
+                        </Text>
+                      </View>
+                      <Text style={n.textLink}>
                         {job.status.replaceAll("_", " ")}
                       </Text>
-                    ))}
-                </View>
-              ))
-            ) : (
-              <Empty
-                title="Your publishing desk"
-                body="Record or upload a creation. Save it to Ziipa, select destinations and return here to share the original and track delivery."
-              />
-            )}
-            <Text style={[styles.heading, { fontSize: 21 }]}>
-              Delivery activity
-            </Text>
-            {data.distributions.length ? (
-              data.distributions.map((job) => (
-                <View key={job.id} style={n.account}>
-                  <View style={styles.row}>
-                    <NetworkIcon provider={job.provider} small />
-                    <Text style={n.accountName}>
-                      {networkInfo[job.provider].name}
-                    </Text>
-                  </View>
-                  <Text style={n.textLink}>
-                    {job.status.replaceAll("_", " ")}
+                      <Text style={styles.small}>{job.detail}</Text>
+                      {job.external_url && (
+                        <SmallAction
+                          title="View published post"
+                          icon={ArrowUpRight}
+                          onPress={() =>
+                            void run("open", () =>
+                              openPlatform(job.provider, job.external_url),
+                            )
+                          }
+                        />
+                      )}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.small}>
+                    No external deliveries yet. Opening an app or share sheet is
+                    never counted as a published post.
                   </Text>
-                  <Text style={styles.small}>{job.detail}</Text>
-                  {job.external_url && (
-                    <SmallAction
-                      title="View published post"
-                      icon={ArrowUpRight}
-                      onPress={() =>
-                        void run("open", () =>
-                          openPlatform(job.provider, job.external_url),
-                        )
-                      }
-                    />
-                  )}
-                </View>
-              ))
-            ) : (
-              <Text style={styles.small}>
-                No external deliveries yet. Opening an app or share sheet is
-                never counted as a published post.
-              </Text>
-            )}
-          </>
-        )}
-        {!!busy && (
-          <Text accessibilityLiveRegion="polite" style={styles.small}>
-            Working…{" "}
-            {busy.startsWith("sync")
-              ? "Refreshing supported networks."
-              : "Please wait."}
-          </Text>
-        )}
+                )}
+              </NetworkGrid>
+            </>
+          )}
+          {!!busy && (
+            <Text accessibilityLiveRegion="polite" style={styles.small}>
+              Working…{" "}
+              {busy.startsWith("sync")
+                ? "Refreshing supported networks."
+                : "Please wait."}
+            </Text>
+          )}
+        </NetworkWorkspace>
       </ScrollView>
       {!!account && selected && (
-        <Sheet
+        <NetworkSheet
           title={account.name}
           onClose={() => {
             if (!busy) setSelected(null);
@@ -1028,10 +1204,10 @@ export function ConnectionsScreen({
                 onPress={() => setConfirmDisconnect(true)}
               />
             ))}
-        </Sheet>
+        </NetworkSheet>
       )}
       {!!sharingItem && (
-        <Sheet
+        <NetworkSheet
           title="Share to your networks"
           onClose={() => {
             if (!busy) closeShare();
@@ -1108,7 +1284,7 @@ export function ConnectionsScreen({
             Sharing hands control to you. Ziipa cannot verify a manual post and
             will not mark it delivered.
           </Text>
-        </Sheet>
+        </NetworkSheet>
       )}
     </View>
   );
@@ -1212,4 +1388,119 @@ const n = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: color.purple,
   },
+});
+
+const nd = StyleSheet.create({
+  page: { padding: 28, paddingBottom: 48, alignItems: "center", gap: 0 },
+  workspace: { width: "100%", maxWidth: 1340, gap: 18 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 18,
+    paddingBottom: 4,
+  },
+  eyebrow: {
+    color: color.faint,
+    fontFamily: font.medium,
+    fontSize: 10,
+    letterSpacing: 1.7,
+  },
+  title: {
+    color: color.text,
+    fontFamily: font.bold,
+    fontSize: 28,
+    lineHeight: 34,
+    letterSpacing: -0.6,
+  },
+  summary: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 24,
+    paddingVertical: 15,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: color.border,
+  },
+  summaryItem: { flexDirection: "row", gap: 7, alignItems: "center" },
+  summaryValue: { color: color.text, fontFamily: font.semibold, fontSize: 18 },
+  summaryLabel: { color: color.muted, fontFamily: font.regular, fontSize: 12 },
+  summaryNote: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+    marginLeft: "auto",
+    flexShrink: 1,
+  },
+  tabs: {
+    alignSelf: "flex-start",
+    borderRadius: 9,
+    padding: 4,
+    gap: 4,
+    backgroundColor: "#191323",
+  },
+  tab: {
+    flex: 0,
+    flexDirection: "row",
+    borderRadius: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 18,
+    gap: 8,
+  },
+  selectedTab: { backgroundColor: "#39224F" },
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "stretch",
+    gap: 16,
+  },
+  card: {
+    borderRadius: 11,
+    padding: 17,
+    gap: 12,
+    backgroundColor: "#191421",
+    minWidth: 0,
+  },
+  smallAction: {
+    borderRadius: 7,
+    minHeight: 34,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+  },
+  modalBackdrop: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 28,
+    backgroundColor: "#000A",
+  },
+  dialog: {
+    width: 540,
+    maxWidth: "100%",
+    maxHeight: "90%",
+    borderRadius: 14,
+    backgroundColor: color.bg,
+    borderWidth: 1,
+    borderColor: color.border,
+  },
+  dialogHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 22,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: color.border,
+  },
+  dialogTitle: { color: color.text, fontFamily: font.semibold, fontSize: 19 },
+  close: {
+    width: 32,
+    height: 32,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: color.panel,
+  },
+  dialogBody: { padding: 22, gap: 15 },
 });

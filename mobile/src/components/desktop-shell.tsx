@@ -23,11 +23,13 @@ import {
   Clapperboard,
   Compass,
   FolderOpen,
+  Images,
   LayoutDashboard,
   MailOpen,
   Menu,
   Network,
   Plus,
+  Pencil,
   Radio,
   RefreshCw,
   Search,
@@ -282,6 +284,20 @@ export function DesktopShell({
           active: route.name === "Publishing",
         },
       ];
+  if (!explore) {
+    links.splice(1, 0, {
+      label: "Editor",
+      Icon: Pencil,
+      name: "Composer",
+      active: route.name === "Composer",
+    });
+    links.push({
+      label: "Gallery",
+      Icon: Images,
+      name: "Main",
+      active: false,
+    });
+  }
   const osLinks: NavItem[] = [
     {
       label: "Assistant",

@@ -12,6 +12,8 @@ import {
   ScrollView,
   Text,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -25,6 +27,7 @@ import {
 } from "lucide-react-native";
 import { Action, Field, Notice, Pill } from "../components/ui";
 import { CalendarDayPicker } from "../components/calendar-day-picker";
+import { useDesktopLayout } from "../components/desktop-layout";
 import { useZiipa } from "../provider";
 import { useOperationScope } from "../lib/use-operation-scope";
 import {
@@ -98,12 +101,31 @@ function eventDraft(event: CalendarEvent): CalendarDraft {
   };
 }
 function Card({ title, children }: { title: string; children: ReactNode }) {
+  const { desktop } = useDesktopLayout();
   return (
-    <View style={[styles.panel, { gap: 14 }]}>
-      <Text style={styles.heading}>{title}</Text>
+    <View
+      style={[
+        styles.panel,
+        { gap: 14 },
+        desktop && { padding: 18, borderRadius: 12 },
+      ]}
+    >
+      <Text style={[styles.heading, desktop && { fontSize: 18 }]}>{title}</Text>
       {children}
     </View>
   );
+}
+
+/** Fragments leave the native/compact layout tree exactly as it was. */
+function DesktopGroup({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style: StyleProp<ViewStyle>;
+}) {
+  const { desktop } = useDesktopLayout();
+  return desktop ? <View style={style}>{children}</View> : <>{children}</>;
 }
 
 export function CalendarScreen(props: Props) {
@@ -118,6 +140,7 @@ export function CalendarScreen(props: Props) {
 
 function ScopedCalendarScreen({ navigation, route }: Props) {
   const { session, guest, api, forgetSession } = useZiipa();
+  const { desktop, contentWidth } = useDesktopLayout();
   const focused = useIsFocused();
   const [foreground, setForeground] = useState(
     AppState.currentState === "active",
@@ -429,38 +452,86 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
         styles.page,
         {
           width: "100%",
-          maxWidth: 960,
+          maxWidth: desktop ? 1480 : 960,
           alignSelf: "center",
           paddingBottom: 50,
         },
+        desktop && { paddingHorizontal: 28, paddingTop: 24, gap: 20 },
       ]}
     >
-      <View style={styles.between}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.eyebrow}>ZIIPA CALENDAR</Text>
-          <Text style={styles.title}>Make time to create.</Text>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Refresh calendar"
-          disabled={busy || loading}
-          onPress={() => void load()}
-          style={{ padding: 12 }}
+      {desktop ? (
+        <View
+          style={[
+            styles.between,
+            { alignItems: "flex-start", flexWrap: "wrap", gap: 16 },
+          ]}
         >
-          <RefreshCw color={color.lime} size={24} />
-        </Pressable>
-      </View>
-      <Text style={styles.body}>
-        One place for release plans, recurring studio time and live-stream
-        preflight. Actual publishing stays in your reviewed campaign;
-        broadcasting starts only in Live controls.
-      </Text>
-      <Notice text="Reminders live inside Ziipa. Saving a schedule does not enable push or external calendar account sync. Optional device notifications require separate consent and configured delivery." />
-      <Action
-        secondary
-        title="Private updates · opt-in reminder notifications"
-        onPress={() => navigation.navigate("Notifications")}
-      />
+          <View style={{ gap: 5, flex: 1, minWidth: 220 }}>
+            <Text style={[styles.heading, { fontSize: 25 }]}>Calendar</Text>
+            <Text style={styles.small}>
+              Release plans, recurring studio time and broadcast reminders.
+            </Text>
+          </View>
+          <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
+            <Action
+              secondary
+              title="Notifications"
+              disabled={busy}
+              onPress={() => navigation.navigate("Notifications")}
+            />
+            <Action
+              title="New event"
+              icon={Plus}
+              disabled={busy}
+              onPress={newEvent}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Refresh calendar"
+              disabled={busy || loading}
+              onPress={() => void load()}
+              style={{ padding: 10 }}
+            >
+              <RefreshCw size={18} color={color.muted} />
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        <>
+          <View style={styles.between}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.eyebrow}>ZIIPA CALENDAR</Text>
+              <Text style={styles.title}>Make time to create.</Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Refresh calendar"
+              disabled={busy || loading}
+              onPress={() => void load()}
+              style={{ padding: 12 }}
+            >
+              <RefreshCw color={color.lime} size={24} />
+            </Pressable>
+          </View>
+          <Text style={styles.body}>
+            One place for release plans, recurring studio time and live-stream
+            preflight. Actual publishing stays in your reviewed campaign;
+            broadcasting starts only in Live controls.
+          </Text>
+          <Notice text="Reminders live inside Ziipa. Saving a schedule does not enable push or external calendar account sync. Optional device notifications require separate consent and configured delivery." />
+          <Action
+            secondary
+            title="Private updates · opt-in reminder notifications"
+            onPress={() => navigation.navigate("Notifications")}
+          />
+        </>
+      )}
+      {desktop && (
+        <Text style={[styles.small, { color: "#A28CB6" }]}>
+          Schedules create private Ziipa reminders. They do not publish, start a
+          broadcast, enable device push or sync an external calendar.
+        </Text>
+      )}
       {loading ? (
         <View style={styles.row}>
           <ActivityIndicator color={color.lime} />
@@ -469,514 +540,585 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
       ) : null}
       {error ? <Notice error text={error} /> : null}
       {notice ? <Notice text={notice} /> : null}
-      <Action
-        title="New calendar event"
-        secondary
-        icon={Plus}
-        disabled={busy}
-        onPress={newEvent}
-      />
-      <Card title="Your agenda">
-        {!events.length ? (
-          <Text style={styles.small}>
-            No saved events yet. Add your first schedule below.
-          </Text>
-        ) : null}
-        {events.map((entry) => (
-          <Pressable
-            key={entry.id}
-            accessibilityRole="button"
-            accessibilityState={{
-              selected: selectedId === entry.id,
-              disabled: busy,
-            }}
-            disabled={busy}
-            onPress={() => {
-              if (selectedId === entry.id) void load();
-              else {
-                setEvent(null);
-                setSelectedId(entry.id);
-              }
-            }}
-            style={{
-              gap: 6,
-              padding: 14,
-              borderRadius: 14,
-              borderWidth: 1,
-              borderColor: selectedId === entry.id ? color.lime : color.border,
-            }}
-          >
-            <View style={styles.between}>
-              <Text style={[styles.label, { flex: 1 }]}>{entry.title}</Text>
-              <Text style={[styles.small, { color: color.lime }]}>
-                {campaignLabel(entry.status)}
-              </Text>
-            </View>
-            <Text style={styles.small}>
-              {campaignLabel(entry.kind)} ·{" "}
-              {entry.starts_local.replace("T", " ")} · {entry.timezone}
-            </Text>
-            <Text style={styles.small}>
-              {entry.recurrence.frequency === "none"
-                ? "One occurrence"
-                : `Every ${entry.recurrence.interval} ${entry.recurrence.frequency === "daily" ? "day(s)" : "week(s)"} · up to ${entry.recurrence.count} occurrences`}
-            </Text>
-          </Pressable>
-        ))}
-        {campaigns.length ? (
-          <>
-            <Text style={styles.label}>Reviewed campaign schedules</Text>
-            <Text style={styles.small}>
-              These remain controlled by their campaign approvals. A calendar
-              link does not reschedule or duplicate a post.
-            </Text>
-            {campaigns.map((entry) => (
-              <Action
-                key={entry.id}
-                secondary
-                title={`${entry.name || entry.title || "Campaign"} · ${campaignLabel(entry.status)}`}
-                onPress={() =>
-                  navigation.navigate("Campaigns", { campaignId: entry.id })
-                }
-              />
-            ))}
-          </>
-        ) : null}
-      </Card>
-
-      {selectedId && !event ? (
-        <Notice text="Loading this event's current revision…" />
-      ) : (
-        <>
-          <Card title={event ? "Edit schedule" : "Plan an event"}>
-            {event ? (
+      {!desktop && (
+        <Action
+          title="New calendar event"
+          secondary
+          icon={Plus}
+          disabled={busy}
+          onPress={newEvent}
+        />
+      )}
+      <DesktopGroup
+        style={{
+          flexDirection: contentWidth >= 760 ? "row" : "column",
+          alignItems: "flex-start",
+          gap: 20,
+        }}
+      >
+        <DesktopGroup
+          style={{
+            width:
+              contentWidth >= 760 ? (contentWidth >= 1200 ? 310 : 240) : "100%",
+            gap: 16,
+          }}
+        >
+          <Card title="Your agenda">
+            {desktop && (
               <Text style={styles.small}>
-                Revision {event.revision} · {campaignLabel(event.status)}
+                {events.length} saved {events.length === 1 ? "event" : "events"}{" "}
+                · select one to review its schedule
+              </Text>
+            )}
+            {!events.length ? (
+              <Text style={styles.small}>
+                No saved events yet. Add your first schedule below.
               </Text>
             ) : null}
-            <Field
-              label="Event title"
-              value={draft.title}
-              editable={!busy && event?.status !== "cancelled"}
-              maxLength={140}
-              onChangeText={(value) => change("title", value)}
-            />
-            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-              {(["reminder", "campaign", "stream"] as CalendarKind[]).map(
-                (kind) => (
-                  <Pill
-                    key={kind}
-                    title={campaignLabel(kind)}
-                    active={draft.kind === kind}
-                    onPress={() => {
-                      if (!busy && event?.status !== "cancelled")
-                        change("kind", kind);
-                    }}
-                  />
-                ),
-              )}
-            </View>
-            <Field
-              label="Notes"
-              value={draft.notes}
-              multiline
-              maxLength={2000}
-              editable={!busy && event?.status !== "cancelled"}
-              onChangeText={(value) => change("notes", value)}
-            />
-            <Field
-              label="Timezone · IANA name"
-              value={draft.timezone}
-              autoCapitalize="none"
-              editable={!busy && event?.status !== "cancelled"}
-              placeholder="America/New_York"
-              onChangeText={(value) => change("timezone", value)}
-            />
-            <Text style={styles.label}>Choose a date · {draft.timezone}</Text>
-            <CalendarDayPicker
-              value={day}
-              disabled={busy || event?.status === "cancelled"}
-              onChange={(date) =>
-                change("startsLocal", `${date}T${clockTime || "18:00"}`)
-              }
-            />
-            <Field
-              label="Local time · 24-hour HH:mm"
-              value={clockTime}
-              editable={!busy && event?.status !== "cancelled"}
-              placeholder="18:00"
-              maxLength={5}
-              onChangeText={(value) => change("startsLocal", `${day}T${value}`)}
-            />
-            <Pill
-              title={
-                advancedTime
-                  ? "Hide advanced date and time"
-                  : "Advanced date and time"
-              }
-              active={advancedTime}
-              onPress={() => setAdvancedTime((value) => !value)}
-            />
-            {advancedTime ? (
-              <Field
-                label="Advanced local date and time · no offset"
-                value={draft.startsLocal}
-                editable={!busy && event?.status !== "cancelled"}
-                placeholder="2026-10-20T18:00:00"
-                onChangeText={(value) => change("startsLocal", value)}
-              />
-            ) : null}
-            <Text style={styles.small}>
-              The server applies the selected timezone. A nonexistent
-              daylight-saving time is rejected; recurring gaps are skipped.
-            </Text>
-            <Text style={styles.label}>If the clock repeats this hour</Text>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <Pill
-                title="Earlier occurrence"
-                active={draft.fold === "earlier"}
-                onPress={() => {
-                  if (!busy) change("fold", "earlier");
+            {events.map((entry) => (
+              <Pressable
+                key={entry.id}
+                accessibilityRole="button"
+                accessibilityState={{
+                  selected: selectedId === entry.id,
+                  disabled: busy,
                 }}
-              />
-              <Pill
-                title="Later occurrence"
-                active={draft.fold === "later"}
+                disabled={busy}
                 onPress={() => {
-                  if (!busy) change("fold", "later");
-                }}
-              />
-            </View>
-            <Field
-              label="Planned duration · minutes"
-              value={draft.duration}
-              keyboardType="number-pad"
-              editable={!busy && event?.status !== "cancelled"}
-              onChangeText={(value) => change("duration", value)}
-            />
-            <Field
-              label="Reminder lead time · minutes before"
-              value={draft.reminder}
-              keyboardType="number-pad"
-              editable={!busy && event?.status !== "cancelled"}
-              onChangeText={(value) => change("reminder", value)}
-            />
-            <Text style={styles.small}>
-              Reminders appear as saved Ziipa receipts. Email and push delivery
-              are not implied.
-            </Text>
-            <Text style={styles.label}>Repeat</Text>
-            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-              {(["none", "daily", "weekly"] as const).map((frequency) => (
-                <Pill
-                  key={frequency}
-                  title={campaignLabel(frequency)}
-                  active={draft.frequency === frequency}
-                  onPress={() => {
-                    if (!busy) change("frequency", frequency);
-                  }}
-                />
-              ))}
-            </View>
-            {draft.frequency !== "none" ? (
-              <>
-                <Field
-                  label={`Repeat every · ${draft.frequency === "daily" ? "days" : "weeks"}`}
-                  value={draft.interval}
-                  keyboardType="number-pad"
-                  editable={!busy}
-                  onChangeText={(value) => change("interval", value)}
-                />
-                <Field
-                  label="Maximum occurrences · 1–52"
-                  value={draft.count}
-                  keyboardType="number-pad"
-                  editable={!busy}
-                  onChangeText={(value) => change("count", value)}
-                />
-                <Field
-                  label="Optional last local date · YYYY-MM-DD"
-                  value={draft.until}
-                  editable={!busy}
-                  placeholder="2026-12-31"
-                  onChangeText={(value) => change("until", value)}
-                />
-              </>
-            ) : null}
-            {draft.frequency === "weekly" ? (
-              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                {calendarWeekdays.map((day, index) => (
-                  <Pill
-                    key={day}
-                    title={day}
-                    active={draft.weekdays.includes(index)}
-                    onPress={() => {
-                      if (!busy)
-                        change(
-                          "weekdays",
-                          draft.weekdays.includes(index)
-                            ? draft.weekdays.filter((value) => value !== index)
-                            : [...draft.weekdays, index].sort(),
-                        );
-                    }}
-                  />
-                ))}
-              </View>
-            ) : null}
-            {draft.kind === "campaign" ? (
-              <>
-                <Text style={styles.label}>Optional owned campaign link</Text>
-                <Pill
-                  title="No link"
-                  active={!draft.campaignId}
-                  onPress={() => change("campaignId", null)}
-                />
-                {campaigns.map((entry) => (
-                  <Pill
-                    key={entry.id}
-                    title={entry.name || entry.title || entry.id}
-                    active={draft.campaignId === entry.id}
-                    onPress={() => {
-                      if (!busy) change("campaignId", entry.id);
-                    }}
-                  />
-                ))}
-                <Notice text="Calendar recurrence creates reminders only. Open the linked campaign to review its exact publishing schedule and destinations." />
-              </>
-            ) : null}
-            {draft.kind === "stream" ? (
-              <>
-                <Text style={styles.label}>Optional owned broadcast link</Text>
-                <Pill
-                  title="No link yet"
-                  active={!draft.streamId}
-                  onPress={() => change("streamId", null)}
-                />
-                {streams.map((stream) => (
-                  <Pill
-                    key={stream.id}
-                    title={`${stream.title} · ${campaignLabel(stream.status)}`}
-                    active={draft.streamId === stream.id}
-                    onPress={() => {
-                      if (!busy) change("streamId", stream.id);
-                    }}
-                  />
-                ))}
-                <Action
-                  secondary
-                  title="Prepare a broadcast in Live controls"
-                  icon={Radio}
-                  onPress={() =>
-                    navigation.navigate("Live", { tab: "broadcast" })
+                  if (selectedId === entry.id) void load();
+                  else {
+                    setEvent(null);
+                    setSelectedId(entry.id);
                   }
-                />
-                <Notice text="A recurring stream event never creates or starts a broadcast. Link an owned broadcast for read-only preflight; open Live controls when you are ready to select your camera and explicitly Go live." />
-              </>
-            ) : null}
-            {dirty ? (
-              <Notice text="Unsaved schedule changes. Save to regenerate the occurrence plan; old receipts are retained or cancelled by the server." />
-            ) : null}
-            <Action
-              title={event ? "Save schedule changes" : "Save calendar event"}
-              icon={CalendarClock}
-              busy={busy}
-              disabled={event?.status === "cancelled" || (!!event && !dirty)}
-              onPress={() => void run(save)}
-            />
-          </Card>
-
-          {event ? (
-            <>
-              {event.kind === "stream" ? (
-                <Card title="Broadcast preflight">
-                  <Text style={styles.small}>
-                    Read-only provider checks help you prepare. They never grant
-                    start permission, open your camera or certify that a future
-                    broadcast happened.
+                }}
+                style={{
+                  gap: 6,
+                  padding: desktop ? 11 : 14,
+                  borderRadius: desktop ? 9 : 14,
+                  borderWidth: 1,
+                  borderColor:
+                    selectedId === entry.id ? color.lime : color.border,
+                }}
+              >
+                <View style={styles.between}>
+                  <Text style={[styles.label, { flex: 1 }]}>{entry.title}</Text>
+                  <Text style={[styles.small, { color: color.lime }]}>
+                    {campaignLabel(entry.status)}
                   </Text>
+                </View>
+                <Text style={styles.small}>
+                  {campaignLabel(entry.kind)} ·{" "}
+                  {entry.starts_local.replace("T", " ")} · {entry.timezone}
+                </Text>
+                <Text style={styles.small}>
+                  {entry.recurrence.frequency === "none"
+                    ? "One occurrence"
+                    : `Every ${entry.recurrence.interval} ${entry.recurrence.frequency === "daily" ? "day(s)" : "week(s)"} · up to ${entry.recurrence.count} occurrences`}
+                </Text>
+              </Pressable>
+            ))}
+            {campaigns.length ? (
+              <>
+                <Text style={styles.label}>Reviewed campaign schedules</Text>
+                <Text style={styles.small}>
+                  These remain controlled by their campaign approvals. A
+                  calendar link does not reschedule or duplicate a post.
+                </Text>
+                {campaigns.map((entry) => (
                   <Action
+                    key={entry.id}
                     secondary
-                    title="Check this linked broadcast"
-                    icon={CheckCircle2}
-                    busy={busy}
-                    disabled={
-                      dirty || !event.stream_id || event.status !== "active"
-                    }
+                    title={`${entry.name || entry.title || "Campaign"} · ${campaignLabel(entry.status)}`}
                     onPress={() =>
-                      void run(async (valid) => {
-                        const result = await calendarRequest<CalendarEvent>(
-                          `${calendarRoot}/events/${event.id}/preflight`,
-                          "POST",
-                          { revision: event.revision },
-                        );
-                        if (valid()) remember(result);
-                      })
+                      navigation.navigate("Campaigns", { campaignId: entry.id })
                     }
                   />
-                  {event.preflight ? (
-                    <>
-                      <Text
-                        style={[
-                          styles.label,
-                          {
-                            color: calendarPreflightCurrent(
-                              event.preflight,
-                              preflightClock,
-                            )
-                              ? color.lime
-                              : color.muted,
-                          },
-                        ]}
-                      >
-                        {calendarPreflightCurrent(
-                          event.preflight,
-                          preflightClock,
-                        )
-                          ? "Provider check current · manual start still required"
-                          : "Preflight needs a fresh check or setup"}
-                      </Text>
-                      <Text style={styles.small}>{event.preflight.detail}</Text>
-                      {event.preflight.checked_at ? (
-                        <Text style={styles.small}>
-                          Checked{" "}
-                          {calendarMoment(
-                            event.preflight.checked_at,
-                            event.timezone,
-                          )}
-                        </Text>
-                      ) : null}
-                      {(event.preflight.checks || []).map((check) => (
-                        <View
-                          key={check.id}
-                          style={{
-                            gap: 4,
-                            padding: 12,
-                            borderWidth: 1,
-                            borderColor: color.border,
-                            borderRadius: 12,
-                          }}
-                        >
-                          <Text style={styles.label}>
-                            {check.label} · {campaignLabel(check.status)}
-                          </Text>
-                          <Text style={styles.small}>{check.detail}</Text>
-                        </View>
-                      ))}
-                    </>
-                  ) : null}
-                  <Action
-                    title="Open linked Live controls · start manually"
-                    icon={Radio}
-                    onPress={() =>
-                      navigation.navigate("Live", {
-                        tab: "broadcast",
-                        streamId: event.stream_id || undefined,
-                      })
-                    }
-                  />
-                  {event.stream_id ? (
-                    <Text style={styles.small}>
-                      Select your linked broadcast:{" "}
-                      {streams.find((stream) => stream.id === event.stream_id)
-                        ?.title || event.stream_id}
-                      .
-                    </Text>
-                  ) : null}
-                </Card>
-              ) : null}
-              {event.kind === "campaign" && event.campaign_id ? (
-                <Action
-                  secondary
-                  title="Open campaign review and publishing schedule"
-                  onPress={() =>
-                    navigation.navigate("Campaigns", {
-                      campaignId: event.campaign_id!,
-                    })
-                  }
-                />
-              ) : null}
-              <Card title="Planned occurrences and receipts">
-                {!event.occurrences.length ? (
+                ))}
+              </>
+            ) : null}
+          </Card>
+        </DesktopGroup>
+        <DesktopGroup style={{ flex: 1, minWidth: 0, width: "100%", gap: 18 }}>
+          {selectedId && !event ? (
+            <Notice text="Loading this event's current revision…" />
+          ) : (
+            <>
+              <Card title={event ? "Edit schedule" : "Plan an event"}>
+                {event ? (
                   <Text style={styles.small}>
-                    No planned occurrences are available for this schedule.
+                    Revision {event.revision} · {campaignLabel(event.status)}
                   </Text>
                 ) : null}
-                {event.occurrences.map((occurrence) => (
-                  <View
-                    key={occurrence.id}
-                    style={{
-                      gap: 8,
-                      borderWidth: 1,
-                      borderColor: color.border,
-                      borderRadius: 14,
-                      padding: 14,
-                    }}
-                  >
+                <Field
+                  label="Event title"
+                  value={draft.title}
+                  editable={!busy && event?.status !== "cancelled"}
+                  maxLength={140}
+                  onChangeText={(value) => change("title", value)}
+                />
+                <View
+                  style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}
+                >
+                  {(["reminder", "campaign", "stream"] as CalendarKind[]).map(
+                    (kind) => (
+                      <Pill
+                        key={kind}
+                        title={campaignLabel(kind)}
+                        active={draft.kind === kind}
+                        onPress={() => {
+                          if (!busy && event?.status !== "cancelled")
+                            change("kind", kind);
+                        }}
+                      />
+                    ),
+                  )}
+                </View>
+                <Field
+                  label="Notes"
+                  value={draft.notes}
+                  multiline
+                  maxLength={2000}
+                  editable={!busy && event?.status !== "cancelled"}
+                  onChangeText={(value) => change("notes", value)}
+                />
+                <DesktopGroup
+                  style={{
+                    flexDirection: contentWidth >= 1260 ? "row" : "column",
+                    gap: 22,
+                    alignItems: "stretch",
+                  }}
+                >
+                  <DesktopGroup style={{ flex: 1, minWidth: 0, gap: 14 }}>
+                    <Field
+                      label="Timezone · IANA name"
+                      value={draft.timezone}
+                      autoCapitalize="none"
+                      editable={!busy && event?.status !== "cancelled"}
+                      placeholder="America/New_York"
+                      onChangeText={(value) => change("timezone", value)}
+                    />
                     <Text style={styles.label}>
-                      {calendarMoment(occurrence.starts_at, event.timezone)} ·{" "}
-                      {event.timezone}
+                      Choose a date · {draft.timezone}
                     </Text>
+                    <CalendarDayPicker
+                      value={day}
+                      disabled={busy || event?.status === "cancelled"}
+                      onChange={(date) =>
+                        change("startsLocal", `${date}T${clockTime || "18:00"}`)
+                      }
+                    />
+                  </DesktopGroup>
+                  <DesktopGroup style={{ flex: 1, minWidth: 0, gap: 14 }}>
+                    <Field
+                      label="Local time · 24-hour HH:mm"
+                      value={clockTime}
+                      editable={!busy && event?.status !== "cancelled"}
+                      placeholder="18:00"
+                      maxLength={5}
+                      onChangeText={(value) =>
+                        change("startsLocal", `${day}T${value}`)
+                      }
+                    />
+                    <Pill
+                      title={
+                        advancedTime
+                          ? "Hide advanced date and time"
+                          : "Advanced date and time"
+                      }
+                      active={advancedTime}
+                      onPress={() => setAdvancedTime((value) => !value)}
+                    />
+                    {advancedTime ? (
+                      <Field
+                        label="Advanced local date and time · no offset"
+                        value={draft.startsLocal}
+                        editable={!busy && event?.status !== "cancelled"}
+                        placeholder="2026-10-20T18:00:00"
+                        onChangeText={(value) => change("startsLocal", value)}
+                      />
+                    ) : null}
                     <Text style={styles.small}>
-                      {campaignLabel(occurrence.status)} · {occurrence.detail}
+                      The server applies the selected timezone. A nonexistent
+                      daylight-saving time is rejected; recurring gaps are
+                      skipped.
                     </Text>
+                    <Text style={styles.label}>
+                      If the clock repeats this hour
+                    </Text>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <Pill
+                        title="Earlier occurrence"
+                        active={draft.fold === "earlier"}
+                        onPress={() => {
+                          if (!busy) change("fold", "earlier");
+                        }}
+                      />
+                      <Pill
+                        title="Later occurrence"
+                        active={draft.fold === "later"}
+                        onPress={() => {
+                          if (!busy) change("fold", "later");
+                        }}
+                      />
+                    </View>
+                    <Field
+                      label="Planned duration · minutes"
+                      value={draft.duration}
+                      keyboardType="number-pad"
+                      editable={!busy && event?.status !== "cancelled"}
+                      onChangeText={(value) => change("duration", value)}
+                    />
+                    <Field
+                      label="Reminder lead time · minutes before"
+                      value={draft.reminder}
+                      keyboardType="number-pad"
+                      editable={!busy && event?.status !== "cancelled"}
+                      onChangeText={(value) => change("reminder", value)}
+                    />
                     <Text style={styles.small}>
-                      UTC: {occurrence.starts_at} · reminder{" "}
-                      {calendarMoment(occurrence.remind_at, event.timezone)}
+                      Reminders appear as saved Ziipa receipts. Email and push
+                      delivery are not implied.
                     </Text>
-                    {calendarCanAcknowledge(event, occurrence) ? (
+                    <Text style={styles.label}>Repeat</Text>
+                    <View
+                      style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}
+                    >
+                      {(["none", "daily", "weekly"] as const).map(
+                        (frequency) => (
+                          <Pill
+                            key={frequency}
+                            title={campaignLabel(frequency)}
+                            active={draft.frequency === frequency}
+                            onPress={() => {
+                              if (!busy) change("frequency", frequency);
+                            }}
+                          />
+                        ),
+                      )}
+                    </View>
+                    {draft.frequency !== "none" ? (
+                      <>
+                        <Field
+                          label={`Repeat every · ${draft.frequency === "daily" ? "days" : "weeks"}`}
+                          value={draft.interval}
+                          keyboardType="number-pad"
+                          editable={!busy}
+                          onChangeText={(value) => change("interval", value)}
+                        />
+                        <Field
+                          label="Maximum occurrences · 1–52"
+                          value={draft.count}
+                          keyboardType="number-pad"
+                          editable={!busy}
+                          onChangeText={(value) => change("count", value)}
+                        />
+                        <Field
+                          label="Optional last local date · YYYY-MM-DD"
+                          value={draft.until}
+                          editable={!busy}
+                          placeholder="2026-12-31"
+                          onChangeText={(value) => change("until", value)}
+                        />
+                      </>
+                    ) : null}
+                    {draft.frequency === "weekly" ? (
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {calendarWeekdays.map((day, index) => (
+                          <Pill
+                            key={day}
+                            title={day}
+                            active={draft.weekdays.includes(index)}
+                            onPress={() => {
+                              if (!busy)
+                                change(
+                                  "weekdays",
+                                  draft.weekdays.includes(index)
+                                    ? draft.weekdays.filter(
+                                        (value) => value !== index,
+                                      )
+                                    : [...draft.weekdays, index].sort(),
+                                );
+                            }}
+                          />
+                        ))}
+                      </View>
+                    ) : null}
+                  </DesktopGroup>
+                </DesktopGroup>
+                {draft.kind === "campaign" ? (
+                  <>
+                    <Text style={styles.label}>
+                      Optional owned campaign link
+                    </Text>
+                    <Pill
+                      title="No link"
+                      active={!draft.campaignId}
+                      onPress={() => change("campaignId", null)}
+                    />
+                    {campaigns.map((entry) => (
+                      <Pill
+                        key={entry.id}
+                        title={entry.name || entry.title || entry.id}
+                        active={draft.campaignId === entry.id}
+                        onPress={() => {
+                          if (!busy) change("campaignId", entry.id);
+                        }}
+                      />
+                    ))}
+                    <Notice text="Calendar recurrence creates reminders only. Open the linked campaign to review its exact publishing schedule and destinations." />
+                  </>
+                ) : null}
+                {draft.kind === "stream" ? (
+                  <>
+                    <Text style={styles.label}>
+                      Optional owned broadcast link
+                    </Text>
+                    <Pill
+                      title="No link yet"
+                      active={!draft.streamId}
+                      onPress={() => change("streamId", null)}
+                    />
+                    {streams.map((stream) => (
+                      <Pill
+                        key={stream.id}
+                        title={`${stream.title} · ${campaignLabel(stream.status)}`}
+                        active={draft.streamId === stream.id}
+                        onPress={() => {
+                          if (!busy) change("streamId", stream.id);
+                        }}
+                      />
+                    ))}
+                    <Action
+                      secondary
+                      title="Prepare a broadcast in Live controls"
+                      icon={Radio}
+                      onPress={() =>
+                        navigation.navigate("Live", { tab: "broadcast" })
+                      }
+                    />
+                    <Notice text="A recurring stream event never creates or starts a broadcast. Link an owned broadcast for read-only preflight; open Live controls when you are ready to select your camera and explicitly Go live." />
+                  </>
+                ) : null}
+                {dirty ? (
+                  <Notice text="Unsaved schedule changes. Save to regenerate the occurrence plan; old receipts are retained or cancelled by the server." />
+                ) : null}
+                <Action
+                  title={
+                    event ? "Save schedule changes" : "Save calendar event"
+                  }
+                  icon={CalendarClock}
+                  busy={busy}
+                  disabled={
+                    event?.status === "cancelled" || (!!event && !dirty)
+                  }
+                  onPress={() => void run(save)}
+                />
+              </Card>
+
+              {event ? (
+                <>
+                  {event.kind === "stream" ? (
+                    <Card title="Broadcast preflight">
+                      <Text style={styles.small}>
+                        Read-only provider checks help you prepare. They never
+                        grant start permission, open your camera or certify that
+                        a future broadcast happened.
+                      </Text>
                       <Action
                         secondary
-                        title="Acknowledge this reminder"
+                        title="Check this linked broadcast"
+                        icon={CheckCircle2}
                         busy={busy}
+                        disabled={
+                          dirty || !event.stream_id || event.status !== "active"
+                        }
                         onPress={() =>
                           void run(async (valid) => {
-                            await calendarRequest(
-                              `${calendarRoot}/occurrences/${occurrence.id}/acknowledge`,
+                            const result = await calendarRequest<CalendarEvent>(
+                              `${calendarRoot}/events/${event.id}/preflight`,
                               "POST",
-                              { revision: occurrence.revision },
+                              { revision: event.revision },
                             );
-                            if (valid()) await load();
+                            if (valid()) remember(result);
                           })
                         }
                       />
-                    ) : null}
-                  </View>
-                ))}
-                <Notice text="Acknowledging a reminder marks only that receipt. It does not mark a campaign delivered or a broadcast live." />
-                {event.status !== "cancelled" ? (
-                  <>
+                      {event.preflight ? (
+                        <>
+                          <Text
+                            style={[
+                              styles.label,
+                              {
+                                color: calendarPreflightCurrent(
+                                  event.preflight,
+                                  preflightClock,
+                                )
+                                  ? color.lime
+                                  : color.muted,
+                              },
+                            ]}
+                          >
+                            {calendarPreflightCurrent(
+                              event.preflight,
+                              preflightClock,
+                            )
+                              ? "Provider check current · manual start still required"
+                              : "Preflight needs a fresh check or setup"}
+                          </Text>
+                          <Text style={styles.small}>
+                            {event.preflight.detail}
+                          </Text>
+                          {event.preflight.checked_at ? (
+                            <Text style={styles.small}>
+                              Checked{" "}
+                              {calendarMoment(
+                                event.preflight.checked_at,
+                                event.timezone,
+                              )}
+                            </Text>
+                          ) : null}
+                          {(event.preflight.checks || []).map((check) => (
+                            <View
+                              key={check.id}
+                              style={{
+                                gap: 4,
+                                padding: 12,
+                                borderWidth: 1,
+                                borderColor: color.border,
+                                borderRadius: 12,
+                              }}
+                            >
+                              <Text style={styles.label}>
+                                {check.label} · {campaignLabel(check.status)}
+                              </Text>
+                              <Text style={styles.small}>{check.detail}</Text>
+                            </View>
+                          ))}
+                        </>
+                      ) : null}
+                      <Action
+                        title="Open linked Live controls · start manually"
+                        icon={Radio}
+                        onPress={() =>
+                          navigation.navigate("Live", {
+                            tab: "broadcast",
+                            streamId: event.stream_id || undefined,
+                          })
+                        }
+                      />
+                      {event.stream_id ? (
+                        <Text style={styles.small}>
+                          Select your linked broadcast:{" "}
+                          {streams.find(
+                            (stream) => stream.id === event.stream_id,
+                          )?.title || event.stream_id}
+                          .
+                        </Text>
+                      ) : null}
+                    </Card>
+                  ) : null}
+                  {event.kind === "campaign" && event.campaign_id ? (
                     <Action
                       secondary
-                      title={
-                        event.status === "paused"
-                          ? "Resume reminder schedule"
-                          : "Pause reminder schedule"
-                      }
-                      busy={busy}
+                      title="Open campaign review and publishing schedule"
                       onPress={() =>
-                        void run((valid) =>
-                          control(
-                            event.status === "paused" ? "resume" : "pause",
-                            valid,
-                          ),
-                        )
+                        navigation.navigate("Campaigns", {
+                          campaignId: event.campaign_id!,
+                        })
                       }
                     />
-                    <Action
-                      danger
-                      title="Cancel future reminder occurrences"
-                      busy={busy}
-                      onPress={() =>
-                        void run((valid) => control("cancel", valid))
-                      }
-                    />
-                  </>
-                ) : null}
-              </Card>
+                  ) : null}
+                  <Card title="Planned occurrences and receipts">
+                    {!event.occurrences.length ? (
+                      <Text style={styles.small}>
+                        No planned occurrences are available for this schedule.
+                      </Text>
+                    ) : null}
+                    {event.occurrences.map((occurrence) => (
+                      <View
+                        key={occurrence.id}
+                        style={{
+                          gap: 8,
+                          borderWidth: 1,
+                          borderColor: color.border,
+                          borderRadius: 14,
+                          padding: 14,
+                        }}
+                      >
+                        <Text style={styles.label}>
+                          {calendarMoment(occurrence.starts_at, event.timezone)}{" "}
+                          · {event.timezone}
+                        </Text>
+                        <Text style={styles.small}>
+                          {campaignLabel(occurrence.status)} ·{" "}
+                          {occurrence.detail}
+                        </Text>
+                        <Text style={styles.small}>
+                          UTC: {occurrence.starts_at} · reminder{" "}
+                          {calendarMoment(occurrence.remind_at, event.timezone)}
+                        </Text>
+                        {calendarCanAcknowledge(event, occurrence) ? (
+                          <Action
+                            secondary
+                            title="Acknowledge this reminder"
+                            busy={busy}
+                            onPress={() =>
+                              void run(async (valid) => {
+                                await calendarRequest(
+                                  `${calendarRoot}/occurrences/${occurrence.id}/acknowledge`,
+                                  "POST",
+                                  { revision: occurrence.revision },
+                                );
+                                if (valid()) await load();
+                              })
+                            }
+                          />
+                        ) : null}
+                      </View>
+                    ))}
+                    <Notice text="Acknowledging a reminder marks only that receipt. It does not mark a campaign delivered or a broadcast live." />
+                    {event.status !== "cancelled" ? (
+                      <>
+                        <Action
+                          secondary
+                          title={
+                            event.status === "paused"
+                              ? "Resume reminder schedule"
+                              : "Pause reminder schedule"
+                          }
+                          busy={busy}
+                          onPress={() =>
+                            void run((valid) =>
+                              control(
+                                event.status === "paused" ? "resume" : "pause",
+                                valid,
+                              ),
+                            )
+                          }
+                        />
+                        <Action
+                          danger
+                          title="Cancel future reminder occurrences"
+                          busy={busy}
+                          onPress={() =>
+                            void run((valid) => control("cancel", valid))
+                          }
+                        />
+                      </>
+                    ) : null}
+                  </Card>
+                </>
+              ) : null}
             </>
-          ) : null}
-        </>
-      )}
+          )}
+        </DesktopGroup>
+      </DesktopGroup>
     </ScrollView>
   );
 }

@@ -1,3 +1,5 @@
+import { useDesktopLayout } from "../components/desktop-layout";
+import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,
@@ -82,6 +84,7 @@ export function NotificationsScreen(props: Props) {
   );
 }
 function ScopedNotificationsScreen({ navigation, route }: Props) {
+  const { desktop, contentWidth } = useDesktopLayout();
   const { session, guest, api } = useZiipa();
   const focused = useIsFocused();
   const [foreground, setForeground] = useState(
@@ -245,6 +248,269 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
         <Action title="Sign in" onPress={() => navigation.navigate("Login")} />
       </ScrollView>
     );
+  const accountPanel = (
+    <View style={styles.panel}>
+      <Text style={styles.heading}>Your account preferences</Text>
+      <Consent
+        text="Enable push updates for my account"
+        checked={enabled}
+        disabled={busy}
+        onPress={() => {
+          setEnabled(!enabled);
+          setAccountConsent(false);
+        }}
+      />
+      {notificationCategories.map((category) => (
+        <Consent
+          key={category}
+          text={
+            category === "calendar"
+              ? "Calendar reminders"
+              : category === "recordings"
+                ? "Recording and clip workflow updates"
+                : "Campaign progress and delivery updates"
+          }
+          checked={categories.includes(category)}
+          disabled={busy}
+          onPress={() => {
+            setCategories((previous) =>
+              previous.includes(category)
+                ? previous.filter((value) => value !== category)
+                : [...previous, category],
+            );
+            setAccountConsent(false);
+          }}
+        />
+      ))}
+      {enabled && (
+        <Consent
+          text="I consent to these selected notification categories. I can disable them at any time."
+          checked={accountConsent}
+          disabled={busy}
+          onPress={() => setAccountConsent(!accountConsent)}
+        />
+      )}
+      <Action
+        title="Save notification preferences"
+        icon={ShieldCheck}
+        disabled={
+          busy ||
+          !preferences ||
+          (enabled && (!accountConsent || !categories.length))
+        }
+        onPress={() => void mutate(save)}
+      />
+    </View>
+  );
+  const devicePanel = (
+    <View style={styles.panel}>
+      <Text style={styles.heading}>This device</Text>
+      <Text style={styles.body}>
+        {capability?.detail ||
+          "Checking notification capabilities without requesting permission…"}
+      </Text>
+      <Text style={styles.small}>
+        OS/browser permission: {capability?.permission || "not checked"}. A new
+        native binary is required for the notification module; Expo Go and an
+        older APK cannot add it by reloading.
+      </Text>
+      {Platform.OS === "web" && (
+        <Text style={styles.small}>
+          Browser taps open the Ziipa portal. They are not recorded as opened
+          until you review a receipt inside Studio. Some browsers require
+          opening Studio directly in a tab before enabling notifications.
+        </Text>
+      )}
+      <Field
+        label="Device name (optional)"
+        value={label}
+        onChangeText={setLabel}
+        maxLength={60}
+        editable={!busy}
+        placeholder="My phone or work browser"
+      />
+      <Consent
+        text="Enable notifications on this device and save its push subscription to my Ziipa account."
+        checked={deviceConsent}
+        disabled={busy}
+        onPress={() => setDeviceConsent(!deviceConsent)}
+      />
+      <Action
+        title="Enable on this device"
+        icon={Bell}
+        disabled={
+          busy ||
+          !deviceConsent ||
+          !preferences?.enabled ||
+          !capability?.supported ||
+          !config?.enabled ||
+          !config.worker_ready ||
+          !(Platform.OS === "web" ? config.web_ready : config.expo_ready)
+        }
+        onPress={() => void mutate(register)}
+      />
+      <Text style={styles.small}>
+        Revoking a device below stops Ziipa sending to it; browser/OS permission
+        may remain granted. Tokens are never shown or copied into this screen.
+      </Text>
+    </View>
+  );
+  const devicesPanel = (
+    <View style={styles.panel}>
+      <Text style={styles.heading}>Registered devices</Text>
+      {devices.length === 0 && (
+        <Text style={styles.body}>No devices registered for this account.</Text>
+      )}
+      {devices.map((device) => (
+        <View key={device.id} style={{ gap: 8, paddingVertical: 12 }}>
+          <Text style={styles.body}>
+            {device.label} · {device.provider}
+          </Text>
+          <Text style={styles.small}>
+            {notificationStatus(device.status)} · last registration{" "}
+            {new Date(device.last_registered_at).toLocaleString()}
+          </Text>
+          <Action
+            secondary
+            title={`Revoke ${device.label}`}
+            disabled={busy || device.status === "revoked"}
+            onPress={() =>
+              void mutate(async (valid) => {
+                await creatorRequest(
+                  `${notificationRoot}/devices/${device.id}?revision=${device.revision}`,
+                  session.access_token,
+                  "DELETE",
+                );
+                if (valid()) {
+                  setDevices((previous) =>
+                    previous.map((value) =>
+                      value.id === device.id
+                        ? { ...value, status: "revoked" }
+                        : value,
+                    ),
+                  );
+                  setMessage(
+                    "Device revoked. This does not change its browser/OS permission.",
+                  );
+                }
+              })
+            }
+          />
+        </View>
+      ))}
+    </View>
+  );
+  const receiptsPanel = (
+    <View style={styles.panel}>
+      <Text style={styles.heading}>Delivery receipts</Text>
+      <Text style={styles.small}>
+        Provider acceptance is not proof of display or reading. These are actual
+        backend receipts; no sample notifications are generated.
+      </Text>
+      {deliveries.length === 0 && (
+        <Text style={styles.body}>No delivery receipts yet.</Text>
+      )}
+      {deliveries.map((delivery) => (
+        <View key={delivery.id} style={{ gap: 8, paddingVertical: 12 }}>
+          <Text style={styles.body}>
+            {delivery.category} · {notificationStatus(delivery.status)}
+          </Text>
+          <Text style={styles.small}>
+            {delivery.provider} ·{" "}
+            {new Date(delivery.created_at).toLocaleString()}
+            {delivery.provider_accepted_at
+              ? ` · provider accepted ${new Date(delivery.provider_accepted_at).toLocaleString()}`
+              : ""}
+            {delivery.opened_at
+              ? ` · opened ${new Date(delivery.opened_at).toLocaleString()}`
+              : ""}
+          </Text>
+          {!!delivery.detail && (
+            <Text style={styles.small}>{delivery.detail}</Text>
+          )}
+          {!delivery.opened_at && (
+            <Action
+              secondary
+              title="Review this receipt"
+              disabled={busy}
+              onPress={() =>
+                void mutate(async (valid) => {
+                  await api(
+                    `${notificationRoot}/deliveries/${delivery.id}/opened`,
+                    {},
+                  );
+                  if (valid())
+                    navigation.navigate(
+                      delivery.category === "calendar"
+                        ? "Calendar"
+                        : delivery.category === "recordings"
+                          ? "Recordings"
+                          : "Campaigns",
+                    );
+                })
+              }
+            />
+          )}
+        </View>
+      ))}
+    </View>
+  );
+  if (desktop)
+    return (
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={workspace.page}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <WorkspaceHeading
+          title="Notifications"
+          description="Manage private updates, device enrollment and delivery receipts."
+          actions={
+            <Action
+              title="Refresh status"
+              secondary
+              icon={RefreshCw}
+              busy={busy}
+              onPress={() => void load()}
+            />
+          }
+        />
+        {!!error && <Notice text={error} error />}
+        {!!message && <Notice text={message} />}
+        <Notice text="Push is optional. Updates never include private media or post titles, and never start a stream or publication." />
+        {config && (
+          <View style={workspace.panel}>
+            <Text style={styles.label}>Delivery readiness</Text>
+            <Text style={styles.small}>{config.notice}</Text>
+            <Text style={styles.small}>
+              Server {config.enabled ? "enabled" : "disabled"} · worker{" "}
+              {config.worker_ready ? "ready" : "not ready"} · Android{" "}
+              {notificationProviderReadiness(config, "expo")} · browser{" "}
+              {notificationProviderReadiness(config, "web")}
+            </Text>
+          </View>
+        )}
+        <View
+          style={[
+            workspace.columns,
+            contentWidth < 1080 && { flexDirection: "column" },
+          ]}
+        >
+          <View style={workspace.main}>{accountPanel}</View>
+          <View style={workspace.main}>{devicePanel}</View>
+        </View>
+        <View
+          style={[
+            workspace.columns,
+            contentWidth < 1080 && { flexDirection: "column" },
+          ]}
+        >
+          <View style={workspace.main}>{devicesPanel}</View>
+          <View style={workspace.main}>{receiptsPanel}</View>
+        </View>
+      </ScrollView>
+    );
   return (
     <ScrollView
       style={styles.screen}
@@ -269,208 +535,10 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
           </Text>
         </View>
       )}
-      <View style={styles.panel}>
-        <Text style={styles.heading}>Your account preferences</Text>
-        <Consent
-          text="Enable push updates for my account"
-          checked={enabled}
-          disabled={busy}
-          onPress={() => {
-            setEnabled(!enabled);
-            setAccountConsent(false);
-          }}
-        />
-        {notificationCategories.map((category) => (
-          <Consent
-            key={category}
-            text={
-              category === "calendar"
-                ? "Calendar reminders"
-                : category === "recordings"
-                  ? "Recording and clip workflow updates"
-                  : "Campaign progress and delivery updates"
-            }
-            checked={categories.includes(category)}
-            disabled={busy}
-            onPress={() => {
-              setCategories((previous) =>
-                previous.includes(category)
-                  ? previous.filter((value) => value !== category)
-                  : [...previous, category],
-              );
-              setAccountConsent(false);
-            }}
-          />
-        ))}
-        {enabled && (
-          <Consent
-            text="I consent to these selected notification categories. I can disable them at any time."
-            checked={accountConsent}
-            disabled={busy}
-            onPress={() => setAccountConsent(!accountConsent)}
-          />
-        )}
-        <Action
-          title="Save notification preferences"
-          icon={ShieldCheck}
-          disabled={
-            busy ||
-            !preferences ||
-            (enabled && (!accountConsent || !categories.length))
-          }
-          onPress={() => void mutate(save)}
-        />
-      </View>
-      <View style={styles.panel}>
-        <Text style={styles.heading}>This device</Text>
-        <Text style={styles.body}>
-          {capability?.detail ||
-            "Checking notification capabilities without requesting permission…"}
-        </Text>
-        <Text style={styles.small}>
-          OS/browser permission: {capability?.permission || "not checked"}. A
-          new native binary is required for the notification module; Expo Go and
-          an older APK cannot add it by reloading.
-        </Text>
-        {Platform.OS === "web" && (
-          <Text style={styles.small}>
-            Browser taps open the Ziipa portal. They are not recorded as opened
-            until you review a receipt inside Studio. Some browsers require
-            opening Studio directly in a tab before enabling notifications.
-          </Text>
-        )}
-        <Field
-          label="Device name (optional)"
-          value={label}
-          onChangeText={setLabel}
-          maxLength={60}
-          editable={!busy}
-          placeholder="My phone or work browser"
-        />
-        <Consent
-          text="Enable notifications on this device and save its push subscription to my Ziipa account."
-          checked={deviceConsent}
-          disabled={busy}
-          onPress={() => setDeviceConsent(!deviceConsent)}
-        />
-        <Action
-          title="Enable on this device"
-          icon={Bell}
-          disabled={
-            busy ||
-            !deviceConsent ||
-            !preferences?.enabled ||
-            !capability?.supported ||
-            !config?.enabled ||
-            !config.worker_ready ||
-            !(Platform.OS === "web" ? config.web_ready : config.expo_ready)
-          }
-          onPress={() => void mutate(register)}
-        />
-        <Text style={styles.small}>
-          Revoking a device below stops Ziipa sending to it; browser/OS
-          permission may remain granted. Tokens are never shown or copied into
-          this screen.
-        </Text>
-      </View>
-      <View style={styles.panel}>
-        <Text style={styles.heading}>Registered devices</Text>
-        {devices.length === 0 && (
-          <Text style={styles.body}>
-            No devices registered for this account.
-          </Text>
-        )}
-        {devices.map((device) => (
-          <View key={device.id} style={{ gap: 8, paddingVertical: 12 }}>
-            <Text style={styles.body}>
-              {device.label} · {device.provider}
-            </Text>
-            <Text style={styles.small}>
-              {notificationStatus(device.status)} · last registration{" "}
-              {new Date(device.last_registered_at).toLocaleString()}
-            </Text>
-            <Action
-              secondary
-              title={`Revoke ${device.label}`}
-              disabled={busy || device.status === "revoked"}
-              onPress={() =>
-                void mutate(async (valid) => {
-                  await creatorRequest(
-                    `${notificationRoot}/devices/${device.id}?revision=${device.revision}`,
-                    session.access_token,
-                    "DELETE",
-                  );
-                  if (valid()) {
-                    setDevices((previous) =>
-                      previous.map((value) =>
-                        value.id === device.id
-                          ? { ...value, status: "revoked" }
-                          : value,
-                      ),
-                    );
-                    setMessage(
-                      "Device revoked. This does not change its browser/OS permission.",
-                    );
-                  }
-                })
-              }
-            />
-          </View>
-        ))}
-      </View>
-      <View style={styles.panel}>
-        <Text style={styles.heading}>Delivery receipts</Text>
-        <Text style={styles.small}>
-          Provider acceptance is not proof of display or reading. These are
-          actual backend receipts; no sample notifications are generated.
-        </Text>
-        {deliveries.length === 0 && (
-          <Text style={styles.body}>No delivery receipts yet.</Text>
-        )}
-        {deliveries.map((delivery) => (
-          <View key={delivery.id} style={{ gap: 8, paddingVertical: 12 }}>
-            <Text style={styles.body}>
-              {delivery.category} · {notificationStatus(delivery.status)}
-            </Text>
-            <Text style={styles.small}>
-              {delivery.provider} ·{" "}
-              {new Date(delivery.created_at).toLocaleString()}
-              {delivery.provider_accepted_at
-                ? ` · provider accepted ${new Date(delivery.provider_accepted_at).toLocaleString()}`
-                : ""}
-              {delivery.opened_at
-                ? ` · opened ${new Date(delivery.opened_at).toLocaleString()}`
-                : ""}
-            </Text>
-            {!!delivery.detail && (
-              <Text style={styles.small}>{delivery.detail}</Text>
-            )}
-            {!delivery.opened_at && (
-              <Action
-                secondary
-                title="Review this receipt"
-                disabled={busy}
-                onPress={() =>
-                  void mutate(async (valid) => {
-                    await api(
-                      `${notificationRoot}/deliveries/${delivery.id}/opened`,
-                      {},
-                    );
-                    if (valid())
-                      navigation.navigate(
-                        delivery.category === "calendar"
-                          ? "Calendar"
-                          : delivery.category === "recordings"
-                            ? "Recordings"
-                            : "Campaigns",
-                      );
-                  })
-                }
-              />
-            )}
-          </View>
-        ))}
-      </View>
+      {accountPanel}
+      {devicePanel}
+      {devicesPanel}
+      {receiptsPanel}
       <Action
         title="Refresh notification status"
         secondary

@@ -1,3 +1,5 @@
+import { useDesktopLayout } from "../components/desktop-layout";
+import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,
@@ -46,6 +48,7 @@ export function LiveScreen({
 }: {
   route?: { params?: { tab?: Tab; streamId?: string } };
 }) {
+  const { desktop } = useDesktopLayout();
   const { api, guest, session } = useZiipa();
   const publicApi = useCallback(
     <T,>(path: string): Promise<T> =>
@@ -423,16 +426,29 @@ export function LiveScreen({
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.page}
+      contentContainerStyle={desktop ? workspace.page : styles.page}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.between}>
-        <View>
-          <Text style={styles.eyebrow}>ZIIPA STUDIO</Text>
-          <Text style={styles.title}>Live feeds</Text>
-        </View>
-        <Radio size={30} color={color.lime} />
-      </View>
+      {desktop ? (
+        <WorkspaceHeading
+          title={tab === "broadcast" ? "Live control room" : "Live now"}
+          description={
+            tab === "broadcast"
+              ? "Prepare your session, verify the connection and go live when you choose."
+              : "Verified live broadcasts from the Ziipa community."
+          }
+        />
+      ) : (
+        <>
+          <View style={styles.between}>
+            <View>
+              <Text style={styles.eyebrow}>ZIIPA STUDIO</Text>
+              <Text style={styles.title}>Live feeds</Text>
+            </View>
+            <Radio size={30} color={color.lime} />
+          </View>
+        </>
+      )}
       <View style={styles.row}>
         <Pill
           title="Watch live"
@@ -490,7 +506,7 @@ export function LiveScreen({
             active by the streaming provider appear here.
           </Text>
           {watching && (
-            <View style={styles.panel}>
+            <View style={[styles.panel, desktop && workspace.panel]}>
               <Text style={styles.heading}>{watching.title}</Text>
               <Text style={styles.eyebrow}>
                 {liveStatusLabel(watching, clock)}
@@ -516,7 +532,10 @@ export function LiveScreen({
             />
           ) : (
             publics.map((value) => (
-              <View style={styles.panel} key={value.id}>
+              <View
+                style={[styles.panel, desktop && workspace.panel]}
+                key={value.id}
+              >
                 <Text style={styles.eyebrow}>
                   {liveStatusLabel(value, clock)}
                 </Text>
@@ -544,7 +563,7 @@ export function LiveScreen({
           />
         </>
       ) : guest || !session ? (
-        <View style={styles.panel}>
+        <View style={[styles.panel, desktop && workspace.panel]}>
           <Text style={styles.heading}>Sign in to broadcast</Text>
           <Text style={styles.body}>
             Public streams belong to a verified Ziipa session. Guest previews
@@ -558,7 +577,7 @@ export function LiveScreen({
       ) : (
         <>
           {config && !config.configured && (
-            <View style={styles.panel}>
+            <View style={[styles.panel, desktop && workspace.panel]}>
               <Text style={styles.heading}>Provider setup required</Text>
               <Text style={styles.body}>{config.detail}</Text>
               <Text style={styles.small}>
@@ -568,7 +587,7 @@ export function LiveScreen({
             </View>
           )}
           {!selected ? (
-            <View style={styles.panel}>
+            <View style={[styles.panel, desktop && workspace.panel]}>
               <Text style={styles.heading}>Prepare your live session</Text>
               <Field
                 label="Broadcast title"
@@ -645,7 +664,7 @@ export function LiveScreen({
             </View>
           ) : (
             <>
-              <View style={styles.panel}>
+              <View style={[styles.panel, desktop && workspace.panel]}>
                 <Text style={styles.heading}>{selected.title}</Text>
                 <Text
                   style={[
@@ -773,7 +792,7 @@ export function LiveScreen({
                     setConsent(false);
                     setTransport("");
                   }}
-                  style={styles.panel}
+                  style={[styles.panel, desktop && workspace.panel]}
                 >
                   <Text
                     style={{

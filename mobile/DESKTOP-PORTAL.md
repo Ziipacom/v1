@@ -15,6 +15,9 @@ No second account, draft format or business API was introduced.
   of owned creations and saved public inspiration, grid/list layouts, and entry
   points to the existing calendar, campaigns, recordings, publishing and networks.
 - The desktop editor reuses the mobile controls in preview and inspector columns.
+  Its persistent tool strip exposes media, trim/captions, text overlays, music,
+  and save/publish. Editor navigation and per-creation Edit actions open the same
+  composer; existing desktop drafts start on the editing tools.
   Unsaved desktop edits warn on route removal and browser close/reload. A save
   remains an explicit action; this UI does not introduce automatic saving.
 - Media OS, wallet, profile, safety, account and legal routes remain available.
@@ -47,3 +50,22 @@ Review `/portal` on a desktop and `/portal?layout=frame` with its Phone layout
 toggle. The iframe changes width without being replaced, exercising the layout
 breakpoint and retained editing state. Test publishing only with authorized
 destinations; layout testing does not require posting to any external network.
+
+## Desktop workspaces and gallery
+
+Media OS uses compact per-tool headings instead of repeating global navigation
+and a marketing hero. Assistant, workflows, insights, calendar, campaigns,
+recordings, publishing, network connections and account settings arrange their
+existing controls into desktop panels and list/detail views. Native/compact
+business controls and permission checks are reused unchanged.
+
+Explore includes a featured gallery and compact landscape creation cards. The
+floating mobile Studio menu also has an explicit Gallery entry back to Main.
+Gallery slides rotate with a short transition and play the active real media
+muted; adjacent slides remain covers, with only one active gallery player.
+Manual controls, screen focus, background state and accessibility motion
+preferences govern rotation/playback. These are the requested additions to the
+otherwise unchanged mobile layout. A gallery preview is not a broadcast or post.
+
+Studio exports clear Metro's transformed-module cache, so switching local and
+production public API origins cannot silently reuse a prior export's origin.

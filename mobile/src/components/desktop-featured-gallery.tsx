@@ -1,0 +1,346 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  Animated,
+  AppState,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useIsFocused } from "@react-navigation/native";
+import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react-native";
+import { ReelMedia } from "./reel-media";
+import { Action, categories } from "./ui";
+import { useDesktopLayout } from "./desktop-layout";
+import type { Item } from "../lib/types";
+import { color, font, styles } from "../theme";
+
+/** Only the selected, published source mounts a player. Never preload a reel wall. */
+export function DesktopFeaturedGallery({
+  items,
+  open,
+}: {
+  items: Item[];
+  open: (item: Item) => void;
+}) {
+  const focused = useIsFocused();
+  const { contentWidth } = useDesktopLayout();
+  const [selectedId, setSelectedId] = useState(items[0]?.id);
+  const [userPaused, setUserPaused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
+  const [foreground, setForeground] = useState(
+    AppState.currentState === "active",
+  );
+  // Do not start motion until the OS preference has been read successfully.
+  const [reducedMotion, setReducedMotion] = useState(true);
+  const region = useRef<View>(null);
+  const opacity = useRef(new Animated.Value(1)).current;
+  const selectedIndex = Math.max(
+    0,
+    items.findIndex((item) => item.id === selectedId),
+  );
+  const current = items[selectedIndex];
+  const paused =
+    userPaused ||
+    hovered ||
+    focusWithin ||
+    reducedMotion ||
+    !focused ||
+    !foreground;
+  const signature = items.map((item) => item.id).join(",");
+
+  useEffect(() => {
+    let alive = true;
+    void AccessibilityInfo.isReduceMotionEnabled()
+      .then((value) => {
+        if (alive) setReducedMotion(value);
+      })
+      .catch(() => {});
+    const motion = AccessibilityInfo.addEventListener(
+      "reduceMotionChanged",
+      setReducedMotion,
+    );
+    const state = AppState.addEventListener("change", (value) =>
+      setForeground(value === "active"),
+    );
+    return () => {
+      alive = false;
+      motion.remove();
+      state.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const element = region.current as unknown as HTMLElement | null;
+    if (!element?.addEventListener) return;
+    const enter = () => setHovered(true);
+    const leave = () => setHovered(false);
+    const focus = () => setFocusWithin(true);
+    const blur = (event: FocusEvent) =>
+      setFocusWithin(
+        !!event.relatedTarget && element.contains(event.relatedTarget as Node),
+      );
+    const visibility = () =>
+      setForeground(document.visibilityState === "visible");
+    element.addEventListener("mouseenter", enter);
+    element.addEventListener("mouseleave", leave);
+    element.addEventListener("focusin", focus);
+    element.addEventListener("focusout", blur);
+    document.addEventListener("visibilitychange", visibility);
+    visibility();
+    return () => {
+      element.removeEventListener("mouseenter", enter);
+      element.removeEventListener("mouseleave", leave);
+      element.removeEventListener("focusin", focus);
+      element.removeEventListener("focusout", blur);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!paused && items.length > 1) {
+      const timer = setTimeout(
+        () => setSelectedId(items[(selectedIndex + 1) % items.length].id),
+        7500,
+      );
+      return () => clearTimeout(timer);
+    }
+  }, [paused, selectedIndex, signature, items]);
+
+  useEffect(() => {
+    if (reducedMotion || !focused || !foreground) {
+      opacity.setValue(1);
+      return;
+    }
+    opacity.setValue(0.35);
+    const transition = Animated.timing(opacity, {
+      toValue: 1,
+      duration: 320,
+      useNativeDriver: false,
+    });
+    transition.start();
+    return () => transition.stop();
+  }, [current?.id, reducedMotion, focused, foreground, opacity]);
+
+  if (!current) return null;
+  function step(direction: number) {
+    setSelectedId(
+      items[(selectedIndex + direction + items.length) % items.length].id,
+    );
+  }
+  const compact = contentWidth < 1100;
+  return (
+    <View
+      ref={region}
+      style={g.gallery}
+      accessibilityLabel="Featured published media gallery"
+    >
+      <View style={[g.feature, { height: compact ? 280 : 320 }]}>
+        <Animated.View style={[g.media, { opacity }]}>
+          <ReelMedia
+            key={current.id}
+            item={current}
+            active={focused && foreground}
+            paused={paused}
+            muted
+          />
+          <View pointerEvents="none" style={g.featureBadge}>
+            <Text style={g.badgeText}>FEATURED · MUTED PREVIEW</Text>
+          </View>
+        </Animated.View>
+        <View style={[g.copy, { width: compact ? 270 : 330 }]}>
+          <Text style={styles.eyebrow}>
+            {categories.find((entry) => entry.id === current.category)?.title ||
+              "Creation"}
+          </Text>
+          <Text accessibilityRole="header" numberOfLines={2} style={g.title}>
+            {current.title}
+          </Text>
+          <Text numberOfLines={1} style={g.creator}>
+            {current.creator}
+          </Text>
+          {!!current.description && (
+            <Text numberOfLines={compact ? 1 : 2} style={styles.small}>
+              {current.description}
+            </Text>
+          )}
+          <View style={{ marginTop: "auto", gap: 6 }}>
+            <Action
+              title="Watch creation"
+              icon={Play}
+              onPress={() => open(current)}
+            />
+            <Text style={g.hint}>
+              {reducedMotion
+                ? "Motion paused by your accessibility preference."
+                : hovered || focusWithin
+                  ? "Preview paused while you interact."
+                  : userPaused
+                    ? "Gallery paused. Resume when you’re ready."
+                    : "Muted media · next creation every 7.5 seconds."}
+            </Text>
+          </View>
+        </View>
+      </View>
+      <View style={g.controls}>
+        <View style={g.buttons}>
+          <GalleryButton
+            label="Previous featured creation"
+            disabled={items.length < 2}
+            onPress={() => step(-1)}
+          >
+            <ChevronLeft size={18} color={color.text} />
+          </GalleryButton>
+          <GalleryButton
+            label={
+              reducedMotion
+                ? "Gallery motion paused by accessibility preference"
+                : userPaused
+                  ? "Resume featured gallery"
+                  : "Pause featured gallery"
+            }
+            disabled={reducedMotion}
+            onPress={() => setUserPaused((value) => !value)}
+          >
+            {userPaused || reducedMotion ? (
+              <Play size={15} color={color.text} />
+            ) : (
+              <Pause size={15} color={color.text} />
+            )}
+            <Text style={g.controlText}>
+              {reducedMotion
+                ? "Motion paused"
+                : userPaused
+                  ? "Resume"
+                  : "Pause"}
+            </Text>
+          </GalleryButton>
+          <GalleryButton
+            label="Next featured creation"
+            disabled={items.length < 2}
+            onPress={() => step(1)}
+          >
+            <ChevronRight size={18} color={color.text} />
+          </GalleryButton>
+        </View>
+        <View style={g.buttons}>
+          {items.map((item, index) => (
+            <Pressable
+              key={item.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Show featured creation ${index + 1}: ${item.title}`}
+              accessibilityState={{ selected: selectedIndex === index }}
+              onPress={() => setSelectedId(item.id)}
+              hitSlop={8}
+              style={[g.dot, selectedIndex === index && g.activeDot]}
+            />
+          ))}
+          <Text style={g.controlText}>
+            {selectedIndex + 1} / {items.length}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function GalleryButton({
+  label,
+  disabled,
+  onPress,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  onPress: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        g.control,
+        { opacity: disabled ? 0.45 : pressed ? 0.7 : 1 },
+      ]}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
+const g = StyleSheet.create({
+  gallery: {
+    overflow: "hidden",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.panel,
+  },
+  feature: { flexDirection: "row", minWidth: 0 },
+  media: {
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    backgroundColor: "#08060F",
+  },
+  featureBadge: {
+    position: "absolute",
+    top: 16,
+    left: 16,
+    backgroundColor: "#100A22CC",
+    borderRadius: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  badgeText: {
+    fontFamily: font.medium,
+    color: "white",
+    fontSize: 10,
+    letterSpacing: 0.7,
+  },
+  copy: { padding: 20, gap: 8 },
+  title: {
+    color: color.text,
+    fontFamily: font.semibold,
+    fontSize: 22,
+    lineHeight: 27,
+  },
+  creator: { color: color.text, fontFamily: font.medium, fontSize: 13 },
+  hint: {
+    color: color.faint,
+    fontFamily: font.regular,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  controls: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 14,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderColor: color.border,
+  },
+  buttons: { flexDirection: "row", alignItems: "center", gap: 9 },
+  control: {
+    minHeight: 32,
+    minWidth: 32,
+    paddingHorizontal: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    borderRadius: 7,
+    backgroundColor: color.raised,
+  },
+  controlText: { color: color.muted, fontFamily: font.medium, fontSize: 12 },
+  dot: { width: 6, height: 6, borderRadius: 4, backgroundColor: color.faint },
+  activeDot: { width: 20, backgroundColor: color.lime },
+});

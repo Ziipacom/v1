@@ -236,6 +236,7 @@ function NavigationContent() {
                 : undefined
           }
           screenOptions={{
+            headerShown: !desktop,
             headerStyle: { backgroundColor: color.bg },
             headerTintColor: color.text,
             headerTitleStyle: { fontFamily: font.medium, fontSize: 18 },
@@ -292,7 +293,7 @@ function NavigationContent() {
                 component={UtilityScreen}
                 options={({ route }) => ({
                   title: "Ziipa Studio",
-                  headerShown: route.params.kind !== "wallet",
+                  headerShown: !desktop && route.params.kind !== "wallet",
                 })}
               />
               <Stack.Screen
@@ -300,6 +301,7 @@ function NavigationContent() {
                 component={ComposerScreen}
                 options={{
                   title: "Creator Studio",
+                  headerShown: true,
                   presentation: desktop ? "card" : "modal",
                 }}
               />

@@ -25,6 +25,7 @@ import { logo, coverSource } from "../lib/assets";
 import { conceptsEnabled } from "../lib/config";
 import type { Category, Item } from "../lib/types";
 import { useZiipa } from "../provider";
+import { useDesktopLayout } from "./desktop-layout";
 
 export function Logo({ width = 116 }: { width?: number }) {
   return (
@@ -55,6 +56,7 @@ export function Action({
   danger?: boolean;
   testID?: string;
 }) {
+  const { desktop } = useDesktopLayout();
   return (
     <Pressable
       testID={testID}
@@ -63,10 +65,13 @@ export function Action({
       disabled={disabled || busy}
       onPress={onPress}
       style={({ pressed }) => ({
-        minHeight: 50,
-        paddingHorizontal: 18,
-        paddingVertical: 13,
-        borderRadius: 14,
+        minHeight: desktop ? 38 : 50,
+        paddingHorizontal: desktop ? 14 : 18,
+        paddingVertical: desktop ? 8 : 13,
+        borderRadius: desktop ? 8 : 14,
+        ...(desktop
+          ? { alignSelf: "flex-start" as const, maxWidth: "100%" as const }
+          : {}),
         backgroundColor: secondary
           ? color.panel
           : danger
@@ -77,17 +82,21 @@ export function Action({
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
-        gap: 10,
+        gap: desktop ? 8 : 10,
         opacity: disabled || busy ? 0.55 : pressed ? 0.8 : 1,
       })}
     >
       {busy ? (
         <ActivityIndicator color={color.text} />
       ) : Icon ? (
-        <Icon size={19} color={color.text} />
+        <Icon size={desktop ? 16 : 19} color={color.text} />
       ) : null}
       <Text
-        style={{ color: color.text, fontFamily: font.semibold, fontSize: 16 }}
+        style={{
+          color: color.text,
+          fontFamily: font.semibold,
+          fontSize: desktop ? 14 : 16,
+        }}
       >
         {title}
       </Text>
@@ -135,6 +144,7 @@ export function Field({
   style,
   ...props
 }: TextInputProps & { label: string }) {
+  const { desktop } = useDesktopLayout();
   return (
     <View>
       <Text style={styles.label}>{label}</Text>
@@ -145,6 +155,12 @@ export function Field({
         selectionColor={color.purple}
         style={[
           styles.input,
+          desktop && {
+            minHeight: 40,
+            paddingVertical: 10,
+            borderRadius: 8,
+            fontSize: 14,
+          },
           props.multiline && { minHeight: 94, textAlignVertical: "top" },
           style,
         ]}
@@ -153,12 +169,13 @@ export function Field({
   );
 }
 export function Notice({ text, error }: { text: string; error?: boolean }) {
+  const { desktop } = useDesktopLayout();
   return (
     <View
       style={{
         backgroundColor: error ? "#341C2B" : color.panel,
-        borderRadius: 13,
-        padding: 14,
+        borderRadius: desktop ? 8 : 13,
+        padding: desktop ? 12 : 14,
         borderWidth: 1,
         borderColor: error ? "#71394D" : color.border,
       }}
@@ -205,17 +222,18 @@ export function Pill({
   active?: boolean;
   onPress: () => void;
 }) {
+  const { desktop } = useDesktopLayout();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       onPress={onPress}
       style={{
-        minHeight: 42,
+        minHeight: desktop ? 34 : 42,
         justifyContent: "center",
-        paddingHorizontal: 15,
-        paddingVertical: 10,
-        borderRadius: 22,
+        paddingHorizontal: desktop ? 12 : 15,
+        paddingVertical: desktop ? 8 : 10,
+        borderRadius: desktop ? 7 : 22,
         borderWidth: 1,
         borderColor: active ? color.purple : color.border,
         backgroundColor: active ? color.purple : color.panel,

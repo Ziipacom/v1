@@ -4,6 +4,7 @@ import {
   Linking,
   Pressable,
   ScrollView,
+  StyleSheet,
   Switch,
   Text,
   View,
@@ -21,7 +22,9 @@ import { Action, Field, Notice } from "../components/ui";
 import { MediaPlayer } from "../components/player";
 import { useZiipa } from "../provider";
 import type { Item, RootStack, SocialProvider } from "../lib/types";
-import { color, styles } from "../theme";
+import { color, font, styles } from "../theme";
+import { useDesktopLayout } from "../components/desktop-layout";
+import { socialProvider } from "../lib/social";
 import { readyRender, type RenderJob } from "../lib/render-types";
 import { TwitchChannel } from "../components/twitch-channel";
 import { useOperationScope } from "../lib/use-operation-scope";
@@ -72,6 +75,7 @@ function Choice({
   onPress: () => void;
   disabled?: boolean;
 }) {
+  const { desktop } = useDesktopLayout();
   return (
     <Pressable
       accessibilityRole="radio"
@@ -80,14 +84,17 @@ function Choice({
       onPress={onPress}
       style={[
         styles.panel,
+        desktop && dp.choice,
         {
-          padding: 12,
+          padding: desktop ? 10 : 12,
           borderColor: active ? color.lime : color.border,
           opacity: disabled ? 0.45 : 1,
         },
       ]}
     >
-      <Text style={styles.label}>
+      <Text
+        style={[styles.label, desktop && { marginBottom: 0, fontSize: 13 }]}
+      >
         {active ? "● " : "○ "}
         {title}
       </Text>
@@ -182,6 +189,7 @@ function ScopedPublishingScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Publishing">) {
   const { api, guest, data, session } = useZiipa();
+  const { desktop, contentWidth } = useDesktopLayout();
   const focused = useIsFocused();
   const inFlight = useRef(false);
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -538,51 +546,13 @@ function ScopedPublishingScreen({
           postTitle,
           postDescription,
         )));
-  return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.page}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.panel}>
-        <ShieldCheck size={26} color={color.lime} />
-        <Text style={styles.title}>Publish beyond Ziipa</Text>
-        <Text style={styles.small}>
-          Authorize the actual channel, choose your media and approve each
-          destination. Linking a profile is separate from permission to publish.
-        </Text>
-      </View>
-      {guest ? (
-        <Notice text="Sign in to authorize accounts and publish your own uploaded media. Preview samples cannot be sent to a network." />
-      ) : null}
-      <Action
-        title="Refresh accounts and delivery status"
-        secondary
-        icon={RefreshCw}
-        busy={busy}
-        onPress={() => void run(load)}
-      />
-      {message ? <Notice text={message} /> : null}
-      <View style={{ gap: 10 }}>
-        {providers.map((p) => (
-          <Choice
-            disabled={busy}
-            key={p.provider}
-            title={`${p.name} · ${p.configured ? "Ready to authorize" : p.publish_implemented || p.live_implemented ? "Provider setup needed" : "Manual sharing only"}`}
-            active={provider === p.provider}
-            onPress={() => {
-              setProvider(p.provider);
-              setReviewRecord(null);
-              setTikTok(blankTikTok);
-              setAuthUrl("");
-              resetApproval();
-            }}
-          />
-        ))}
-      </View>
+  const accountControls = (
+    <>
       {ready && (
-        <View style={styles.panel}>
-          <Text style={styles.heading}>{ready.name}</Text>
+        <View style={[styles.panel, desktop && dp.card]}>
+          <Text style={[styles.heading, desktop && dp.sectionTitle]}>
+            {ready.name}
+          </Text>
           <Text style={styles.small}>{ready.detail}</Text>
           {[...ready.requirements, ...(ready.delivery_requirements || [])].map(
             (r) => (
@@ -672,6 +642,10 @@ function ScopedPublishingScreen({
           )}
         </View>
       )}
+    </>
+  );
+  const publishingWorkflow = (
+    <>
       {provider === "twitch" ? (
         <TwitchChannel
           key={`${selected?.selected_target_id || ""}:${selected?.status || ""}`}
@@ -681,23 +655,50 @@ function ScopedPublishingScreen({
         />
       ) : (
         <>
-          <View style={styles.panel}>
-            <Text style={styles.heading}>1. Your source media</Text>
+          <View style={[styles.panel, desktop && dp.card]}>
+            <Text style={[styles.heading, desktop && dp.sectionTitle]}>
+              1. Your source media
+            </Text>
             <Notice text="Choose a rendered MP4 to include saved editor effects. Ziipa checks that the export still matches your saved edit before sending it." />
-            {ownMedia.map((item) => (
-              <Choice
-                disabled={busy}
-                key={item.id}
-                title={`${item.title} · ${item.visibility || "draft"}`}
-                active={itemId === item.id}
-                onPress={() => {
-                  setItemId(item.id);
-                  setOriginal(false);
-                  setRenderedId("");
-                  resetApproval();
-                }}
-              />
-            ))}
+            {desktop ? (
+              <ScrollView
+                style={{ maxHeight: 210 }}
+                contentContainerStyle={{ gap: 7 }}
+                nestedScrollEnabled
+              >
+                {ownMedia.map((item) => (
+                  <Choice
+                    disabled={busy}
+                    key={item.id}
+                    title={`${item.title} · ${item.visibility || "draft"}`}
+                    active={itemId === item.id}
+                    onPress={() => {
+                      setItemId(item.id);
+                      setOriginal(false);
+                      setRenderedId("");
+                      resetApproval();
+                    }}
+                  />
+                ))}
+              </ScrollView>
+            ) : (
+              <>
+                {ownMedia.map((item) => (
+                  <Choice
+                    disabled={busy}
+                    key={item.id}
+                    title={`${item.title} · ${item.visibility || "draft"}`}
+                    active={itemId === item.id}
+                    onPress={() => {
+                      setItemId(item.id);
+                      setOriginal(false);
+                      setRenderedId("");
+                      resetApproval();
+                    }}
+                  />
+                ))}
+              </>
+            )}
             {!ownMedia.length && (
               <Action
                 title="Create and upload media"
@@ -770,8 +771,10 @@ function ScopedPublishingScreen({
             )}
           </View>
           {provider === "youtube" && (
-            <View style={styles.panel}>
-              <Text style={styles.heading}>2. YouTube audience</Text>
+            <View style={[styles.panel, desktop && dp.card]}>
+              <Text style={[styles.heading, desktop && dp.sectionTitle]}>
+                2. YouTube audience
+              </Text>
               {(["private", "unlisted", "public"] as const)
                 .filter(
                   (v) =>
@@ -812,8 +815,10 @@ function ScopedPublishingScreen({
             </View>
           )}
           {provider === "tiktok" && (
-            <View style={styles.panel}>
-              <Text style={styles.heading}>2. Review your TikTok post</Text>
+            <View style={[styles.panel, desktop && dp.card]}>
+              <Text style={[styles.heading, desktop && dp.sectionTitle]}>
+                2. Review your TikTok post
+              </Text>
               <Text style={styles.small}>
                 Current creator permissions and the actual video are checked
                 when you open this review or change the source. Nothing is sent
@@ -845,7 +850,16 @@ function ScopedPublishingScreen({
                     Posting as {creator.creator_nickname}
                   </Text>
                   {previewItem && (
-                    <View style={{ overflow: "hidden", borderRadius: 18 }}>
+                    <View
+                      style={[
+                        { overflow: "hidden", borderRadius: 18 },
+                        desktop && {
+                          width: 250,
+                          maxWidth: "100%",
+                          alignSelf: "center",
+                        },
+                      ]}
+                    >
                       <Text style={styles.label}>
                         {source === "rendered"
                           ? "Exact rendered MP4"
@@ -1144,8 +1158,10 @@ function ScopedPublishingScreen({
           {provider === "bluesky" && (
             <Notice text="Bluesky posts are public and may be indexed or copied by other AT Protocol apps. Deleting a Ziipa account does not delete copies on external networks." />
           )}
-          <View style={styles.panel}>
-            <Text style={styles.heading}>3. Approve this destination</Text>
+          <View style={[styles.panel, desktop && dp.card]}>
+            <Text style={[styles.heading, desktop && dp.sectionTitle]}>
+              3. Approve this destination
+            </Text>
             <Consent
               disabled={busy}
               title={`I control the selected ${ready?.name || provider} account and authorize sending this media with the audience and disclosures above. I have the rights to publish it.`}
@@ -1165,14 +1181,27 @@ function ScopedPublishingScreen({
           </View>
         </>
       )}
-      <Text style={styles.heading}>Delivery receipts</Text>
+    </>
+  );
+  const deliveryReceipts = (
+    <>
+      {desktop ? (
+        <View style={dp.receiptHeading}>
+          <Text style={dp.receiptTitle}>Delivery receipts</Text>
+          <Text style={styles.small}>
+            Confirmed results, pending uploads and failures
+          </Text>
+        </View>
+      ) : (
+        <Text style={styles.heading}>Delivery receipts</Text>
+      )}
       {!jobs.length && (
         <Text style={styles.small}>
           No automatic posts have been submitted.
         </Text>
       )}
       {jobs.map((job) => (
-        <View key={job.id} style={styles.panel}>
+        <View key={job.id} style={[styles.panel, desktop && dp.receipt]}>
           <View style={styles.row}>
             <CheckCircle2
               size={19}
@@ -1209,6 +1238,274 @@ function ScopedPublishingScreen({
         secondary
         onPress={() => navigation.navigate("Connections", { tab: "outbox" })}
       />
+    </>
+  );
+  const providerChoices = (
+    <>
+      <View style={{ gap: 10 }}>
+        {providers.map((p) => (
+          <Choice
+            disabled={busy}
+            key={p.provider}
+            title={`${p.name} · ${p.configured ? "Ready to authorize" : p.publish_implemented || p.live_implemented ? "Provider setup needed" : "Manual sharing only"}`}
+            active={provider === p.provider}
+            onPress={() => {
+              setProvider(p.provider);
+              setReviewRecord(null);
+              setTikTok(blankTikTok);
+              setAuthUrl("");
+              resetApproval();
+            }}
+          />
+        ))}
+      </View>
+    </>
+  );
+  if (desktop)
+    return (
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={dp.page}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={dp.workspace}>
+          <View style={dp.header}>
+            <View style={{ gap: 6, flex: 1, minWidth: 250 }}>
+              <Text style={dp.eyebrow}>DISTRIBUTION / DIRECT PUBLISHING</Text>
+              <Text style={dp.title}>Publish to your networks</Text>
+              <Text style={styles.small}>
+                Choose a channel, review the exact media and approve this
+                destination.
+              </Text>
+            </View>
+            <View style={dp.headerActions}>
+              <Action
+                title="Networks"
+                secondary
+                onPress={() => navigation.navigate("Connections")}
+              />
+              <Action
+                title="Refresh status"
+                secondary
+                icon={RefreshCw}
+                busy={busy}
+                onPress={() => void run(load)}
+              />
+            </View>
+          </View>
+          {guest && (
+            <Notice text="Sign in to authorize accounts and publish your own uploaded media. Preview samples cannot be sent to a network." />
+          )}
+          {message ? <Notice text={message} /> : null}
+          <View
+            style={dp.providers}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Publishing network"
+          >
+            {providers.map((entry) => {
+              const brand = socialProvider(entry.provider);
+              const connection = connections.find(
+                (row) => row.provider === entry.provider,
+              );
+              const active = provider === entry.provider;
+              return (
+                <Pressable
+                  key={entry.provider}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: active, disabled: busy }}
+                  disabled={busy}
+                  onPress={() => {
+                    setProvider(entry.provider);
+                    setReviewRecord(null);
+                    setTikTok(blankTikTok);
+                    setAuthUrl("");
+                    resetApproval();
+                  }}
+                  style={[dp.provider, active && dp.providerActive]}
+                >
+                  <View
+                    style={[dp.providerMark, { backgroundColor: brand.color }]}
+                  >
+                    <Text style={dp.providerInitial}>{brand.short}</Text>
+                  </View>
+                  <View style={{ gap: 3 }}>
+                    <Text style={dp.providerName}>{entry.name}</Text>
+                    <Text style={dp.providerStatus}>
+                      {connection?.status === "authorized"
+                        ? "Authorized"
+                        : entry.configured
+                          ? "Ready to connect"
+                          : "Setup required"}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+            {!providers.length && (
+              <Text style={styles.small}>
+                No provider configuration loaded. Refresh status to check
+                available integrations.
+              </Text>
+            )}
+          </View>
+          <View style={dp.body}>
+            <View style={dp.accountRail}>
+              <View style={dp.railHeading}>
+                <ShieldCheck size={17} color={color.lime} />
+                <Text style={dp.railTitle}>Destination account</Text>
+              </View>
+              {accountControls}
+              {!ready && (
+                <Text style={styles.small}>
+                  Select a network to see its authorization and publishing
+                  requirements.
+                </Text>
+              )}
+              <Text style={dp.footnote}>
+                A saved profile link is not publishing permission. Each outgoing
+                request requires your approval.
+              </Text>
+            </View>
+            <View
+              style={[
+                dp.workflow,
+                { maxWidth: contentWidth > 1450 ? 920 : undefined },
+              ]}
+            >
+              <View style={dp.railHeading}>
+                <Send size={17} color={color.lime} />
+                <Text style={dp.railTitle}>
+                  {provider === "twitch" ? "Live channel" : "Prepare your post"}
+                </Text>
+              </View>
+              {publishingWorkflow}
+            </View>
+          </View>
+          <View style={dp.receipts}>{deliveryReceipts}</View>
+        </View>
+      </ScrollView>
+    );
+  return (
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.page}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.panel}>
+        <ShieldCheck size={26} color={color.lime} />
+        <Text style={styles.title}>Publish beyond Ziipa</Text>
+        <Text style={styles.small}>
+          Authorize the actual channel, choose your media and approve each
+          destination. Linking a profile is separate from permission to publish.
+        </Text>
+      </View>
+      {guest ? (
+        <Notice text="Sign in to authorize accounts and publish your own uploaded media. Preview samples cannot be sent to a network." />
+      ) : null}
+      <Action
+        title="Refresh accounts and delivery status"
+        secondary
+        icon={RefreshCw}
+        busy={busy}
+        onPress={() => void run(load)}
+      />
+      {message ? <Notice text={message} /> : null}
+      {providerChoices}
+      {accountControls}
+      {publishingWorkflow}
+      {deliveryReceipts}
     </ScrollView>
   );
 }
+
+const dp = StyleSheet.create({
+  page: { padding: 28, paddingBottom: 48, alignItems: "center" },
+  workspace: { width: "100%", maxWidth: 1380, gap: 22 },
+  header: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 18,
+    alignItems: "center",
+    paddingBottom: 22,
+    borderBottomWidth: 1,
+    borderBottomColor: color.border,
+  },
+  eyebrow: {
+    color: color.faint,
+    fontFamily: font.medium,
+    fontSize: 10,
+    letterSpacing: 1.7,
+  },
+  title: {
+    color: color.text,
+    fontFamily: font.bold,
+    fontSize: 28,
+    lineHeight: 34,
+    letterSpacing: -0.6,
+  },
+  headerActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  providers: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  provider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    minWidth: 152,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: "#191323",
+    borderRadius: 9,
+  },
+  providerActive: { borderColor: "#A984E7", backgroundColor: "#302040" },
+  providerMark: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  providerInitial: { color: "white", fontFamily: font.bold, fontSize: 11 },
+  providerName: { color: color.text, fontFamily: font.semibold, fontSize: 13 },
+  providerStatus: {
+    color: color.muted,
+    fontFamily: font.regular,
+    fontSize: 11,
+  },
+  body: { flexDirection: "row", gap: 22, alignItems: "flex-start" },
+  accountRail: { width: 264, gap: 14 },
+  railHeading: {
+    flexDirection: "row",
+    gap: 9,
+    alignItems: "center",
+    minHeight: 25,
+  },
+  railTitle: { color: color.text, fontFamily: font.semibold, fontSize: 14 },
+  workflow: { flex: 1, minWidth: 0, gap: 16 },
+  card: { borderRadius: 11, padding: 18, gap: 12, backgroundColor: "#191421" },
+  sectionTitle: { fontSize: 17, letterSpacing: -0.2, lineHeight: 23 },
+  choice: { borderRadius: 8, backgroundColor: "#211A2C", gap: 0 },
+  footnote: {
+    color: color.faint,
+    fontFamily: font.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    paddingHorizontal: 4,
+  },
+  receipts: {
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: color.border,
+    paddingTop: 22,
+  },
+  receiptTitle: { color: color.text, fontFamily: font.semibold, fontSize: 17 },
+  receiptHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 14,
+    flexWrap: "wrap",
+  },
+  receipt: { padding: 15, borderRadius: 9, gap: 8, backgroundColor: "#191421" },
+});

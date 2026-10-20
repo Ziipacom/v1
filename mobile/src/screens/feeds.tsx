@@ -1,3 +1,5 @@
+import { useDesktopLayout } from "../components/desktop-layout";
+import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
 import { useState } from "react";
 import { ScrollView, Switch, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -28,6 +30,7 @@ const blank: FeedInput = {
   shared: false,
 };
 export function FeedsScreen() {
+  const { desktop, contentWidth } = useDesktopLayout();
   const navigation = useNavigation<NativeStackNavigationProp<RootStack>>();
   const { data, guest, api, refresh, savePreviewFeed } = useZiipa();
   const [rule, setRule] = useState<FeedInput>(blank);
@@ -78,6 +81,161 @@ export function FeedsScreen() {
     });
     setMessage(`Previewing “${feed.name}”. Save to keep a new copy.`);
   }
+  const feedEditor = (
+    <View style={styles.panel}>
+      <Field
+        label="Feed name"
+        value={rule.name}
+        onChangeText={(name) => patch({ name })}
+        maxLength={80}
+        placeholder="Good energy only"
+        editable={!busy}
+      />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 8 }}
+      >
+        <Pill
+          title="Everything"
+          active={rule.category === "all"}
+          onPress={() => patch({ category: "all" })}
+        />
+        {categories.map((c) => (
+          <Pill
+            key={c.id}
+            title={c.title}
+            active={rule.category === c.id}
+            onPress={() => patch({ category: c.id })}
+          />
+        ))}
+      </ScrollView>
+      <Field
+        label="Tag (optional)"
+        value={rule.tag}
+        onChangeText={(tag) => patch({ tag })}
+        maxLength={40}
+        placeholder="music"
+        autoCapitalize="none"
+        editable={!busy}
+      />
+      <Field
+        label="Creator (optional)"
+        value={rule.creator}
+        onChangeText={(creator) => patch({ creator })}
+        maxLength={100}
+        editable={!busy}
+      />
+      <Field
+        label="Declared city (optional)"
+        value={rule.city}
+        onChangeText={(city) => patch({ city })}
+        maxLength={80}
+        editable={!busy}
+      />
+      <View style={styles.between}>
+        <Text style={[styles.small, { flex: 1 }]}>
+          Share these rules with other Ziipa members
+        </Text>
+        <Switch
+          accessibilityLabel="Share feed rules"
+          value={rule.shared}
+          onValueChange={(shared) => patch({ shared })}
+          trackColor={{ true: color.purple }}
+          disabled={busy || guest}
+        />
+      </View>
+      <Action
+        title={guest ? "Save sample feed" : "Save feed rules"}
+        icon={SlidersHorizontal}
+        onPress={() => void save()}
+        busy={busy}
+      />
+    </View>
+  );
+  const feedResults = (
+    <>
+      {!!error && <Notice error text={error} />}
+      {!!message && <Notice text={message} />}
+      <Text style={styles.heading}>Your results · {matches.length}</Text>
+      <Text style={styles.small}>
+        All selected rules must match. Your safety preferences still apply.
+        Cities are provided by creators; location services are not used.
+      </Text>
+      {matches.length ? (
+        matches
+          .slice(0, 12)
+          .map((item) => (
+            <ItemRow
+              item={item}
+              key={item.id}
+              onPress={() => navigation.navigate("Post", { item })}
+            />
+          ))
+      ) : (
+        <Empty
+          title="Try a little wider."
+          body="Remove a filter or try a different tag."
+        />
+      )}
+      {data.feeds.length > 0 && (
+        <>
+          <Text style={styles.heading}>Your saved feeds</Text>
+          <View style={[styles.row, { flexWrap: "wrap" }]}>
+            {data.feeds.map((feed) => (
+              <Pill
+                key={feed.id}
+                title={feed.name}
+                onPress={() => load(feed)}
+              />
+            ))}
+          </View>
+        </>
+      )}
+      {data.community_feeds.length > 0 && (
+        <>
+          <Text style={styles.heading}>From the community</Text>
+          <View style={[styles.row, { flexWrap: "wrap" }]}>
+            {data.community_feeds.map((feed) => (
+              <Pill
+                key={feed.id}
+                title={`${feed.name} · ${feed.owner_name}`}
+                onPress={() => load(feed)}
+              />
+            ))}
+          </View>
+        </>
+      )}
+    </>
+  );
+  if (desktop)
+    return (
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={workspace.page}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <WorkspaceHeading
+          title="Feed builder"
+          description="Choose your rules and preview the creations they bring together."
+        />
+        <View
+          style={[
+            workspace.columns,
+            contentWidth < 1100 && { flexDirection: "column" },
+          ]}
+        >
+          <View
+            style={[workspace.rail, contentWidth < 1100 && { width: "100%" }]}
+          >
+            {feedEditor}
+          </View>
+          <View style={workspace.main}>{feedResults}</View>
+        </View>
+      </ScrollView>
+    );
   return (
     <SafeAreaView edges={["top"]} style={styles.screen}>
       <ScrollView
@@ -94,128 +252,8 @@ export function FeedsScreen() {
             Ziipa take shape.
           </Text>
         </View>
-        <View style={styles.panel}>
-          <Field
-            label="Feed name"
-            value={rule.name}
-            onChangeText={(name) => patch({ name })}
-            maxLength={80}
-            placeholder="Good energy only"
-            editable={!busy}
-          />
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8 }}
-          >
-            <Pill
-              title="Everything"
-              active={rule.category === "all"}
-              onPress={() => patch({ category: "all" })}
-            />
-            {categories.map((c) => (
-              <Pill
-                key={c.id}
-                title={c.title}
-                active={rule.category === c.id}
-                onPress={() => patch({ category: c.id })}
-              />
-            ))}
-          </ScrollView>
-          <Field
-            label="Tag (optional)"
-            value={rule.tag}
-            onChangeText={(tag) => patch({ tag })}
-            maxLength={40}
-            placeholder="music"
-            autoCapitalize="none"
-            editable={!busy}
-          />
-          <Field
-            label="Creator (optional)"
-            value={rule.creator}
-            onChangeText={(creator) => patch({ creator })}
-            maxLength={100}
-            editable={!busy}
-          />
-          <Field
-            label="Declared city (optional)"
-            value={rule.city}
-            onChangeText={(city) => patch({ city })}
-            maxLength={80}
-            editable={!busy}
-          />
-          <View style={styles.between}>
-            <Text style={[styles.small, { flex: 1 }]}>
-              Share these rules with other Ziipa members
-            </Text>
-            <Switch
-              accessibilityLabel="Share feed rules"
-              value={rule.shared}
-              onValueChange={(shared) => patch({ shared })}
-              trackColor={{ true: color.purple }}
-              disabled={busy || guest}
-            />
-          </View>
-          <Action
-            title={guest ? "Save sample feed" : "Save feed rules"}
-            icon={SlidersHorizontal}
-            onPress={() => void save()}
-            busy={busy}
-          />
-        </View>
-        {!!error && <Notice error text={error} />}
-        {!!message && <Notice text={message} />}
-        <Text style={styles.heading}>Your results · {matches.length}</Text>
-        <Text style={styles.small}>
-          All selected rules must match. Your safety preferences still apply.
-          Cities are provided by creators; location services are not used.
-        </Text>
-        {matches.length ? (
-          matches
-            .slice(0, 12)
-            .map((item) => (
-              <ItemRow
-                item={item}
-                key={item.id}
-                onPress={() => navigation.navigate("Post", { item })}
-              />
-            ))
-        ) : (
-          <Empty
-            title="Try a little wider."
-            body="Remove a filter or try a different tag."
-          />
-        )}
-        {data.feeds.length > 0 && (
-          <>
-            <Text style={styles.heading}>Your saved feeds</Text>
-            <View style={[styles.row, { flexWrap: "wrap" }]}>
-              {data.feeds.map((feed) => (
-                <Pill
-                  key={feed.id}
-                  title={feed.name}
-                  onPress={() => load(feed)}
-                />
-              ))}
-            </View>
-          </>
-        )}
-        {data.community_feeds.length > 0 && (
-          <>
-            <Text style={styles.heading}>From the community</Text>
-            <View style={[styles.row, { flexWrap: "wrap" }]}>
-              {data.community_feeds.map((feed) => (
-                <Pill
-                  key={feed.id}
-                  title={`${feed.name} · ${feed.owner_name}`}
-                  onPress={() => load(feed)}
-                />
-              ))}
-            </View>
-          </>
-        )}
+        {feedEditor}
+        {feedResults}
       </ScrollView>
     </SafeAreaView>
   );

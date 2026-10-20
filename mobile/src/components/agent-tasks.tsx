@@ -12,6 +12,7 @@ import {
 import * as Crypto from "expo-crypto";
 import { Action, Field, Notice, Pill } from "./ui";
 import { useZiipa } from "../provider";
+import { useDesktopLayout } from "./desktop-layout";
 import { color, styles } from "../theme";
 import { readableStatus, type Project } from "../lib/media-os-types";
 import {
@@ -53,6 +54,7 @@ export function AgentTasks({
   projects: Project[];
   permissions: () => void;
 }) {
+  const { desktop, contentWidth } = useDesktopLayout();
   const { session } = useZiipa();
   const [config, setConfig] = useState<AgentConfig | null>(null);
   const [policy, setPolicy] = useState<AgentPolicy | null>(null);
@@ -346,424 +348,517 @@ export function AgentTasks({
     );
   }
 
-  return (
-    <View style={{ gap: 18 }}>
-      <View style={[styles.panel, { gap: 14 }]}>
-        <View style={styles.between}>
-          <Text style={styles.heading}>Ziipa Agent</Text>
-          <Bot size={29} color={color.lime} />
-        </View>
-        <Text style={styles.body}>
-          Give Ziipa an objective. It can plan and complete approved private
-          workspace work while you are away, with a receipt for every step.
-        </Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {[
-            [
-              config?.worker_ready ? "Worker online" : "Worker unavailable",
-              !!config?.worker_ready,
-            ],
-            [
-              config?.inference.available
-                ? "Inference ready"
-                : "Inference unavailable",
-              !!config?.inference.available,
-            ],
-            [
-              policy?.enabled ? "Agent enabled" : "Agent off",
-              !!policy?.enabled,
-            ],
-          ].map(([title, ready]) => (
-            <View
-              key={String(title)}
-              style={{
-                paddingHorizontal: 12,
-                paddingVertical: 9,
-                borderWidth: 1,
-                borderColor: ready ? color.purple : color.border,
-                borderRadius: 20,
-                backgroundColor: ready ? color.purple : color.bg,
-              }}
-            >
-              <Text style={[styles.small, { color: color.text }]}>{title}</Text>
-            </View>
-          ))}
-        </View>
-        {config?.inference.model ? (
-          <Text style={styles.small}>
-            {config.inference.mode === "hosted_ai"
-              ? "Private inference gateway"
-              : "Local inference"}{" "}
-            · {config.inference.model}
-          </Text>
-        ) : null}
-        {config?.detail ? <Notice text={config.detail} /> : null}
-        <Notice text="Agent access is limited to your enabled Ziipa tools. It cannot run shell commands, publish publicly, send invitations, spend wallet funds or delete your account. Enable only the private actions you want it to complete without reviewing each step." />
-        {error ? <Notice error text={error} /> : null}
-        {notice ? <Notice text={notice} /> : null}
-        <Action
-          title="Refresh agent"
-          secondary
-          icon={RefreshCw}
-          busy={loading}
-          disabled={busy}
-          onPress={() => {
-            setPollRemaining(12);
-            void load();
+  const agentReadiness = (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+      {[
+        [
+          config?.worker_ready ? "Worker online" : "Worker unavailable",
+          !!config?.worker_ready,
+        ],
+        [
+          config?.inference.available
+            ? "Inference ready"
+            : "Inference unavailable",
+          !!config?.inference.available,
+        ],
+        [policy?.enabled ? "Agent enabled" : "Agent off", !!policy?.enabled],
+      ].map(([title, ready]) => (
+        <View
+          key={String(title)}
+          style={{
+            paddingHorizontal: 12,
+            paddingVertical: 9,
+            borderWidth: 1,
+            borderColor: ready ? color.purple : color.border,
+            borderRadius: 20,
+            backgroundColor: ready ? color.purple : color.bg,
           }}
-        />
+        >
+          <Text style={[styles.small, { color: color.text }]}>{title}</Text>
+        </View>
+      ))}
+    </View>
+  );
+  const agentInference = config?.inference.model ? (
+    <Text style={styles.small}>
+      {config.inference.mode === "hosted_ai"
+        ? "Private inference gateway"
+        : "Local inference"}{" "}
+      · {config.inference.model}
+    </Text>
+  ) : null;
+  const agentDetail = config?.detail ? <Notice text={config.detail} /> : null;
+  const agentSafety = (
+    <Notice text="Agent access is limited to your enabled Ziipa tools. It cannot run shell commands, publish publicly, send invitations, spend wallet funds or delete your account. Enable only the private actions you want it to complete without reviewing each step." />
+  );
+  const agentError = error ? <Notice error text={error} /> : null;
+  const agentNotice = notice ? <Notice text={notice} /> : null;
+  const refreshAgent = (
+    <Action
+      title="Refresh agent"
+      secondary
+      icon={RefreshCw}
+      busy={loading}
+      disabled={busy}
+      onPress={() => {
+        setPollRemaining(12);
+        void load();
+      }}
+    />
+  );
+  const agentStatus = (
+    <View
+      style={[
+        styles.panel,
+        { gap: 14 },
+        desktop && { padding: 20, borderRadius: 14, minWidth: 0 },
+      ]}
+    >
+      <View style={styles.between}>
+        <Text style={[styles.heading, desktop && { fontSize: 18 }]}>
+          Ziipa Agent
+        </Text>
+        <Bot size={29} color={color.lime} />
       </View>
-
-      {policy && config ? (
-        <View style={[styles.panel, { gap: 14 }]}>
-          <View style={styles.between}>
-            <Text style={styles.heading}>Autonomy permissions</Text>
-            <ShieldCheck size={24} color={color.lime} />
-          </View>
-          <View style={styles.between}>
-            <Text style={[styles.body, { color: color.text, flex: 1 }]}>
-              Enable private autonomous tasks
-            </Text>
-            <Switch
-              accessibilityLabel="Enable private autonomous tasks"
-              value={enabled}
+      <Text style={styles.body}>
+        Give Ziipa an objective. It can plan and complete approved private
+        workspace work while you are away, with a receipt for every step.
+      </Text>
+      {agentReadiness}
+      {agentInference}
+      {agentDetail}
+      {agentSafety}
+      {agentError}
+      {agentNotice}
+      {refreshAgent}
+    </View>
+  );
+  const policyEditor =
+    policy && config ? (
+      <View
+        style={[
+          styles.panel,
+          { gap: 14 },
+          desktop && { padding: 20, borderRadius: 14, minWidth: 0 },
+        ]}
+      >
+        <View style={styles.between}>
+          <Text style={[styles.heading, desktop && { fontSize: 18 }]}>
+            Autonomy permissions
+          </Text>
+          <ShieldCheck size={24} color={color.lime} />
+        </View>
+        <View style={styles.between}>
+          <Text style={[styles.body, { color: color.text, flex: 1 }]}>
+            Enable private autonomous tasks
+          </Text>
+          <Switch
+            accessibilityLabel="Enable private autonomous tasks"
+            value={enabled}
+            disabled={busy || loading}
+            onValueChange={(value) => {
+              setEnabled(value);
+              setReview(false);
+            }}
+            trackColor={{ false: color.border, true: color.purple }}
+            thumbColor={enabled ? color.lime : color.muted}
+          />
+        </View>
+        {config.tools
+          .filter((tool) => tool.id !== "render.create")
+          .map((tool) => (
+            <Pressable
+              key={tool.id}
+              accessibilityRole="checkbox"
+              accessibilityState={{
+                checked: tools.includes(tool.id),
+                disabled: busy || loading,
+              }}
               disabled={busy || loading}
-              onValueChange={(value) => {
-                setEnabled(value);
+              onPress={() => {
+                setTools((previous) =>
+                  previous.includes(tool.id)
+                    ? previous.filter((id) => id !== tool.id)
+                    : [...previous, tool.id],
+                );
                 setReview(false);
               }}
-              trackColor={{ false: color.border, true: color.purple }}
-              thumbColor={enabled ? color.lime : color.muted}
-            />
-          </View>
-          {config.tools
-            .filter((tool) => tool.id !== "render.create")
-            .map((tool) => (
-              <Pressable
-                key={tool.id}
-                accessibilityRole="checkbox"
-                accessibilityState={{
-                  checked: tools.includes(tool.id),
-                  disabled: busy || loading,
+              style={[styles.row, { paddingVertical: 8, minHeight: 46 }]}
+            >
+              <View
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderWidth: 1,
+                  borderColor: tools.includes(tool.id)
+                    ? color.lime
+                    : color.muted,
+                  borderRadius: 7,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: tools.includes(tool.id)
+                    ? color.purple
+                    : color.bg,
                 }}
-                disabled={busy || loading}
-                onPress={() => {
-                  setTools((previous) =>
-                    previous.includes(tool.id)
-                      ? previous.filter((id) => id !== tool.id)
-                      : [...previous, tool.id],
-                  );
-                  setReview(false);
-                }}
-                style={[styles.row, { paddingVertical: 8, minHeight: 46 }]}
               >
-                <View
-                  style={{
-                    width: 24,
-                    height: 24,
-                    borderWidth: 1,
-                    borderColor: tools.includes(tool.id)
-                      ? color.lime
-                      : color.muted,
-                    borderRadius: 7,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: tools.includes(tool.id)
-                      ? color.purple
-                      : color.bg,
-                  }}
-                >
-                  {tools.includes(tool.id) ? (
-                    <Check size={17} color={color.text} />
-                  ) : null}
-                </View>
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={[styles.body, { color: color.text }]}>
-                    {tool.title}
-                  </Text>
-                  <Text style={styles.small}>
-                    {config.effective_tools.includes(tool.id)
-                      ? "Effective permission"
-                      : "Also grant this tool in Assistant permissions"}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
-          {tools.includes("render.create") ? (
-            <Notice text="An existing render permission is retained. This panel does not queue renders; choose owned media and its export settings in Creator Studio." />
-          ) : null}
-          <Text style={styles.small}>
-            A tool must be enabled here and in Assistant permissions. Both
-            grants are checked again before every action.
-          </Text>
-          <Action
-            title="Review Assistant permissions"
-            secondary
-            disabled={busy}
-            onPress={permissions}
-          />
-          <Field
-            label="Maximum steps per task (1–10)"
-            value={stepLimit}
-            onChangeText={(value) => {
-              setStepLimit(value);
-              setReview(false);
+                {tools.includes(tool.id) ? (
+                  <Check size={17} color={color.text} />
+                ) : null}
+              </View>
+              <View style={{ flex: 1, gap: 3 }}>
+                <Text style={[styles.body, { color: color.text }]}>
+                  {tool.title}
+                </Text>
+                <Text style={styles.small}>
+                  {config.effective_tools.includes(tool.id)
+                    ? "Effective permission"
+                    : "Also grant this tool in Assistant permissions"}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
+        {tools.includes("render.create") ? (
+          <Notice text="An existing render permission is retained. This panel does not queue renders; choose owned media and its export settings in Creator Studio." />
+        ) : null}
+        <Text style={styles.small}>
+          A tool must be enabled here and in Assistant permissions. Both grants
+          are checked again before every action.
+        </Text>
+        <Action
+          title="Review Assistant permissions"
+          secondary
+          disabled={busy}
+          onPress={permissions}
+        />
+        <Field
+          label="Maximum steps per task (1–10)"
+          value={stepLimit}
+          onChangeText={(value) => {
+            setStepLimit(value);
+            setReview(false);
+          }}
+          keyboardType="number-pad"
+          maxLength={2}
+          editable={!busy && !loading}
+        />
+        <Field
+          label="Maximum tasks per UTC day (1–20)"
+          value={dailyLimit}
+          onChangeText={setDailyLimit}
+          keyboardType="number-pad"
+          maxLength={2}
+          editable={!busy && !loading}
+        />
+        <Action
+          title="Save agent policy"
+          icon={ShieldCheck}
+          busy={busy}
+          disabled={loading || !steps || !daily || !policyChanged}
+          onPress={() => void run(savePolicy)}
+        />
+      </View>
+    ) : null;
+  const taskComposer =
+    policy && config ? (
+      <View
+        style={[
+          styles.panel,
+          { gap: 14 },
+          desktop && { padding: 20, borderRadius: 14, minWidth: 0 },
+        ]}
+      >
+        <Text style={[styles.heading, desktop && { fontSize: 18 }]}>
+          Start a task
+        </Text>
+        <Text style={styles.small}>
+          Examples: “Search my media for launch clips, then create a project
+          called Autumn release” or “Review my insights and create a goal for my
+          next episode”.
+        </Text>
+        <Field
+          label="What should Ziipa complete?"
+          value={objective}
+          onChangeText={(value) => {
+            setObjective(value);
+            setReview(false);
+            requestId.current = Crypto.randomUUID();
+          }}
+          maxLength={3000}
+          multiline
+          editable={!busy}
+          placeholder="Organize my next release using my private library."
+        />
+        <Text style={styles.label}>Project context</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          <Pill
+            title="Whole workspace"
+            active={!projectId}
+            onPress={() => {
+              if (!busy) {
+                setProjectId(null);
+                setReview(false);
+                requestId.current = Crypto.randomUUID();
+              }
             }}
-            keyboardType="number-pad"
-            maxLength={2}
-            editable={!busy && !loading}
           />
-          <Field
-            label="Maximum tasks per UTC day (1–20)"
-            value={dailyLimit}
-            onChangeText={setDailyLimit}
-            keyboardType="number-pad"
-            maxLength={2}
-            editable={!busy && !loading}
-          />
-          <Action
-            title="Save agent policy"
-            icon={ShieldCheck}
-            busy={busy}
-            disabled={loading || !steps || !daily || !policyChanged}
-            onPress={() => void run(savePolicy)}
-          />
-        </View>
-      ) : null}
-
-      {policy && config ? (
-        <View style={[styles.panel, { gap: 14 }]}>
-          <Text style={styles.heading}>Start a task</Text>
-          <Text style={styles.small}>
-            Examples: “Search my media for launch clips, then create a project
-            called Autumn release” or “Review my insights and create a goal for
-            my next episode”.
-          </Text>
-          <Field
-            label="What should Ziipa complete?"
-            value={objective}
-            onChangeText={(value) => {
-              setObjective(value);
-              setReview(false);
-              requestId.current = Crypto.randomUUID();
-            }}
-            maxLength={3000}
-            multiline
-            editable={!busy}
-            placeholder="Organize my next release using my private library."
-          />
-          <Text style={styles.label}>Project context</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {projects.map((project) => (
             <Pill
-              title="Whole workspace"
-              active={!projectId}
+              key={project.id}
+              title={project.name}
+              active={projectId === project.id}
               onPress={() => {
                 if (!busy) {
-                  setProjectId(null);
+                  setProjectId(project.id);
                   setReview(false);
                   requestId.current = Crypto.randomUUID();
                 }
               }}
             />
-            {projects.map((project) => (
-              <Pill
-                key={project.id}
-                title={project.name}
-                active={projectId === project.id}
-                onPress={() => {
-                  if (!busy) {
-                    setProjectId(project.id);
-                    setReview(false);
-                    requestId.current = Crypto.randomUUID();
-                  }
-                }}
-              />
-            ))}
-          </View>
-          {policyChanged ? (
-            <Notice text="Save the updated policy before starting a task." />
-          ) : !policy.enabled ? (
-            <Notice text="Enable the agent and save its policy before starting a task." />
-          ) : !config.can_run ||
-            !config.effective_tools.some((tool) => tool !== "render.create") ? (
-            <Notice text="A running worker, healthy inference and at least one effective tool permission are required." />
-          ) : null}
-          {review && canQueue ? (
-            <>
-              <Notice
-                text={`Ziipa may complete ${config.effective_tools
-                  .filter((id) => id !== "render.create")
-                  .map(
-                    (id) =>
-                      config.tools.find((tool) => tool.id === id)?.title || id,
-                  )
-                  .join(
-                    ", ",
-                  )} without separate approval, for up to ${policy.max_steps} steps. No public publishing or wallet actions are included.`}
-              />
-              <Action
-                title="Confirm and queue task"
-                icon={Play}
-                busy={busy}
-                onPress={() => void run(queueTask)}
-              />
-              <Action
-                title="Keep editing"
-                secondary
-                disabled={busy}
-                onPress={() => setReview(false)}
-              />
-            </>
-          ) : (
-            <Action
-              title="Review task"
-              icon={Bot}
-              disabled={busy || loading || !canQueue}
-              onPress={() => setReview(true)}
-            />
-          )}
+          ))}
         </View>
-      ) : null}
-
-      <View style={[styles.panel, { gap: 14 }]}>
-        <Text style={styles.heading}>Task activity</Text>
-        <Text style={styles.small}>
-          {active
-            ? pollRemaining > 0 && foreground
-              ? "Active tasks refresh every 10 seconds for up to two minutes while this screen is visible."
-              : "Automatic refresh paused. Refresh manually to check progress."
-            : "Completed actions remain in your private activity history."}
-        </Text>
-        {!tasks.length ? (
-          <Text style={styles.body}>No autonomous tasks yet.</Text>
-        ) : (
-          tasks.map((task) => (
-            <Pressable
-              key={task.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Review ${task.objective}`}
-              disabled={busy}
-              onPress={() => void run(() => inspect(task))}
-              style={{
-                padding: 14,
-                gap: 8,
-                borderRadius: 14,
-                borderWidth: 1,
-                borderColor:
-                  selected?.id === task.id ? color.purple : color.border,
-                backgroundColor: color.bg,
-              }}
-            >
-              <Text style={[styles.label, { color: statusColor(task) }]}>
-                {readableStatus(task.status)} · {task.step_count}/
-                {task.max_steps} steps
-              </Text>
-              <Text style={[styles.body, { color: color.text }]}>
-                {task.objective}
-              </Text>
-              <Text style={styles.small}>{task.detail}</Text>
-              <Text style={styles.small}>
-                {new Date(task.updated_at).toLocaleString()}
-              </Text>
-            </Pressable>
-          ))
-        )}
-      </View>
-
-      {selected ? (
-        <View style={[styles.panel, { gap: 14 }]}>
-          <Text style={styles.heading}>Task receipts</Text>
-          <Text style={[styles.body, { color: color.text }]}>
-            {selected.objective}
-          </Text>
-          <Text style={[styles.label, { color: statusColor(selected) }]}>
-            {readableStatus(selected.status)}
-          </Text>
-          <Text style={styles.small}>{selected.detail}</Text>
-          {agentTaskActive(selected) ? (
-            <Action
-              title="Pause task"
-              secondary
-              icon={Pause}
-              busy={busy}
-              onPress={() => void run(() => control("pause"))}
+        {policyChanged ? (
+          <Notice text="Save the updated policy before starting a task." />
+        ) : !policy.enabled ? (
+          <Notice text="Enable the agent and save its policy before starting a task." />
+        ) : !config.can_run ||
+          !config.effective_tools.some((tool) => tool !== "render.create") ? (
+          <Notice text="A running worker, healthy inference and at least one effective tool permission are required." />
+        ) : null}
+        {review && canQueue ? (
+          <>
+            <Notice
+              text={`Ziipa may complete ${config.effective_tools
+                .filter((id) => id !== "render.create")
+                .map(
+                  (id) =>
+                    config.tools.find((tool) => tool.id === id)?.title || id,
+                )
+                .join(
+                  ", ",
+                )} without separate approval, for up to ${policy.max_steps} steps. No public publishing or wallet actions are included.`}
             />
-          ) : null}
-          {selected.status === "paused" || selected.status === "blocked" ? (
             <Action
-              title="Resume task"
+              title="Confirm and queue task"
               icon={Play}
               busy={busy}
-              disabled={
-                !config?.can_run ||
-                !policy?.enabled ||
-                !config?.effective_tools.length
-              }
-              onPress={() => void run(() => control("resume"))}
+              onPress={() => void run(queueTask)}
             />
-          ) : null}
-          {!["completed", "cancelled", "failed"].includes(selected.status) ? (
-            cancelReview === selected.id ? (
-              <>
-                <Notice text="Cancel the remaining work? Steps already completed are retained and are not rolled back." />
-                <Action
-                  title="Confirm cancellation"
-                  danger
-                  icon={X}
-                  busy={busy}
-                  onPress={() => void run(() => control("cancel"))}
-                />
-                <Action
-                  title="Keep task"
-                  secondary
-                  disabled={busy}
-                  onPress={() => setCancelReview(null)}
-                />
-              </>
-            ) : (
-              <Action
-                title="Cancel remaining work"
-                secondary
-                icon={X}
-                disabled={busy}
-                onPress={() => setCancelReview(selected.id)}
-              />
-            )
-          ) : null}
-          {!selected.steps.length ? (
-            <Text style={styles.small}>No verified steps yet.</Text>
-          ) : (
-            selected.steps.map((step) => (
-              <View
-                key={step.id}
-                style={{
-                  gap: 7,
-                  paddingTop: 12,
-                  borderTopWidth: 1,
-                  borderColor: color.border,
-                }}
-              >
-                <Text style={styles.label}>
-                  {step.position}. {step.title}
-                </Text>
-                <Text style={styles.small}>
-                  {step.tool} · {readableStatus(step.status)}
-                </Text>
-                {step.action_id ? (
-                  <Text style={styles.small}>
-                    Activity receipt: {step.action_id}
-                  </Text>
-                ) : null}
-                {step.result ? (
-                  <Text selectable style={styles.small}>
-                    {JSON.stringify(step.result, null, 2).slice(0, 1500)}
-                  </Text>
-                ) : null}
-              </View>
-            ))
-          )}
-        </View>
+            <Action
+              title="Keep editing"
+              secondary
+              disabled={busy}
+              onPress={() => setReview(false)}
+            />
+          </>
+        ) : (
+          <Action
+            title="Review task"
+            icon={Bot}
+            disabled={busy || loading || !canQueue}
+            onPress={() => setReview(true)}
+          />
+        )}
+      </View>
+    ) : null;
+  const taskActivity = (
+    <View
+      style={[
+        styles.panel,
+        { gap: 14 },
+        desktop && { padding: 20, borderRadius: 14, minWidth: 0 },
+      ]}
+    >
+      <Text style={[styles.heading, desktop && { fontSize: 18 }]}>
+        Task activity
+      </Text>
+      <Text style={styles.small}>
+        {active
+          ? pollRemaining > 0 && foreground
+            ? "Active tasks refresh every 10 seconds for up to two minutes while this screen is visible."
+            : "Automatic refresh paused. Refresh manually to check progress."
+          : "Completed actions remain in your private activity history."}
+      </Text>
+      {!tasks.length ? (
+        <Text style={styles.body}>No autonomous tasks yet.</Text>
+      ) : (
+        tasks.map((task) => (
+          <Pressable
+            key={task.id}
+            accessibilityRole="button"
+            accessibilityLabel={`Review ${task.objective}`}
+            disabled={busy}
+            onPress={() => void run(() => inspect(task))}
+            style={{
+              padding: 14,
+              gap: 8,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor:
+                selected?.id === task.id ? color.purple : color.border,
+              backgroundColor: color.bg,
+            }}
+          >
+            <Text style={[styles.label, { color: statusColor(task) }]}>
+              {readableStatus(task.status)} · {task.step_count}/{task.max_steps}{" "}
+              steps
+            </Text>
+            <Text style={[styles.body, { color: color.text }]}>
+              {task.objective}
+            </Text>
+            <Text style={styles.small}>{task.detail}</Text>
+            <Text style={styles.small}>
+              {new Date(task.updated_at).toLocaleString()}
+            </Text>
+          </Pressable>
+        ))
+      )}
+    </View>
+  );
+  const taskReceipts = selected ? (
+    <View
+      style={[
+        styles.panel,
+        { gap: 14 },
+        desktop && { padding: 20, borderRadius: 14, minWidth: 0 },
+      ]}
+    >
+      <Text style={[styles.heading, desktop && { fontSize: 18 }]}>
+        Task receipts
+      </Text>
+      <Text style={[styles.body, { color: color.text }]}>
+        {selected.objective}
+      </Text>
+      <Text style={[styles.label, { color: statusColor(selected) }]}>
+        {readableStatus(selected.status)}
+      </Text>
+      <Text style={styles.small}>{selected.detail}</Text>
+      {agentTaskActive(selected) ? (
+        <Action
+          title="Pause task"
+          secondary
+          icon={Pause}
+          busy={busy}
+          onPress={() => void run(() => control("pause"))}
+        />
       ) : null}
+      {selected.status === "paused" || selected.status === "blocked" ? (
+        <Action
+          title="Resume task"
+          icon={Play}
+          busy={busy}
+          disabled={
+            !config?.can_run ||
+            !policy?.enabled ||
+            !config?.effective_tools.length
+          }
+          onPress={() => void run(() => control("resume"))}
+        />
+      ) : null}
+      {!["completed", "cancelled", "failed"].includes(selected.status) ? (
+        cancelReview === selected.id ? (
+          <>
+            <Notice text="Cancel the remaining work? Steps already completed are retained and are not rolled back." />
+            <Action
+              title="Confirm cancellation"
+              danger
+              icon={X}
+              busy={busy}
+              onPress={() => void run(() => control("cancel"))}
+            />
+            <Action
+              title="Keep task"
+              secondary
+              disabled={busy}
+              onPress={() => setCancelReview(null)}
+            />
+          </>
+        ) : (
+          <Action
+            title="Cancel remaining work"
+            secondary
+            icon={X}
+            disabled={busy}
+            onPress={() => setCancelReview(selected.id)}
+          />
+        )
+      ) : null}
+      {!selected.steps.length ? (
+        <Text style={styles.small}>No verified steps yet.</Text>
+      ) : (
+        selected.steps.map((step) => (
+          <View
+            key={step.id}
+            style={{
+              gap: 7,
+              paddingTop: 12,
+              borderTopWidth: 1,
+              borderColor: color.border,
+            }}
+          >
+            <Text style={styles.label}>
+              {step.position}. {step.title}
+            </Text>
+            <Text style={styles.small}>
+              {step.tool} · {readableStatus(step.status)}
+            </Text>
+            {step.action_id ? (
+              <Text style={styles.small}>
+                Activity receipt: {step.action_id}
+              </Text>
+            ) : null}
+            {step.result ? (
+              <Text selectable style={styles.small}>
+                {JSON.stringify(step.result, null, 2).slice(0, 1500)}
+              </Text>
+            ) : null}
+          </View>
+        ))
+      )}
+    </View>
+  ) : null;
+  return desktop ? (
+    <View style={{ gap: 20 }}>
+      <View style={[styles.panel, { padding: 16, gap: 12, borderRadius: 14 }]}>
+        <View style={[styles.between, { gap: 12, flexWrap: "wrap" }]}>
+          {agentReadiness}
+          {refreshAgent}
+        </View>
+        {agentInference}
+        {agentDetail}
+        {agentError}
+        {agentNotice}
+      </View>
+      <View
+        style={{
+          flexDirection: contentWidth >= 940 ? "row" : "column",
+          gap: 20,
+          alignItems: "stretch",
+        }}
+      >
+        <View style={{ flex: 1, minWidth: 0, gap: 20 }}>
+          {taskComposer}
+          {taskActivity}
+          {taskReceipts}
+        </View>
+        <View
+          style={{
+            width: contentWidth >= 940 ? 350 : "100%",
+            minWidth: 0,
+            gap: 20,
+          }}
+        >
+          {agentSafety}
+          {policyEditor}
+        </View>
+      </View>
+    </View>
+  ) : (
+    <View style={{ gap: 18 }}>
+      {agentStatus}
+      {policyEditor}
+      {taskComposer}
+      {taskActivity}
+      {taskReceipts}
     </View>
   );
 }

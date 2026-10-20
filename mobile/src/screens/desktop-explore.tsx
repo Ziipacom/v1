@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react-native";
 import { useDesktopLayout } from "../components/desktop-layout";
+import { DesktopFeaturedGallery } from "../components/desktop-featured-gallery";
 import { Action, Cover, Notice, categories } from "../components/ui";
 import { inCreativeWorld, searchItems } from "../lib/domain";
 import type { Category, Item, RootStack } from "../lib/types";
@@ -33,7 +34,7 @@ import { color, font, styles } from "../theme";
 
 type Props = NativeStackScreenProps<RootStack, "Main">;
 
-/** Desktop discovery consumes the same server feed; covers never autoplay. */
+/** The gallery plays one trusted source; the discovery grid stays lightweight. */
 export function DesktopExplore({ route, navigation }: Props) {
   const { data, refresh, refreshing, loading, error } = useZiipa();
   const { contentWidth } = useDesktopLayout();
@@ -64,6 +65,17 @@ export function DesktopExplore({ route, navigation }: Props) {
         .filter(Boolean)
         .slice(0, 8),
     [published],
+  );
+  const featured = useMemo(
+    () =>
+      items
+        .filter(
+          (item) =>
+            !!item.media_url &&
+            /^(video|audio)\//.test(item.content_type || ""),
+        )
+        .slice(0, 8),
+    [items],
   );
   const columns = contentWidth >= 1400 ? 4 : contentWidth >= 980 ? 3 : 2;
   // The sidebar owns its width. onLayout below measures only this grid's space.
@@ -273,6 +285,9 @@ export function DesktopExplore({ route, navigation }: Props) {
           </View>
         ) : (
           <>
+            {!!featured.length && (
+              <DesktopFeaturedGallery items={featured} open={open} />
+            )}
             <View style={s.sectionHeading}>
               <Text accessibilityRole="header" style={s.sectionTitle}>
                 {saved
@@ -471,8 +486,8 @@ function Step({
 }
 
 const s = StyleSheet.create({
-  page: { padding: 32, paddingBottom: 48, flexGrow: 1 },
-  content: { width: "100%", maxWidth: 1440, alignSelf: "center", gap: 24 },
+  page: { padding: 24, paddingBottom: 40, flexGrow: 1 },
+  content: { width: "100%", maxWidth: 1440, alignSelf: "center", gap: 20 },
   headingRow: {
     flexDirection: "row",
     gap: 24,
@@ -482,9 +497,9 @@ const s = StyleSheet.create({
   heading: {
     color: color.text,
     fontFamily: font.bold,
-    fontSize: 38,
-    lineHeight: 43,
-    letterSpacing: -1,
+    fontSize: 28,
+    lineHeight: 34,
+    letterSpacing: -0.5,
   },
   toolbar: { flexDirection: "row", gap: 12, alignItems: "center" },
   search: {
@@ -588,7 +603,7 @@ const s = StyleSheet.create({
   },
   cover: {
     width: "100%",
-    aspectRatio: 3 / 4,
+    aspectRatio: 16 / 9,
     overflow: "hidden",
     backgroundColor: color.raised,
   },
@@ -616,12 +631,12 @@ const s = StyleSheet.create({
     borderColor: "#FFFFFF66",
   },
   savedBadge: { position: "absolute", right: 14, bottom: 19 },
-  cardCopy: { padding: 17, gap: 7 },
+  cardCopy: { padding: 13, gap: 5 },
   cardTitle: {
     color: color.text,
     fontFamily: font.semibold,
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 20,
   },
   cardTags: { color: color.faint, fontFamily: font.regular, fontSize: 12 },
   noResults: {

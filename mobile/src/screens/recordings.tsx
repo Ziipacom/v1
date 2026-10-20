@@ -1,10 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Pressable, ScrollView, Text, View } from "react-native";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  AppState,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Bell, Check, Clapperboard, RefreshCw } from "lucide-react-native";
 import { Action, Field, Notice, Pill } from "../components/ui";
 import { MediaPlayer } from "../components/player";
+import { useDesktopLayout } from "../components/desktop-layout";
 import { useZiipa } from "../provider";
 import { creatorRequest } from "../lib/creator-request";
 import { useOperationScope } from "../lib/use-operation-scope";
@@ -26,6 +41,16 @@ import type { Bootstrap, Item, RootStack } from "../lib/types";
 import { color, styles } from "../theme";
 
 type Props = NativeStackScreenProps<RootStack, "Recordings">;
+function DesktopGroup({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style: StyleProp<ViewStyle>;
+}) {
+  const { desktop } = useDesktopLayout();
+  return desktop ? <View style={style}>{children}</View> : <>{children}</>;
+}
 function Toggle({
   title,
   checked,
@@ -74,6 +99,7 @@ export function RecordingsScreen(props: Props) {
 }
 function ScopedRecordingsScreen({ navigation, route }: Props) {
   const { api, session, guest } = useZiipa();
+  const { desktop, contentWidth } = useDesktopLayout();
   const focused = useIsFocused();
   const [foreground, setForeground] = useState(
     AppState.currentState === "active",
@@ -255,349 +281,533 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.page}
+      contentContainerStyle={[
+        styles.page,
+        desktop && {
+          width: "100%",
+          maxWidth: 1480,
+          alignSelf: "center",
+          paddingHorizontal: 28,
+          paddingTop: 24,
+          gap: 20,
+        },
+      ]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.eyebrow}>LIVE → RECORDING → REVIEW</Text>
-      <Text style={styles.title}>Keep the moment.</Text>
-      <Notice text="Recordings and clips are private Ziipa drafts. Automatic excerpts never publish, post to social networks or start another stream. Provider recording retention and access are separate from Ziipa privacy." />
-      <Action
-        secondary
-        title="Notification preferences"
-        icon={Bell}
-        disabled={busy}
-        onPress={() => navigation.navigate("Notifications")}
-      />
-      {config && (
-        <View style={styles.panel}>
-          <Text style={styles.heading}>Recording readiness</Text>
-          <Text style={styles.body}>{config.detail}</Text>
-          <Text style={styles.small}>
-            Import {config.enabled ? "enabled" : "disabled"} · webhook{" "}
-            {config.webhook_configured ? "configured" : "needs setup"} · worker{" "}
-            {config.worker_ready ? "ready" : "not ready"}. Up to{" "}
-            {Math.round(config.max_bytes / 1024 / 1024)} MiB /{" "}
-            {Math.round(config.max_duration_seconds / 60)} minutes. This is
-            configuration readiness, not proof that a public livestream
-            succeeded.
-          </Text>
-        </View>
-      )}
-      {!!error && <Notice text={error} error />}
-      {!!message && <Notice text={message} />}
-      <View style={styles.panel}>
-        <Text style={styles.heading}>Your broadcast recordings</Text>
-        <View style={[styles.row, { flexWrap: "wrap" }]}>
-          <Pill
-            title="All recordings"
-            active={!streamId}
-            onPress={() => {
-              if (!busy) setStreamId(null);
-            }}
-          />
-          {streams.map((value) => (
-            <Pill
-              key={value.id}
-              title={value.title}
-              active={streamId === value.id}
-              onPress={() => {
-                if (!busy) setStreamId(value.id);
-              }}
+      {desktop ? (
+        <View
+          style={[
+            styles.between,
+            { flexWrap: "wrap", alignItems: "flex-start", gap: 16 },
+          ]}
+        >
+          <View style={{ flex: 1, minWidth: 220, gap: 5 }}>
+            <Text style={[styles.heading, { fontSize: 25 }]}>
+              Recordings & clips
+            </Text>
+            <Text style={styles.small}>
+              Private recordings, excerpt workflows and processing receipts.
+            </Text>
+          </View>
+          <View style={[styles.row, { gap: 8, flexWrap: "wrap" }]}>
+            <Action
+              secondary
+              title="Notifications"
+              icon={Bell}
+              disabled={busy}
+              onPress={() => navigation.navigate("Notifications")}
             />
-          ))}
+            <Action
+              secondary
+              title="Refresh"
+              icon={RefreshCw}
+              disabled={busy}
+              busy={loading}
+              onPress={() => void load()}
+            />
+          </View>
         </View>
-        <Text style={styles.small}>
-          Recording is selected when preparing a broadcast. It cannot be enabled
-          retroactively for a stream created without recording.
+      ) : (
+        <>
+          <Text style={styles.eyebrow}>LIVE → RECORDING → REVIEW</Text>
+          <Text style={styles.title}>Keep the moment.</Text>
+          <Notice text="Recordings and clips are private Ziipa drafts. Automatic excerpts never publish, post to social networks or start another stream. Provider recording retention and access are separate from Ziipa privacy." />
+          <Action
+            secondary
+            title="Notification preferences"
+            icon={Bell}
+            disabled={busy}
+            onPress={() => navigation.navigate("Notifications")}
+          />
+        </>
+      )}
+      {desktop && (
+        <Text style={[styles.small, { color: "#A28CB6" }]}>
+          Recordings and excerpts stay private in Ziipa. Automatic processing
+          never publishes or starts another stream; provider retention is
+          separate.
         </Text>
-      </View>
-      {stream && policy && (
-        <View style={styles.panel}>
-          <Text style={styles.heading}>Private excerpt automation</Text>
-          <Text style={styles.body}>
-            {stream.title} · recording {stream.record ? "enabled" : "off"}
-          </Text>
-          <Text style={styles.small}>{policy.detail}</Text>
-          <Toggle
-            title="Create private excerpts when this recording is imported"
-            checked={enabled}
-            disabled={busy || !stream.record}
-            change={() => {
-              setEnabled(!enabled);
-              setConsent(false);
-            }}
-          />
-          <Field
-            label="Number of excerpts (1–3)"
-            value={count}
-            onChangeText={(value) => {
-              setCount(value);
-              setConsent(false);
-            }}
-            keyboardType="number-pad"
-            editable={!busy}
-            maxLength={1}
-          />
-          <Field
-            label="Seconds per excerpt (15–90)"
-            value={seconds}
-            onChangeText={(value) => {
-              setSeconds(value);
-              setConsent(false);
-            }}
-            keyboardType="number-pad"
-            editable={!busy}
-            maxLength={2}
-          />
-          <View style={[styles.row, { flexWrap: "wrap" }]}>
-            {campaignFormats.map((format) => (
+      )}
+      {desktop && !!error && <Notice text={error} error />}
+      {desktop && !!message && <Notice text={message} />}
+      <DesktopGroup
+        style={{
+          flexDirection: contentWidth >= 780 ? "row" : "column",
+          alignItems: "flex-start",
+          gap: 22,
+        }}
+      >
+        <DesktopGroup
+          style={{
+            width:
+              contentWidth >= 780 ? (contentWidth >= 1200 ? 320 : 270) : "100%",
+            gap: 18,
+          }}
+        >
+          {config && (
+            <View
+              style={[
+                styles.panel,
+                desktop && { padding: 17, borderRadius: 12 },
+              ]}
+            >
+              <Text style={[styles.heading, desktop && { fontSize: 17 }]}>
+                Recording readiness
+              </Text>
+              <Text
+                style={[
+                  styles.body,
+                  desktop && { fontSize: 13, lineHeight: 20 },
+                ]}
+              >
+                {config.detail}
+              </Text>
+              <Text style={styles.small}>
+                Import {config.enabled ? "enabled" : "disabled"} · webhook{" "}
+                {config.webhook_configured ? "configured" : "needs setup"} ·
+                worker {config.worker_ready ? "ready" : "not ready"}. Up to{" "}
+                {Math.round(config.max_bytes / 1024 / 1024)} MiB /{" "}
+                {Math.round(config.max_duration_seconds / 60)} minutes. This is
+                configuration readiness, not proof that a public livestream
+                succeeded.
+              </Text>
+            </View>
+          )}
+          {!desktop && !!error && <Notice text={error} error />}
+          {!desktop && !!message && <Notice text={message} />}
+          <View
+            style={[styles.panel, desktop && { padding: 17, borderRadius: 12 }]}
+          >
+            <Text style={[styles.heading, desktop && { fontSize: 17 }]}>
+              {desktop ? "Broadcast filter" : "Your broadcast recordings"}
+            </Text>
+            <View style={[styles.row, { flexWrap: "wrap" }]}>
               <Pill
-                key={format.id}
-                title={format.title}
-                active={rendition === format.id}
+                title="All recordings"
+                active={!streamId}
                 onPress={() => {
-                  if (!busy) {
-                    setRendition(format.id);
-                    setConsent(false);
-                  }
+                  if (!busy) setStreamId(null);
                 }}
               />
-            ))}
+              {streams.map((value) => (
+                <Pill
+                  key={value.id}
+                  title={value.title}
+                  active={streamId === value.id}
+                  onPress={() => {
+                    if (!busy) setStreamId(value.id);
+                  }}
+                />
+              ))}
+            </View>
+            <Text style={styles.small}>
+              Recording is selected when preparing a broadcast. It cannot be
+              enabled retroactively for a stream created without recording.
+            </Text>
           </View>
-          <Text style={styles.small}>
-            Excerpts are the first sequential portions of the recording, not
-            AI-selected highlights. Formats fit the frame with padding; they do
-            not crop people or objects.
-          </Text>
-          {enabled && (
-            <Toggle
-              title="I have the rights to this recording and consent to importing it and generating these private excerpts."
-              checked={consent}
-              disabled={busy}
-              change={() => setConsent(!consent)}
-            />
-          )}
-          <Action
-            title="Save private recording workflow"
-            icon={Clapperboard}
-            disabled={
-              busy ||
-              (enabled && (!config?.enabled || !stream.record || !consent))
-            }
-            onPress={() =>
-              void run(async (valid) => {
-                const fields = recordingAutomationInput(
-                  policy,
-                  { enabled, consent, count, seconds, rendition },
-                  stream.record,
-                );
-                const result = await creatorRequest<RecordingAutomation>(
-                  `/api/live/streams/${stream.id}/recording-automation`,
-                  session.access_token,
-                  "PUT",
-                  fields,
-                );
-                if (valid()) {
-                  setPolicy(result);
-                  setConsent(false);
-                  setMessage(
-                    "Recording workflow saved. Outputs stay private; review a rendered clip in Campaigns before approving publication.",
-                  );
-                }
-              })
-            }
-          />
-          <Action
-            secondary
-            title="Open this broadcast's manual live controls"
-            disabled={busy}
-            onPress={() =>
-              navigation.navigate("Live", {
-                tab: "broadcast",
-                streamId: stream.id,
-              })
-            }
-          />
-        </View>
-      )}
-      {preview && (
-        <View style={styles.panel}>
-          <Text style={styles.heading}>{preview.label}</Text>
-          <Text style={styles.body}>{preview.item.title}</Text>
-          <MediaPlayer
-            key={`${preview.item.id}:${preview.item.media_id}`}
-            item={preview.item}
-          />
-          <Action
-            secondary
-            title="Close preview"
-            onPress={() => setPreview(null)}
-          />
-        </View>
-      )}
-      {receipts.length === 0 && !loading && (
-        <Notice text="No imported recording receipts yet. Recording-enabled streams appear here only after a verified provider recording event and worker import." />
-      )}
-      {receipts.map((receipt) => (
-        <View key={receipt.id} style={styles.panel}>
-          <Text style={styles.heading}>{receipt.title}</Text>
-          <Text style={styles.eyebrow}>
-            {receipt.status.replace(/_/g, " ")}
-          </Text>
-          <Text style={styles.body}>{receipt.detail}</Text>
-          <Text style={styles.small}>
-            {new Date(receipt.created_at).toLocaleString()}
-            {receipt.duration != null
-              ? ` · ${receipt.duration.toFixed(1)}s`
-              : ""}
-            {receipt.size != null
-              ? ` · ${(receipt.size / 1024 / 1024).toFixed(1)} MiB`
-              : ""}{" "}
-            · revision {receipt.revision}
-          </Text>
-          {receipt.item_id && receipt.status === "ready" && (
-            <>
-              <Action
-                secondary
-                title="Preview imported recording (source)"
-                disabled={busy}
-                onPress={() =>
-                  void run(async (valid) => {
-                    const item = await ownedItem(receipt.item_id!, valid);
-                    if (valid())
-                      setPreview({
-                        item,
-                        label: "Private imported source · not a rendered clip",
-                      });
-                  })
-                }
-              />
-              <Action
-                secondary
-                title="Edit full recording"
-                disabled={busy}
-                onPress={() =>
-                  void run(async (valid) => {
-                    const item = await ownedItem(receipt.item_id!, valid);
-                    if (valid()) navigation.navigate("Composer", { item });
-                  })
-                }
-              />
-            </>
-          )}
-          {receipt.clips.map((clip) => (
+          {stream && policy && (
             <View
-              key={clip.item_id}
-              style={{
-                gap: 10,
-                borderTopWidth: 1,
-                borderColor: color.border,
-                paddingTop: 15,
-              }}
+              style={[
+                styles.panel,
+                desktop && { padding: 17, borderRadius: 12 },
+              ]}
             >
-              <Text style={styles.body}>
-                Excerpt {clip.start}s–{clip.end}s · {clip.rendition} ·{" "}
-                {clip.status}
+              <Text style={[styles.heading, desktop && { fontSize: 17 }]}>
+                Private excerpt automation
               </Text>
-              <Text style={styles.small}>{clip.detail}</Text>
-              {clip.status === "ready" && clip.render_id && (
-                <Action
-                  title="Preview actual rendered clip"
-                  secondary
+              <Text style={styles.body}>
+                {stream.title} · recording {stream.record ? "enabled" : "off"}
+              </Text>
+              <Text style={styles.small}>{policy.detail}</Text>
+              <Toggle
+                title="Create private excerpts when this recording is imported"
+                checked={enabled}
+                disabled={busy || !stream.record}
+                change={() => {
+                  setEnabled(!enabled);
+                  setConsent(false);
+                }}
+              />
+              <DesktopGroup style={{ flexDirection: "row", gap: 12 }}>
+                <DesktopGroup style={{ flex: 1, minWidth: 0 }}>
+                  <Field
+                    label="Number of excerpts (1–3)"
+                    value={count}
+                    onChangeText={(value) => {
+                      setCount(value);
+                      setConsent(false);
+                    }}
+                    keyboardType="number-pad"
+                    editable={!busy}
+                    maxLength={1}
+                  />
+                </DesktopGroup>
+                <DesktopGroup style={{ flex: 1, minWidth: 0 }}>
+                  <Field
+                    label="Seconds per excerpt (15–90)"
+                    value={seconds}
+                    onChangeText={(value) => {
+                      setSeconds(value);
+                      setConsent(false);
+                    }}
+                    keyboardType="number-pad"
+                    editable={!busy}
+                    maxLength={2}
+                  />
+                </DesktopGroup>
+              </DesktopGroup>
+              <View style={[styles.row, { flexWrap: "wrap" }]}>
+                {campaignFormats.map((format) => (
+                  <Pill
+                    key={format.id}
+                    title={format.title}
+                    active={rendition === format.id}
+                    onPress={() => {
+                      if (!busy) {
+                        setRendition(format.id);
+                        setConsent(false);
+                      }
+                    }}
+                  />
+                ))}
+              </View>
+              <Text style={styles.small}>
+                Excerpts are the first sequential portions of the recording, not
+                AI-selected highlights. Formats fit the frame with padding; they
+                do not crop people or objects.
+              </Text>
+              {enabled && (
+                <Toggle
+                  title="I have the rights to this recording and consent to importing it and generating these private excerpts."
+                  checked={consent}
                   disabled={busy}
-                  onPress={() => void run((valid) => clipPreview(clip, valid))}
+                  change={() => setConsent(!consent)}
                 />
               )}
               <Action
-                title="Review clip in editor"
-                secondary
-                disabled={busy}
+                title="Save private recording workflow"
+                icon={Clapperboard}
+                disabled={
+                  busy ||
+                  (enabled && (!config?.enabled || !stream.record || !consent))
+                }
                 onPress={() =>
                   void run(async (valid) => {
-                    const item = await ownedItem(clip.item_id, valid);
-                    if (valid()) navigation.navigate("Composer", { item });
+                    const fields = recordingAutomationInput(
+                      policy,
+                      { enabled, consent, count, seconds, rendition },
+                      stream.record,
+                    );
+                    const result = await creatorRequest<RecordingAutomation>(
+                      `/api/live/streams/${stream.id}/recording-automation`,
+                      session.access_token,
+                      "PUT",
+                      fields,
+                    );
+                    if (valid()) {
+                      setPolicy(result);
+                      setConsent(false);
+                      setMessage(
+                        "Recording workflow saved. Outputs stay private; review a rendered clip in Campaigns before approving publication.",
+                      );
+                    }
                   })
                 }
               />
               <Action
-                title="Create a publication campaign"
-                disabled={busy || clip.status !== "ready"}
+                secondary
+                title="Open this broadcast's manual live controls"
+                disabled={busy}
                 onPress={() =>
-                  void run(async (valid) => {
-                    await ownedItem(clip.item_id, valid);
-                    if (valid())
-                      navigation.navigate("Campaigns", {
-                        itemId: clip.item_id,
-                      });
+                  navigation.navigate("Live", {
+                    tab: "broadcast",
+                    streamId: stream.id,
                   })
                 }
               />
+            </View>
+          )}
+        </DesktopGroup>
+        <DesktopGroup style={{ flex: 1, width: "100%", minWidth: 0, gap: 18 }}>
+          {desktop && (
+            <View style={[styles.between, { flexWrap: "wrap", gap: 10 }]}>
+              <Text style={[styles.heading, { fontSize: 18 }]}>
+                Recording library
+              </Text>
               <Text style={styles.small}>
-                The saved clip is an editable private trim of the source.
-                Campaigns renders its current saved edit again and requires an
-                explicit preview, schedule and destination approval.
+                {loading
+                  ? "Refreshing…"
+                  : `${receipts.length} import receipts · ${receipts.reduce((sum, receipt) => sum + receipt.clips.length, 0)} excerpts`}
               </Text>
             </View>
+          )}
+          {preview && (
+            <View
+              style={[
+                styles.panel,
+                desktop && { padding: 20, borderRadius: 12 },
+              ]}
+            >
+              <Text style={[styles.heading, desktop && { fontSize: 18 }]}>
+                {preview.label}
+              </Text>
+              <Text style={styles.body}>{preview.item.title}</Text>
+              <MediaPlayer
+                key={`${preview.item.id}:${preview.item.media_id}`}
+                item={preview.item}
+              />
+              <Action
+                secondary
+                title="Close preview"
+                onPress={() => setPreview(null)}
+              />
+            </View>
+          )}
+          {receipts.length === 0 &&
+            !loading &&
+            (desktop ? (
+              <View
+                style={{
+                  minHeight: 265,
+                  borderWidth: 1,
+                  borderStyle: "dashed",
+                  borderColor: "#513861",
+                  borderRadius: 14,
+                  padding: 28,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 14,
+                }}
+              >
+                <Clapperboard size={34} color="#B392D4" strokeWidth={1.3} />
+                <Text
+                  style={[
+                    styles.heading,
+                    { fontSize: 20, textAlign: "center" },
+                  ]}
+                >
+                  No imported recordings yet
+                </Text>
+                <Text
+                  style={[styles.small, { textAlign: "center", maxWidth: 390 }]}
+                >
+                  Recording-enabled broadcasts appear after a verified provider
+                  event and worker import. Nothing is created from this page
+                  automatically.
+                </Text>
+                <Action
+                  secondary
+                  title="Open live controls"
+                  onPress={() =>
+                    navigation.navigate("Live", { tab: "broadcast" })
+                  }
+                />
+              </View>
+            ) : (
+              <Notice text="No imported recording receipts yet. Recording-enabled streams appear here only after a verified provider recording event and worker import." />
+            ))}
+          {receipts.map((receipt) => (
+            <View
+              key={receipt.id}
+              style={[
+                styles.panel,
+                desktop && { padding: 20, borderRadius: 12 },
+              ]}
+            >
+              <Text style={[styles.heading, desktop && { fontSize: 18 }]}>
+                {receipt.title}
+              </Text>
+              <Text style={styles.eyebrow}>
+                {receipt.status.replace(/_/g, " ")}
+              </Text>
+              <Text style={styles.body}>{receipt.detail}</Text>
+              <Text style={styles.small}>
+                {new Date(receipt.created_at).toLocaleString()}
+                {receipt.duration != null
+                  ? ` · ${receipt.duration.toFixed(1)}s`
+                  : ""}
+                {receipt.size != null
+                  ? ` · ${(receipt.size / 1024 / 1024).toFixed(1)} MiB`
+                  : ""}{" "}
+                · revision {receipt.revision}
+              </Text>
+              {receipt.item_id && receipt.status === "ready" && (
+                <DesktopGroup
+                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}
+                >
+                  <Action
+                    secondary
+                    title="Preview imported recording (source)"
+                    disabled={busy}
+                    onPress={() =>
+                      void run(async (valid) => {
+                        const item = await ownedItem(receipt.item_id!, valid);
+                        if (valid())
+                          setPreview({
+                            item,
+                            label:
+                              "Private imported source · not a rendered clip",
+                          });
+                      })
+                    }
+                  />
+                  <Action
+                    secondary
+                    title="Edit full recording"
+                    disabled={busy}
+                    onPress={() =>
+                      void run(async (valid) => {
+                        const item = await ownedItem(receipt.item_id!, valid);
+                        if (valid()) navigation.navigate("Composer", { item });
+                      })
+                    }
+                  />
+                </DesktopGroup>
+              )}
+              {receipt.clips.map((clip) => (
+                <View
+                  key={clip.item_id}
+                  style={{
+                    gap: 10,
+                    borderTopWidth: 1,
+                    borderColor: color.border,
+                    paddingTop: 15,
+                  }}
+                >
+                  <Text style={styles.body}>
+                    Excerpt {clip.start}s–{clip.end}s · {clip.rendition} ·{" "}
+                    {clip.status}
+                  </Text>
+                  <Text style={styles.small}>{clip.detail}</Text>
+                  <DesktopGroup
+                    style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}
+                  >
+                    {clip.status === "ready" && clip.render_id && (
+                      <Action
+                        title="Preview actual rendered clip"
+                        secondary
+                        disabled={busy}
+                        onPress={() =>
+                          void run((valid) => clipPreview(clip, valid))
+                        }
+                      />
+                    )}
+                    <Action
+                      title="Review clip in editor"
+                      secondary
+                      disabled={busy}
+                      onPress={() =>
+                        void run(async (valid) => {
+                          const item = await ownedItem(clip.item_id, valid);
+                          if (valid())
+                            navigation.navigate("Composer", { item });
+                        })
+                      }
+                    />
+                    <Action
+                      title="Create a publication campaign"
+                      disabled={busy || clip.status !== "ready"}
+                      onPress={() =>
+                        void run(async (valid) => {
+                          await ownedItem(clip.item_id, valid);
+                          if (valid())
+                            navigation.navigate("Campaigns", {
+                              itemId: clip.item_id,
+                            });
+                        })
+                      }
+                    />
+                  </DesktopGroup>
+                  <Text style={styles.small}>
+                    The saved clip is an editable private trim of the source.
+                    Campaigns renders its current saved edit again and requires
+                    an explicit preview, schedule and destination approval.
+                  </Text>
+                </View>
+              ))}
+              {["blocked", "failed"].includes(receipt.status) && (
+                <Action
+                  secondary
+                  title="Retry recording import"
+                  disabled={busy || !config?.worker_ready}
+                  onPress={() =>
+                    void run(async (valid) => {
+                      const result = await api<RecordingReceipt>(
+                        `${recordingRoot}/${receipt.id}/retry`,
+                        { revision: receipt.revision },
+                      );
+                      if (valid())
+                        setReceipts((previous) =>
+                          previous.map((value) =>
+                            value.id === result.id ? result : value,
+                          ),
+                        );
+                    })
+                  }
+                />
+              )}
+              {["queued", "processing"].includes(receipt.status) && (
+                <Action
+                  secondary
+                  title="Cancel pending recording work"
+                  disabled={busy}
+                  onPress={() =>
+                    void run(async (valid) => {
+                      const result = await api<RecordingReceipt>(
+                        `${recordingRoot}/${receipt.id}/cancel`,
+                        { revision: receipt.revision },
+                      );
+                      if (valid())
+                        setReceipts((previous) =>
+                          previous.map((value) =>
+                            value.id === result.id ? result : value,
+                          ),
+                        );
+                    })
+                  }
+                />
+              )}
+            </View>
           ))}
-          {["blocked", "failed"].includes(receipt.status) && (
-            <Action
-              secondary
-              title="Retry recording import"
-              disabled={busy || !config?.worker_ready}
-              onPress={() =>
-                void run(async (valid) => {
-                  const result = await api<RecordingReceipt>(
-                    `${recordingRoot}/${receipt.id}/retry`,
-                    { revision: receipt.revision },
-                  );
-                  if (valid())
-                    setReceipts((previous) =>
-                      previous.map((value) =>
-                        value.id === result.id ? result : value,
-                      ),
-                    );
-                })
-              }
-            />
+          {items.length > 0 && (
+            <Text style={styles.small}>
+              Owned sources loaded from your account. Imported drafts remain
+              available in Studio even after this recording receipt finishes.
+            </Text>
           )}
-          {["queued", "processing"].includes(receipt.status) && (
+          {!desktop && (
             <Action
               secondary
-              title="Cancel pending recording work"
+              title="Refresh recordings and clips"
+              icon={RefreshCw}
               disabled={busy}
-              onPress={() =>
-                void run(async (valid) => {
-                  const result = await api<RecordingReceipt>(
-                    `${recordingRoot}/${receipt.id}/cancel`,
-                    { revision: receipt.revision },
-                  );
-                  if (valid())
-                    setReceipts((previous) =>
-                      previous.map((value) =>
-                        value.id === result.id ? result : value,
-                      ),
-                    );
-                })
-              }
+              busy={loading}
+              onPress={() => void load()}
             />
           )}
-        </View>
-      ))}
-      {items.length > 0 && (
-        <Text style={styles.small}>
-          Owned sources loaded from your account. Imported drafts remain
-          available in Studio even after this recording receipt finishes.
-        </Text>
-      )}
-      <Action
-        secondary
-        title="Refresh recordings and clips"
-        icon={RefreshCw}
-        disabled={busy}
-        busy={loading}
-        onPress={() => void load()}
-      />
+        </DesktopGroup>
+      </DesktopGroup>
     </ScrollView>
   );
 }
