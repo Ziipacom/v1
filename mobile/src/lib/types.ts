@@ -112,6 +112,9 @@ export type User = {
   email: string;
   joined?: string;
   is_moderator?: boolean;
+  role?: "member" | "moderator" | "admin" | "owner";
+  is_admin?: boolean;
+  account_status?: "active" | "suspended";
 };
 export type Session = { access_token: string; expires_at: string; user: User };
 export type Comment = {
@@ -165,6 +168,7 @@ export type RootStack = {
   Recordings: { streamId?: string } | undefined;
   Notifications: { deliveryId?: string } | undefined;
   Settings: undefined;
+  Administration: undefined;
   Legal: { kind: "privacy" | "terms" | "community" };
   Moderation: undefined;
 };

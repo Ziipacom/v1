@@ -207,9 +207,22 @@ def test_native_block_report_and_moderator_removal(client, tmp_path, monkeypatch
     assert client.post(f"/api/creator/items/{item['id']}/comments", headers=viewer, json={'body': 'Cannot contact'}).status_code == 403
     mod = native_headers(client, 'moderator@example.com', 'Moderator')
     monkeypatch.setattr(settings, 'moderator_emails', 'moderator@example.com')
-    queue = client.get('/api/moderation/reports', headers=mod).json()
-    assert queue[0]['item']['title'] == payload['title']
-    assert client.post(f"/api/moderation/reports/{report.json()['id']}", headers=mod, json={'action': 'remove'}).status_code == 200
+    # Email configuration no longer grants administrative authority.
+    assert client.get('/api/moderation/reports', headers=mod).status_code == 403
+    from admin_services import bootstrap_owner
+    test_session = next(app.dependency_overrides[db]())
+    mod_id = client.get('/api/me', headers=mod).json()['id']
+    bootstrap_owner(test_session, user_id=mod_id, email='moderator@example.com',
+                    reason='Explicit isolated test owner assignment', apply=True)
+    test_session.commit()
+    assert client.get('/api/moderation/reports', headers=mod).status_code == 410
+    queue = client.get('/api/admin/reports', headers=mod).json()['items']
+    assert queue[0]['item_id'] == item['id']
+    assert 'item' not in queue[0]
+    assert client.post(f"/api/moderation/reports/{report.json()['id']}", headers=mod, json={'action': 'remove'}).status_code == 410
+    assert client.patch(f"/api/admin/content/{item['id']}/visibility", headers=mod,
+                        json={'hidden': True, 'expected_version': 0,
+                              'reason': 'Reviewed reported spam in the isolated test.'}).status_code == 200
     assert client.get(upload['url'], headers=viewer).status_code == 404
     assert client.post(f"/api/creator/items/{item['id']}", headers=owner, json=payload).status_code == 403
 

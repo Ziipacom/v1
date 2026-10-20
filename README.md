@@ -1,4 +1,25 @@
-# Ziipa live, private clips and notifications — 19 October 2026
+# Ziipa administration — 20 October 2026
+
+The mobile app and web portal now share a protected Administration dashboard
+for users, reversible content/comment moderation, reports, app controls and an
+append-only decision history. Only the explicitly appointed owner can assign
+staff roles. No signup, email allowlist or client-side flag grants administrative
+access. Existing sessions use current database permissions; suspension blocks
+new public actions as well as interactive access. Private drafts and provider
+secrets are excluded from administrative content listings.
+
+Deploy the matching API and scheduler with migration `20261020_0012` before
+explicitly assigning the verified existing owner account. This source update
+alone does not promote any production account. See
+[backend/ADMINISTRATION.md](backend/ADMINISTRATION.md) for the role boundaries,
+owner bootstrap and coordinated free-worker deployment requirements.
+
+Local verification: 1,047 backend tests pass with five opt-in checks skipped;
+87 mobile tests, TypeScript, 13 website tests and the combined website/Studio
+production build pass. Production role assignment and a new signed Android
+binary require their own deployment/build verification.
+
+## Earlier live, private clips and notifications — 19 October 2026
 
 Mobile and web portal now share Recordings and Notifications screens. Opt-in
 signed Livepeer callbacks feed an owned private recording importer and bounded

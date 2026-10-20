@@ -76,14 +76,19 @@ class ResolveInput(BaseModel):
     action: Literal['remove', 'dismiss']
 
 
-def native_session(user):
+def native_session(user, session):
+    from admin_services import enforce_account_active, admin_role
+    enforce_account_active(session, user)
+    role = admin_role(session, user)
     token = secrets.token_urlsafe(32)
     remember_session(user.id, session_key('mobile_session:', token), TOKEN_TTL)
-    return {'access_token': token, 'token_type': 'Bearer', 'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=TOKEN_TTL)).isoformat(), 'user': {'id': user.id, 'name': user.name, 'email': user.email}}
+    return {'access_token': token, 'token_type': 'Bearer', 'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=TOKEN_TTL)).isoformat(), 'user': {'id': user.id, 'name': user.name, 'email': user.email, 'role': role, 'account_status': 'active', 'is_admin': role in {'owner', 'admin'}, 'is_moderator': role in {'owner', 'admin', 'moderator'}}}
 
 
 @router.post('/api/mobile/auth/register', status_code=201, dependencies=[Depends(guard)])
 def register_native(data: NativeRegister, session: Session = Depends(db)):
+    from admin_services import require_registration_open
+    require_registration_open(session)
     user = User(name=data.name.strip(), email=str(data.email).lower(), password_hash=passwords.hash(data.password))
     session.add(user)
     try:
@@ -97,7 +102,7 @@ def register_native(data: NativeRegister, session: Session = Depends(db)):
     if settings.require_email_verification:
         return {'verification_required': True,
                 'message': 'Check your email to verify the account, then sign in.'}
-    return native_session(user)
+    return native_session(user, session)
 
 
 @router.post('/api/mobile/auth/login', dependencies=[Depends(guard)])
@@ -108,7 +113,7 @@ def login_native(data: Login, session: Session = Depends(db)):
         raise HTTPException(401, 'Email or password is incorrect')
     if settings.require_email_verification and not state_for(session, user).email_verified_at:
         raise HTTPException(403, 'Verify your email before signing in.')
-    return native_session(user)
+    return native_session(user, session)
 
 
 @router.post('/api/mobile/auth/logout', dependencies=[Depends(guard)])
@@ -157,44 +162,25 @@ def block(data: BlockInput, user: User = Depends(current_user), session: Session
     return creator.preferences(validated, user, session)
 
 
-def moderator(user: User = Depends(current_user)):
-    allowed = {x.strip().lower() for x in settings.moderator_emails.split(',') if x.strip()}
-    if user.email not in allowed:
+def moderator(user: User = Depends(current_user), session: Session = Depends(db)):
+    from admin_services import admin_role
+    if admin_role(session, user) not in {'owner', 'admin', 'moderator'}:
         raise HTTPException(403, 'Moderator access required')
     return user
 
 
 @router.get('/api/moderation/reports')
 def reports(user: User = Depends(moderator), session: Session = Depends(db)):
-    rows = session.scalars(select(ContentReport).where(ContentReport.status == 'open').order_by(ContentReport.created_at).limit(100)).all()
-    result = []
-    for r in rows:
-        item = session.get(CreatorItem, r.item_id)
-        comment = session.get(CreatorComment, r.comment_id) if r.comment_id else None
-        result.append({'id': r.id, 'item_id': r.item_id, 'comment_id': r.comment_id, 'reason': r.reason, 'details': r.details, 'created_at': r.created_at.isoformat(), 'item': creator.serialize_item(item, session) if item else None, 'comment_body': comment.body if comment else None})
-    return result
+    # A report can refer to its author's private draft. The former serializer
+    # exposed that draft's media/edit metadata to staff without a review scope.
+    raise HTTPException(410, 'Use Administration for the scoped, metadata-only report inbox.')
 
 
 @router.post('/api/moderation/reports/{report_id}', dependencies=[Depends(guard)])
 def resolve(report_id: str, data: ResolveInput, user: User = Depends(moderator), session: Session = Depends(db)):
-    row = session.get(ContentReport, report_id)
-    if not row or row.status != 'open':
-        raise HTTPException(404, 'Open report not found')
-    if data.action == 'remove':
-        if row.comment_id:
-            comment = session.get(CreatorComment, row.comment_id)
-            if comment:
-                session.delete(comment)
-        else:
-            item = session.get(CreatorItem, row.item_id)
-            if not item:
-                raise HTTPException(409, 'This demo or removed item has no published record. Dismiss the report instead.')
-            item.visibility = 'hidden'
-        row.status = 'removed'
-    else:
-        row.status = 'dismissed'
-    session.commit()
-    return {'ok': True, 'status': row.status}
+    # Old clients cannot supply an audit reason or a reviewed record version.
+    # In particular, never hard-delete comments through the former endpoint.
+    raise HTTPException(410, 'Use Administration to review this report with a reason and the current record version.')
 
 
 def drain_media_deletions(session):
@@ -220,6 +206,8 @@ def drain_media_deletions(session):
 async def delete_account(data: DeleteAccount, user: User = Depends(current_user), session: Session = Depends(db)):
     if not passwords.verify(data.password, user.password_hash):
         raise HTTPException(401, 'Password is incorrect')
+    from admin_services import protect_account_deletion
+    protect_account_deletion(session, user)
     # Lock the account against uploads while removing dependent data.
     session.execute(select(User).where(User.id == user.id).with_for_update())
     from live_api import delete_live_account
@@ -264,6 +252,8 @@ async def delete_account(data: DeleteAccount, user: User = Depends(current_user)
     for media_id in media_ids:
         if isinstance(provider, LocalStorage):
             session.merge(MediaDeletion(id=media_id))
+    from admin_services import delete_admin_account_data
+    delete_admin_account_data(session, user.id)
     session.execute(delete(ContentReport).where(or_(ContentReport.reporter_id == user.id, ContentReport.target_owner_id == user.id, ContentReport.item_id.in_(item_ids))))
     session.execute(delete(CreatorComment).where(or_(CreatorComment.owner_id == user.id, CreatorComment.item_id.in_(item_ids))))
     session.execute(delete(creator.CreatorDistribution).where(creator.CreatorDistribution.owner_id == user.id))

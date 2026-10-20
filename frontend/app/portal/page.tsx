@@ -16,12 +16,14 @@ export default function Portal() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [framed, setFramed] = useState<boolean | null>(null);
+  const [adminEntry, setAdminEntry] = useState(false);
   useEffect(() => {
     setFramed(new URLSearchParams(window.location.search).get('layout') === 'frame');
+    setAdminEntry(new URLSearchParams(window.location.search).get('next') === 'admin');
   }, []);
   useEffect(() => {
-    if (member && framed === false) window.location.replace('/studio/index.html');
-  }, [member, framed]);
+    if (member && framed === false) window.location.replace(adminEntry ? '/studio/index.html?view=admin' : '/studio/index.html');
+  }, [member, framed, adminEntry]);
   async function refresh() {
     try { setMember(await api<Member>('/me')); }
     catch (e) { if ((e as {status?:number}).status !== 401) setError((e as Error).message); }

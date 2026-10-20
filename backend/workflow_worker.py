@@ -20,6 +20,20 @@ from media_workflows import (OsWorkflow, OsWorkflowRun, ACTIVE, MAX_ATTEMPTS, LE
 from render_services import RenderJob
 
 
+def _account_paused(session, owner, workflow, run=None):
+    from admin_services import account_is_active
+    if account_is_active(session, owner.id):
+        return False
+    workflow.enabled = False
+    workflow.updated_at = utcnow()
+    if run is not None:
+        run.status = 'blocked'
+        run.detail = 'Account suspended. Workflow work is paused; the saved intent and existing receipts are retained for explicit review.'
+        run.lease_token = ''; run.lease_until = None; run.updated_at = utcnow()
+    session.commit()
+    return True
+
+
 def _valid(run, workflow):
     return bool(workflow and workflow.owner_id == run.owner_id and
                 run.snapshot.get('revision') == workflow.revision and
@@ -62,6 +76,16 @@ def scan_due(session, *, now=None):
         workflow = session.scalar(select(OsWorkflow).where(OsWorkflow.id == workflow_id, OsWorkflow.owner_id == owner_id).with_for_update(skip_locked=True).execution_options(populate_existing=True))
         if not workflow or not workflow.enabled:
             session.rollback(); continue
+        if _account_paused(session, owner, workflow):
+            continue
+        from admin_services import require_mutations_open
+        try:
+            require_mutations_open(session, owner)
+        except HTTPException as exc:
+            if exc.status_code != 503:
+                raise
+            workflow.updated_at = now  # Fair rotation; leave schedule/cursor intact.
+            session.commit(); continue
         if workflow.trigger == 'scheduled':
             due = aware(workflow.next_run)
             if due is not None and due <= now:
@@ -101,6 +125,8 @@ def claim_run(session, *, now=None):
         run = session.scalar(select(OsWorkflowRun).where(OsWorkflowRun.id == run_id, OsWorkflowRun.owner_id == owner_id).with_for_update(skip_locked=True).execution_options(populate_existing=True))
         if not workflow or not run or run.status not in ACTIVE or (run.status == 'running' and (run.external_ref or not run.lease_until or aware(run.lease_until) >= now)):
             session.rollback(); continue
+        if _account_paused(session, owner, workflow, run):
+            continue
         if not _valid(run, workflow):
             run.status = 'cancelled'; run.detail = 'The workflow was paused, changed or removed before execution.'
             run.lease_token = ''; run.lease_until = None; run.updated_at = now
@@ -127,6 +153,8 @@ def _lock_claim(session, run_id, token):
     workflow = session.scalar(select(OsWorkflow).where(OsWorkflow.id == identity.workflow_id, OsWorkflow.owner_id == identity.owner_id).with_for_update().execution_options(populate_existing=True))
     run = session.scalar(select(OsWorkflowRun).where(OsWorkflowRun.id == run_id, OsWorkflowRun.owner_id == identity.owner_id).with_for_update().execution_options(populate_existing=True))
     if not owner or not run or run.status != 'running' or run.lease_token != token or not _valid(run, workflow):
+        return None
+    if _account_paused(session, owner, workflow, run):
         return None
     return owner, workflow, run
 
@@ -185,7 +213,9 @@ def dispatch(session_factory, run_id, token, *, render_dispatch=None, sync_dispa
             session.rollback()
             state = 'blocked' if exc.status_code in (404, 409, 422, 503, 429) else 'failed'
             # Fixed safe text; upstream bodies, OAuth tokens and provider errors stay out.
-            _finish(session, run_id, token, state, 'The workflow needs review: check its saved target, permissions and service readiness, then retry.')
+            detail = ('Workflow execution is deferred: maintenance or required services are unavailable. Saved intent and receipts are retained for explicit retry.'
+                      if exc.status_code == 503 else 'The workflow needs review: check its saved target, permissions and service readiness, then retry.')
+            _finish(session, run_id, token, state, detail)
         except Exception:
             session.rollback()
             _finish(session, run_id, token, 'failed', 'The workflow could not complete. Review its target and retry in Ziipa.')
@@ -204,6 +234,8 @@ def reconcile_render_runs(session):
         run = session.scalar(select(OsWorkflowRun).where(OsWorkflowRun.id == run_id, OsWorkflowRun.owner_id == owner_id).with_for_update(skip_locked=True).execution_options(populate_existing=True))
         if not workflow or not run or run.status != 'running' or run.lease_token:
             session.rollback(); continue
+        if _account_paused(session, owner, workflow, run):
+            changed += 1; continue
         if not _valid(run, workflow):
             run.status = 'cancelled'; run.detail = 'Workflow review changed before rendering completed.'
         else:

@@ -213,10 +213,26 @@ def current_user(request: Request, session: Session = Depends(db)):
     expected_user = request.headers.get('x-ziipa-user')
     if expected_user is not None and expected_user != str(user.id):
         raise HTTPException(401, 'The signed-in account changed. Reopen your portal before continuing.')
+    from admin_services import enforce_account_active, require_mutations_open
+    enforce_account_active(session, user)
+    path_parts = request.url.path.strip('/').split('/')
+    live_cleanup = (request.method == 'POST' and path_parts[:3] == ['api', 'live', 'streams']
+        and ((len(path_parts) == 5 and path_parts[4] == 'end')
+             or (len(path_parts) == 6 and path_parts[4:] == ['destinations', 'twitch'])))
+    # Privacy, sign-out, consent revocation and reporting remain available
+    # during maintenance. Twitch enablement has its own fresh route-level guard;
+    # detaching or stopping a stream must remain possible during maintenance.
+    if (request.method not in {'GET', 'HEAD', 'OPTIONS'}
+            and not live_cleanup
+            and not request.url.path.startswith(('/api/account/', '/api/auth/',
+                '/api/mobile/auth/', '/api/notifications/', '/api/safety/'))):
+        require_mutations_open(session, user)
     return user
 
 
-def start_session(user, response):
+def start_session(user, response, session):
+    from admin_services import enforce_account_active
+    enforce_account_active(session, user)
     token = secrets.token_urlsafe(32)
     from account_services import remember_session, session_key
     remember_session(user.id, session_key('session:', token), 86400)
@@ -289,6 +305,8 @@ def join(data: Join, session: Session = Depends(db)):
 
 @app.post('/api/auth/register', status_code=201, dependencies=[Depends(guard)])
 def register(data: Register, response: Response, session: Session = Depends(db)):
+    from admin_services import require_registration_open
+    require_registration_open(session)
     user = User(name=data.name.strip(), email=str(data.email).lower(), password_hash=passwords.hash(data.password))
     session.add(user)
     try:
@@ -303,7 +321,7 @@ def register(data: Register, response: Response, session: Session = Depends(db))
         return {'name': user.name, 'email': user.email, 'email_verified': False,
                 'verification_required': True,
                 'message': 'Check your email to verify the account, then sign in.'}
-    start_session(user, response)
+    start_session(user, response, session)
     return {'name': user.name, 'email': user.email, 'email_verified': False}
 
 
@@ -317,7 +335,7 @@ def login(data: Login, response: Response, session: Session = Depends(db)):
         from account_services import state_for
         if not state_for(session, user).email_verified_at:
             raise HTTPException(403, 'Verify your email before signing in.')
-    start_session(user, response)
+    start_session(user, response, session)
     return {'name': user.name, 'email': user.email}
 
 
@@ -341,12 +359,15 @@ def logout(request: Request, response: Response, session: Session = Depends(db))
 @app.get('/api/me')
 def me(user: User = Depends(current_user), session: Session = Depends(db)):
     from account_services import state_for
+    from admin_services import admin_role
     state = state_for(session, user)
     verified = bool(state.email_verified_at)
     session.commit()
+    role = admin_role(session, user)
     return {'id': user.id, 'name': user.name, 'email': user.email, 'email_verified': verified,
             'joined': user.created_at.isoformat(), 'membership': 'Early explorer',
-            'is_moderator': user.email in {e.strip().lower() for e in settings.moderator_emails.split(',') if e.strip()}}
+            'role': role, 'account_status': 'active', 'is_admin': role in {'owner', 'admin'},
+            'is_moderator': role in {'owner', 'admin', 'moderator'}}
 
 
 from creator import router as creator_router
@@ -387,3 +408,6 @@ from media_rewards import router as rewards_router
 app.include_router(rewards_router)
 from rewards_redemption import router as rewards_settlement_router
 app.include_router(rewards_settlement_router)
+from admin_api import router as admin_router, platform_router
+app.include_router(admin_router)
+app.include_router(platform_router)

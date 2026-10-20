@@ -203,6 +203,22 @@ def owned(session, stream_id, user):
     return row
 
 
+def public_action_owner(session, owner_id):
+    """Recheck administrative authority after each public-action lock boundary.
+
+    Deliberately separate from owned(): stop, detach and privacy cleanup must not
+    be prevented by maintenance. Provider calls already handed off cannot be
+    recalled, but a new create/start/attach/credential handoff needs this check.
+    """
+    owner = session.scalar(select(User).where(User.id == owner_id).with_for_update()
+                           .execution_options(populate_existing=True))
+    if owner is None:
+        raise HTTPException(401, 'The Ziipa account no longer exists.')
+    from admin_services import require_mutations_open
+    require_mutations_open(session, owner)
+    return owner
+
+
 def is_fresh(row):
     if not row.checked_at:
         return False
@@ -311,7 +327,7 @@ def list_streams(user: User = Depends(current_user), session: Session = Depends(
 async def create_stream(data: CreateLive, user: User = Depends(current_user), session: Session = Depends(db)):
     require_provider()
     # Serialize owner provisioning attempts, including the duplicate-ID check.
-    session.scalar(select(User).where(User.id == user.id).with_for_update())
+    public_action_owner(session, user.id)
     row = session.scalar(select(LiveStream).where(LiveStream.owner_id == user.id, LiveStream.request_id == str(data.request_id)))
     if row:
         if (row.title, row.description, row.record) != (data.title.strip(), data.description.strip(), data.record):
@@ -324,6 +340,14 @@ async def create_stream(data: CreateLive, user: User = Depends(current_user), se
     row = LiveStream(owner_id=user.id, request_id=str(data.request_id), title=data.title.strip(), description=data.description.strip(), record=data.record, status='creating')
     session.add(row)
     session.commit()  # Persist an idempotency reservation before a billable call.
+    try:
+        public_action_owner(session, user.id)
+    except HTTPException:
+        # No provider creation was attempted. Preserve a definitive terminal
+        # reservation instead of misleadingly recording an unknown live stream.
+        row.status, row.publish_enabled, row.ended_at = 'ended', False, now()
+        session.commit()
+        raise
     try:
         raw = await provider_request('POST', '/stream', {'name': row.title, 'creatorId': {'type': 'unverified', 'value': row.id},
             'playbackPolicy': {'type': 'public'}, 'record': data.record,
@@ -359,6 +383,7 @@ async def get_stream(stream_id: uuid.UUID, user: User = Depends(current_user), s
 async def start_stream(stream_id: uuid.UUID, data: StartLive, user: User = Depends(current_user), session: Session = Depends(db)):
     row = owned(session, stream_id, user)
     owner_id = user.id
+    public_action_owner(session, owner_id)
     require_provider()
     if data.confirm_public is not True:
         raise HTTPException(422, 'Confirm that this broadcast will be publicly viewable before enabling ingest.')
@@ -378,6 +403,7 @@ async def start_stream(stream_id: uuid.UUID, data: StartLive, user: User = Depen
         # The publishing helper commits while refreshing OAuth credentials.
         # Reacquire all lifecycle locks before enabling public ingest.
         row, destination = reload_twitch_state(session, owner_id, stream_id)
+        public_action_owner(session, owner_id)
         require_current_twitch_grant(session, owner_id, grant['target_id'])
         account = session.get(AccountState, owner_id)
         privacy = PrivacyInput(**(account.privacy or {})) if account else PrivacyInput()
@@ -392,6 +418,7 @@ async def start_stream(stream_id: uuid.UUID, data: StartLive, user: User = Depen
     raw = await read_provider_stream(row)
     if raw is None or playback_policy(raw).get('type') != 'public':
         raise HTTPException(409, 'Provider broadcast configuration changed. Prepare or resolve this stream before starting.')
+    public_action_owner(session, owner_id)
     await provider_request('PATCH', '/stream/' + checked_uuid(row.provider_id), {'suspended': False})
     row.publish_enabled = True
     row.status, row.playback_url, row.checked_at = 'awaiting_media', None, None
@@ -484,6 +511,7 @@ async def set_twitch_destination(stream_id: uuid.UUID, data: TwitchDestinationIn
             await remove_twitch_destination(row, destination, session)
             session.commit()
         return destination_receipt(destination)
+    public_action_owner(session, owner_id)
     if data.consent is not True:
         raise HTTPException(422, 'Approve transmitting this public broadcast to your selected Twitch channel via Livepeer.')
     if not data.expected_target_id:
@@ -504,6 +532,7 @@ async def set_twitch_destination(stream_id: uuid.UUID, data: TwitchDestinationIn
     if grant['server_url'] != 'rtmps://ingest.global-contribute.live-video.net/app/' or not re.fullmatch(r'[A-Za-z0-9_-]{8,250}', grant['stream_key']):
         raise HTTPException(502, 'Twitch returned an invalid secure ingest destination.')
     row, destination = reload_twitch_state(session, owner_id, stream_id)
+    public_action_owner(session, owner_id)
     require_current_twitch_grant(session, owner_id, data.expected_target_id)
     if row.publish_enabled or row.status != 'prepared' or not row.provider_id:
         raise HTTPException(409, 'Broadcast state changed before the Twitch destination could be reserved.')
@@ -519,6 +548,7 @@ async def set_twitch_destination(stream_id: uuid.UUID, data: TwitchDestinationIn
     destination.channel_id, destination.status = grant['target_id'], 'creating'
     session.commit()  # Durable reservation; never automatically repeat creation.
     row, destination = reload_twitch_state(session, owner_id, stream_id)
+    public_action_owner(session, owner_id)
     require_current_twitch_grant(session, owner_id, grant['target_id'])
     if row.status != 'prepared' or row.publish_enabled:
         raise HTTPException(409, 'Broadcast state changed. Reconcile the reserved destination before continuing.')
@@ -529,6 +559,7 @@ async def set_twitch_destination(stream_id: uuid.UUID, data: TwitchDestinationIn
         # Keep the ID even if attachment fails so explicit removal can clean it.
         session.commit()
         row, destination = reload_twitch_state(session, owner_id, stream_id)
+        public_action_owner(session, owner_id)
         require_current_twitch_grant(session, owner_id, grant['target_id'])
         if row.status != 'prepared' or row.publish_enabled or session.get(TwitchDestination, row.id).status != 'creating':
             raise HTTPException(409, 'Broadcast changed during destination setup. Remove the saved destination.')
@@ -539,6 +570,7 @@ async def set_twitch_destination(stream_id: uuid.UUID, data: TwitchDestinationIn
         if len(targets) >= 100:
             raise HTTPException(409, 'The broadcast already has too many destinations. Remove a destination before retrying.')
         targets.append({'id': destination.target_id, 'profile': '720p', 'videoOnly': False})
+        public_action_owner(session, owner_id)
         await provider_request('PATCH', '/stream/' + checked_uuid(row.provider_id),
                                {'multistream': {'targets': targets}})
         raw = await read_provider_stream(row)
@@ -560,6 +592,7 @@ async def set_twitch_destination(stream_id: uuid.UUID, data: TwitchDestinationIn
 @router.post('/streams/{stream_id}/ingest', dependencies=[Depends(guard)])
 async def ingest(stream_id: uuid.UUID, user: User = Depends(current_user), session: Session = Depends(db)):
     row = owned(session, stream_id, user)
+    public_action_owner(session, user.id)
     from account_services import AccountState, PrivacyInput
     account = session.get(AccountState, user.id)
     privacy = PrivacyInput(**(account.privacy or {})) if account else PrivacyInput()
@@ -570,6 +603,7 @@ async def ingest(stream_id: uuid.UUID, user: User = Depends(current_user), sessi
     raw = await read_provider_stream(row)
     if raw is None or raw['suspended'] or playback_policy(raw).get('type') != 'public':
         raise HTTPException(409, 'Livepeer ingest is not available for this broadcast.')
+    public_action_owner(session, user.id)
     key = checked_token(raw.get('streamKey'))
     return {'stream_id': row.id, 'whip_url': WHIP_ORIGIN + '/' + key, 'rtmp_server': RTMP_SERVER, 'stream_key': key,
             'detail': 'Secret encoder credentials. Keep in memory only; never place in a public post, analytics, logs or persistent browser storage.'}
@@ -605,10 +639,11 @@ def optional_viewer(request: Request, session: Session = Depends(db)):
 
 
 def public_visible(session, row, viewer, discovery=False):
+    from admin_services import account_is_active
     from account_services import AccountState, PrivacyInput
     from creator import prefs_for
     owner = session.get(User, row.owner_id)
-    if not owner:
+    if not owner or not account_is_active(session, row.owner_id):
         return False
     account = session.get(AccountState, owner.id)
     privacy = PrivacyInput(**(account.privacy or {})) if account else PrivacyInput()

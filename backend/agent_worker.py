@@ -25,6 +25,21 @@ import agent_api as api
 from agent_api import AgentTask, AgentStep, AgentPlan
 
 
+def _may_run(session, task, user):
+    from admin_services import account_is_active, require_mutations_open
+    if not account_is_active(session, task.owner_id):
+        api.stop_task(task, 'paused', 'Account suspended. Autonomous work is paused; completed step receipts are retained.')
+        session.commit(); return False
+    try:
+        require_mutations_open(session, user)
+    except HTTPException as exc:
+        if exc.status_code != 503:
+            raise
+        api.stop_task(task, 'paused', 'Autonomous work is paused during maintenance. Review and explicitly resume after maintenance.')
+        session.commit(); return False
+    return True
+
+
 def claim_task(session, *, timestamp=None):
     timestamp = timestamp or api.now()
     candidates = list(session.execute(select(AgentTask.id, AgentTask.owner_id).where(
@@ -38,6 +53,8 @@ def claim_task(session, *, timestamp=None):
         if not task or task.status not in api.ACTIVE or (task.status == 'running' and
                 (not task.lease_until or media.aware(task.lease_until) >= timestamp)):
             session.rollback(); continue
+        if not _may_run(session, task, session.get(User, owner_id)):
+            continue
         if not api.config.enabled or not api.effective_tools(session, owner_id, task):
             api.stop_task(task, 'paused', 'Autonomy or matching tool permissions are disabled.')
             session.commit(); continue
@@ -68,6 +85,8 @@ def lock_claim(session, task_id, token):
                           .with_for_update().execution_options(populate_existing=True))
     if not user or not task or task.status != 'running' or task.lease_token != token:
         session.rollback(); return None
+    if not _may_run(session, task, user):
+        return None
     if task.deadline and media.aware(task.deadline) <= api.now():
         api.stop_task(task, 'failed', 'The task runtime budget expired. Completed steps remain in history.')
         session.commit(); return None

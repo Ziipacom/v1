@@ -12,12 +12,33 @@ import creation_campaigns as campaigns
 from creation_campaigns import CreationCampaign, CampaignDelivery
 
 
+def _may_run(session, row):
+    from admin_services import account_is_active, require_mutations_open
+    if not account_is_active(session, row.owner_id):
+        row.paused_status = row.status
+        row.status = 'paused'
+        row.detail = 'Account suspended. Campaign work is paused; existing approvals and delivery receipts are retained for review.'
+        _release(row); session.commit()
+        return False
+    try:
+        require_mutations_open(session, session.get(User, row.owner_id))
+    except HTTPException as exc:
+        if exc.status_code != 503:
+            raise
+        row.detail = 'Campaign work is deferred during maintenance. No new provider handoff has started.'
+        _release(row, delay=60); session.commit()
+        return False
+    return True
+
+
 def _locked(session, campaign_id, token):
     identity = session.execute(select(CreationCampaign.owner_id).where(CreationCampaign.id == campaign_id)).scalar_one_or_none()
     if identity is None or not campaigns.owner_lock(session, identity):
         return None
     row = campaigns.owned(session, identity, campaign_id, True)
     if row.status not in campaigns.ACTIVE or row.lease_token != token:
+        return None
+    if not _may_run(session, row):
         return None
     return row
 
@@ -40,6 +61,8 @@ def claim(session):
                     CreationCampaign.owner_id == owner_id).with_for_update(skip_locked=True).execution_options(populate_existing=True))
         if not row or row.status not in campaigns.ACTIVE or not row.next_run or campaigns.aware(row.next_run) > current or row.lease_until and campaigns.aware(row.lease_until) >= current:
             session.rollback(); continue
+        if not _may_run(session, row):
+            continue
         if row.lease_token:
             row.attempts += 1
         if row.attempts >= 3:

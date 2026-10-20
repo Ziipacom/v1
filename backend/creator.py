@@ -261,6 +261,9 @@ def assert_visible(item_id, session, user):
 
 
 def account_allows_view(session, owner_id: int) -> bool:
+    from admin_services import account_is_active
+    if not account_is_active(session, owner_id):
+        return False
     from account_services import AccountState, PrivacyInput
     row = session.get(AccountState, owner_id)
     privacy = PrivacyInput(**(row.privacy or {})) if row else PrivacyInput()
@@ -268,6 +271,9 @@ def account_allows_view(session, owner_id: int) -> bool:
 
 
 def account_is_discoverable(session, owner_id: int) -> bool:
+    from admin_services import account_is_active
+    if not account_is_active(session, owner_id):
+        return False
     from account_services import AccountState, PrivacyInput
     row = session.get(AccountState, owner_id)
     privacy = PrivacyInput(**(row.privacy or {})) if row else PrivacyInput()
@@ -285,7 +291,7 @@ def bootstrap(user: User = Depends(current_user), session: Session = Depends(db)
     feeds = session.scalars(select(CreatorFeed).where(CreatorFeed.owner_id == user.id)).all()
     community_feeds = session.scalars(select(CreatorFeed).where(CreatorFeed.data['shared'].as_boolean() == True).limit(100)).all()
     distributions = session.scalars(select(CreatorDistribution).where(CreatorDistribution.owner_id == user.id).order_by(CreatorDistribution.updated_at.desc()).limit(200)).all()
-    return {'items': items, 'drafts': [serialize_item(i, session) for i in own], 'preferences': prefs, 'feeds': [{'id': f.id, **f.data} for f in feeds], 'community_feeds': [{'id': f.id, **f.data, 'owner_name': session.get(User, f.owner_id).name} for f in community_feeds], 'connections': connections_for(user, session), 'distributions': [serialize_distribution(d) for d in distributions]}
+    return {'items': items, 'drafts': [serialize_item(i, session) for i in own], 'preferences': prefs, 'feeds': [{'id': f.id, **f.data} for f in feeds], 'community_feeds': [{'id': f.id, **f.data, 'owner_name': session.get(User, f.owner_id).name} for f in community_feeds if account_is_discoverable(session, f.owner_id)], 'connections': connections_for(user, session), 'distributions': [serialize_distribution(d) for d in distributions]}
 
 
 def save_item(data, session, user, row=None):
@@ -418,7 +424,8 @@ def comments(item_id: str, user: User = Depends(current_user), session: Session 
     assert_visible(item_id, session, user)
     rows = session.scalars(select(CreatorComment).where(CreatorComment.item_id == item_id).order_by(CreatorComment.created_at.desc()).limit(100)).all()
     prefs = prefs_for(session, user)
-    return [{'id': r.id, 'body': r.body, 'creator': session.get(User, r.owner_id).name, 'creator_id': r.owner_id} for r in rows if r.owner_id not in prefs['blocked_user_ids'] and session.get(User, r.owner_id).name not in prefs['blocked_creators'] and not any(w.lower() in r.body.lower() for w in prefs['muted_words'] if w.strip())]
+    from admin_services import account_is_active, comment_is_visible
+    return [{'id': r.id, 'body': r.body, 'creator': session.get(User, r.owner_id).name, 'creator_id': r.owner_id} for r in rows if account_is_active(session, r.owner_id) and comment_is_visible(session, r.id) and r.owner_id not in prefs['blocked_user_ids'] and session.get(User, r.owner_id).name not in prefs['blocked_creators'] and not any(w.lower() in r.body.lower() for w in prefs['muted_words'] if w.strip())]
 
 
 @router.post('/items/{item_id}/comments', dependencies=[Depends(guard)])
@@ -538,7 +545,7 @@ def read_media(media_id: str, user: User = Depends(current_user), session: Sessi
     if row.owner_id != user.id:
         if row.owner_id in prefs_for(session, user)['blocked_user_ids']:
             raise HTTPException(404, 'Media not found')
-        shared = session.scalar(select(CreatorItem.id).where(CreatorItem.visibility == 'published', CreatorItem.data['media_id'].as_string() == media_id))
+        shared = session.scalar(select(CreatorItem.id).where(CreatorItem.owner_id == row.owner_id, CreatorItem.visibility == 'published', CreatorItem.data['media_id'].as_string() == media_id))
         if not shared:
             raise HTTPException(404, 'Media not found')
         if not account_allows_view(session, row.owner_id):

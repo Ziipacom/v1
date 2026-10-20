@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { PlatformNotice } from '@/components/platform-notice';
 export const metadata: Metadata = {
   title: 'Ziipa — More than a feed. A world of yours.',
   description:
@@ -34,7 +35,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><PlatformNotice />{children}</body>
     </html>
   );
 }

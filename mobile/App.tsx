@@ -8,6 +8,7 @@ import { setAudioModeAsync } from "expo-audio";
 import { ZiipaProvider } from "./src/provider";
 import { Navigation } from "./src/navigation";
 import { ScrollbarStyle } from "./src/components/scrollbar-style";
+import { PlatformNotice } from "./src/components/platform-notice";
 
 void SplashScreen.preventAutoHideAsync();
 class AppBoundary extends React.Component<
@@ -64,7 +65,10 @@ export default function App() {
         <ScrollbarStyle />
         <StatusBar style="light" />
         <ZiipaProvider>
-          <Navigation />
+          <View style={{ flex: 1 }}>
+            <PlatformNotice />
+            <Navigation />
+          </View>
         </ZiipaProvider>
       </SafeAreaProvider>
     </AppBoundary>

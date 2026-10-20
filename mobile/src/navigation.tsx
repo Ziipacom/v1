@@ -24,6 +24,7 @@ import { CalendarScreen } from "./screens/calendar";
 import { LiveScreen } from "./screens/live";
 import { RecordingsScreen } from "./screens/recordings";
 import { NotificationsScreen } from "./screens/notifications";
+import { AdministrationScreen } from "./screens/admin";
 import { NotificationBridge } from "./components/notification-bridge";
 import { PostScreen } from "./screens/post";
 import {
@@ -109,7 +110,15 @@ export function Navigation() {
     >
       {session && <NotificationBridge />}
       <Stack.Navigator
-        initialRouteName={portalMode ? "Studio" : undefined}
+        initialRouteName={
+          portalMode
+            ? typeof window !== "undefined" &&
+              new URLSearchParams(window.location.search).get("view") ===
+                "admin"
+              ? "Administration"
+              : "Studio"
+            : undefined
+        }
         screenOptions={{
           headerStyle: { backgroundColor: color.bg },
           headerTintColor: color.text,
@@ -235,6 +244,11 @@ export function Navigation() {
               name="Moderation"
               component={ModerationScreen}
               options={{ title: "Safety operations" }}
+            />
+            <Stack.Screen
+              name="Administration"
+              component={AdministrationScreen}
+              options={{ title: "Ziipa administration" }}
             />
           </>
         )}

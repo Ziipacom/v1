@@ -149,6 +149,8 @@ def _activity(session, owner_id, kind, status, detail, target_id=None):
 def _owner_lock(session, user):
     if not session.scalar(select(User).where(User.id == user.id).with_for_update()):
         raise HTTPException(401, 'Your account is no longer available.')
+    from admin_services import require_mutations_open
+    require_mutations_open(session, user)
 
 
 def _owned(session, user, workflow_id, *, lock=False):
@@ -167,11 +169,14 @@ def _owned_run(session, user, run_id):
 
 
 def validate_target(session, user, data):
+    from admin_services import enforce_content_visible, require_mutations_open
+    require_mutations_open(session, user)
     fingerprint = None
     if data.action == 'render':
         item = session.get(CreatorItem, str(data.target_id))
         if not item or item.owner_id != user.id:
             raise HTTPException(404, 'Your saved creation was not found.')
+        enforce_content_visible(session, item)
         from render_services import input_snapshot, snapshot_hash
         snapshot = input_snapshot(session, item)
         fingerprint = snapshot_hash(snapshot)
@@ -218,6 +223,9 @@ def _capacity(session, owner_id):
 
 
 def enqueue(session, workflow, occurrence, *, manual=False, event_id=None):
+    from admin_services import account_is_active
+    if not account_is_active(session, workflow.owner_id):
+        return None
     prior = session.scalar(select(OsWorkflowRun).where(OsWorkflowRun.workflow_id == workflow.id, OsWorkflowRun.occurrence_key == occurrence))
     if prior:
         return prior

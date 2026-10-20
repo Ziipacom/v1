@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   Alert,
   Linking,
@@ -15,6 +16,11 @@ import { useZiipa } from "../provider";
 import { color, styles } from "../theme";
 import { apiOrigin, legalUrls, supportEmail } from "../lib/config";
 import type { Item, RootStack } from "../lib/types";
+import {
+  adminRoot,
+  isAdminIdentity,
+  type AdminIdentity,
+} from "../lib/admin-api";
 
 export function SettingsScreen({
   navigation,
@@ -29,6 +35,28 @@ export function SettingsScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [administration, setAdministration] = useState<AdminIdentity | null>(
+    null,
+  );
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setAdministration(null);
+      if (session)
+        void api<AdminIdentity>(`${adminRoot}/me`)
+          .then((identity) => {
+            if (active)
+              setAdministration(isAdminIdentity(identity) ? identity : null);
+          })
+          // A legacy deployment or an ordinary account must not expose admin entry.
+          .catch(() => {
+            if (active) setAdministration(null);
+          });
+      return () => {
+        active = false;
+      };
+    }, [session?.access_token, api]),
+  );
   const [privacy, setPrivacy] = useState({
     profile_visibility: "public",
     discoverable: true,
@@ -108,6 +136,20 @@ export function SettingsScreen({
         icon={Bell}
         onPress={() => navigation.navigate("Notifications")}
       />
+      {administration &&
+        administration.role !== "member" &&
+        administration.permissions.length > 0 && (
+          <Action
+            title={
+              administration.role === "owner"
+                ? "Owner administration · manage Ziipa"
+                : "Administration · manage Ziipa"
+            }
+            secondary
+            icon={ShieldCheck}
+            onPress={() => navigation.navigate("Administration")}
+          />
+        )}
       <View style={styles.panel}>
         <Text style={styles.heading}>{session?.user.name}</Text>
         <Text style={styles.body}>{session?.user.email}</Text>
@@ -278,13 +320,6 @@ export function SettingsScreen({
             )
           }
         />
-        {session?.user.is_moderator && (
-          <Action
-            secondary
-            title="Moderation inbox"
-            onPress={() => navigation.navigate("Moderation")}
-          />
-        )}
       </View>
       <Action
         title="Sign out"

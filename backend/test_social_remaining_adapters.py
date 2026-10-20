@@ -310,23 +310,35 @@ def test_confirmed_instagram_checkpoint_survives_optional_lookup_deadline(client
     from test_social_publishing import authorized_channel
     register_creator(client)
     authorized_channel(client, monkeypatch)
+    # Receipt reconciliation still requires an owned, published source.
+    item = published_video(client, tmp_path, monkeypatch)
     session = db_session()
     grant = session.query(publishing.PublishingGrant).one()
     grant.provider = 'instagram'
     tokens = {'provider': 'instagram', 'access_token': 'TEST_META', 'expires_at': 9999999999}
     grant.token_cipher = publishing.encrypt_tokens(grant.owner_id, 'instagram', tokens)
     grant.selected_target_id = '123'
-    job = publishing.PublishingJob(owner_id=grant.owner_id, provider='instagram', item_id=str(uuid.uuid4()),
+    job = publishing.PublishingJob(owner_id=grant.owner_id, provider='instagram', item_id=item['id'],
         idempotency_key=str(uuid.uuid4()), source_hash='b' * 64, target_id='123', privacy='public', status='processing',
         provider_data={'provider': 'instagram', 'target_id': '123', 'phase': 'container_created', 'container_id': '456'})
     session.add(job); session.commit()
     monkeypatch.setattr(publishing.config, 'meta_public_approved', True)
+    polls = []
     async def poll(tokens, target, data, client, settings, checkpoint):
+        polls.append(target)
         await checkpoint({'provider': 'instagram', 'target_id': target, 'phase': 'delivered', 'container_id': '456', 'media_id': '789'})
         raise TimeoutError('Optional permalink lookup deadline')
     monkeypatch.setattr(publishing.meta_adapter(), 'poll', poll)
     response = client.post(f'/api/publishing/jobs/{job.id}/refresh')
     assert response.status_code == 200 and response.json()['status'] == 'delivered' and response.json()['external_id'] == '789'
+
+    session.expire_all()
+    saved = session.get(publishing.PublishingJob, job.id)
+    assert saved.status == 'delivered' and saved.external_id == '789'
+    assert saved.provider_data['phase'] == 'delivered'
+    again = client.post(f'/api/publishing/jobs/{job.id}/refresh')
+    assert again.status_code == 200 and again.json()['status'] == 'delivered'
+    assert polls == ['123']  # Confirmed delivery is retained without another handoff or lookup.
 
 
 @pytest.mark.parametrize('change', ['none', 'stale_before', 'stale_during', 'wrong_item'])

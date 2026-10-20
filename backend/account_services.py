@@ -213,6 +213,7 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
     from notification_services import export_notification_data
     from media_rewards import export_rewards_data
     from rewards_redemption import export_settlement_data
+    from admin_services import export_admin_account_data
     state = state_for(session, user)
     return {
         'exported_at': datetime.now(timezone.utc).isoformat(),
@@ -238,5 +239,6 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
         'notifications': export_notification_data(session, user.id),
         'media_rewards': export_rewards_data(session, user.id),
         'reward_distributions': export_settlement_data(session, user.id),
+        'administration': export_admin_account_data(session, user.id),
         'comments': [{'id': r.id, 'item_id': r.item_id, 'body': r.body, 'created_at': r.created_at.isoformat()} for r in session.scalars(select(CreatorComment).where(CreatorComment.owner_id == user.id))],
     }

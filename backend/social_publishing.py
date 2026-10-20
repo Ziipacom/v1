@@ -394,6 +394,7 @@ async def authorize(provider: SocialProvider, request: Request, ticket: str = Qu
     require_ready(provider)
     record = consume_state('ticket', ticket)
     verify_initiating_browser(request, record, session)
+    _enforce_actor(session, record.get('owner_id'), mutation=True)
     binding = request.cookies.get(f'ziipa_oauth_{provider}', '')
     if (record.get('provider') != provider or not session.get(User, record.get('owner_id')) or not binding or
             not secrets.compare_digest(record.get('binding_hash', ''), hashlib.sha256(binding.encode()).hexdigest())):
@@ -405,6 +406,9 @@ async def authorize(provider: SocialProvider, request: Request, ticket: str = Qu
             flow = await bluesky_adapter.authorize(record['handle'], approved_api_origin(), state, config)
         except bluesky_adapter.BlueskyError as exc:
             raise HTTPException(503, str(exc)) from exc
+        # Authorization can suspend while the SDK is awaiting its provider.
+        session.scalar(select(User).where(User.id == record['owner_id']).with_for_update())
+        _enforce_actor(session, record['owner_id'], mutation=True)
         store_state('callback', flow['state'], {**record, 'app_state': state,
             'sdk_cipher': encrypt_tokens(record['owner_id'], 'bluesky', {'states': flow['states']})})
         redirect = RedirectResponse(flow['auth_url'], status_code=302)
@@ -482,6 +486,7 @@ async def oauth_callback(provider: SocialProvider, request: Request, state: str 
     require_ready(provider)
     record = consume_state('callback', state)
     verify_initiating_browser(request, record, session)
+    _enforce_actor(session, record.get('owner_id'), mutation=True)
     binding = request.cookies.get(f'ziipa_oauth_{provider}', '')
     if record.get('provider') != provider or not binding or not secrets.compare_digest(
             record.get('binding_hash', ''), hashlib.sha256(binding.encode()).hexdigest()):
@@ -521,12 +526,14 @@ async def oauth_callback(provider: SocialProvider, request: Request, state: str 
     owner = session.scalar(select(User).where(User.id == owner_id).with_for_update())
     if not owner:
         raise HTTPException(400, 'The Ziipa account no longer exists.')
+    _enforce_actor(session, owner_id, mutation=True)
     grant = grant_for(session, owner_id, provider, lock=True)
     if provider == 'twitch' and grant is not None:
         from live_api import detach_twitch_destinations
         await detach_twitch_destinations(owner_id, session)
         if not session.scalar(select(User).where(User.id == owner_id).with_for_update()):
             raise HTTPException(400, 'The Ziipa account no longer exists.')
+        _enforce_actor(session, owner_id, mutation=True)
         grant = grant_for(session, owner_id, provider, lock=True)
     if grant is None:
         grant = PublishingGrant(owner_id=owner_id, provider=provider)
@@ -550,6 +557,7 @@ class TargetInput(BaseModel):
 @router.post('/connections/{provider}/target', dependencies=[Depends(guard)])
 async def choose_target(provider: SocialProvider, data: TargetInput, user: User = Depends(current_user), session: Session = Depends(db)):
     session.scalar(select(User).where(User.id == user.id).with_for_update())
+    _enforce_actor(session, user.id, mutation=True)
     grant = grant_for(session, user.id, provider, lock=True)
     if not grant or grant.status != 'authorized':
         raise HTTPException(409, 'Authorize this provider account first.')
@@ -558,12 +566,42 @@ async def choose_target(provider: SocialProvider, data: TargetInput, user: User 
     if provider == 'twitch' and grant.selected_target_id and grant.selected_target_id != data.target_id:
         from live_api import detach_twitch_destinations
         await detach_twitch_destinations(user.id, session)
+        session.scalar(select(User).where(User.id == user.id).with_for_update())
+        _enforce_actor(session, user.id, mutation=True)
+        grant = grant_for(session, user.id, provider, lock=True)
+        if not grant or grant.status != 'authorized' or data.target_id not in {target['id'] for target in grant.targets}:
+            raise HTTPException(409, 'The provider connection changed before selecting its destination. Refresh and choose again.')
     grant.selected_target_id = data.target_id
     session.commit()
     return grant_json(grant)
 
 
+def _enforce_actor(session, owner_id, *, mutation=False):
+    from admin_services import account_is_active, enforce_account_active, require_mutations_open
+    if not account_is_active(session, owner_id):
+        raise HTTPException(403, 'This account is suspended or unavailable. No provider action was started.')
+    user = session.get(User, owner_id, populate_existing=True)
+    (require_mutations_open if mutation else enforce_account_active)(session, user)
+
+
+def _check_job_source(session, job):
+    from admin_services import enforce_content_visible
+    item = session.scalar(select(CreatorItem).where(CreatorItem.id == job.item_id,
+        CreatorItem.owner_id == job.owner_id).execution_options(populate_existing=True))
+    if not item:
+        raise HTTPException(409, 'The provider source is no longer available. Existing receipts are retained.')
+    enforce_content_visible(session, item)
+    if item.visibility != 'published':
+        from creation_campaigns import CampaignDelivery, validate_job_campaign_authority
+        delivery = session.scalar(select(CampaignDelivery.id).where(CampaignDelivery.owner_id == job.owner_id,
+            CampaignDelivery.request_id == job.idempotency_key))
+        if not delivery:
+            raise HTTPException(409, 'The provider source is no longer published.')
+        validate_job_campaign_authority(session, job)
+
+
 async def access_token(session: Session, grant: PublishingGrant, client: httpx.AsyncClient) -> str:
+    _enforce_actor(session, grant.owner_id)
     tokens = decrypt_tokens(grant)
     if grant.provider == 'bluesky':
         return tokens['access_token']  # Official SDK handles DPoP refresh under the bridge lease.
@@ -586,6 +624,7 @@ async def access_token(session: Session, grant: PublishingGrant, client: httpx.A
         raise HTTPException(503, 'Provider authorization coordination is unavailable.') from exc
     try:
         session.commit()
+        _enforce_actor(session, owner_id, mutation=True)
         if provider in ('tiktok', 'twitch'):
             refreshed = await (tiktok_adapter if provider == 'tiktok' else twitch_adapter).refresh(tokens, client, config)
             status = 200
@@ -668,9 +707,12 @@ class TikTokReviewInput(BaseModel):
 
 
 def reviewed_tiktok_source(data, owner_id, session):
-    item = session.get(CreatorItem, str(data.item_id))
+    from admin_services import enforce_content_visible
+    _enforce_actor(session, owner_id)
+    item = session.get(CreatorItem, str(data.item_id), populate_existing=True)
     if not item or item.owner_id != owner_id or item.visibility != 'published':
         raise HTTPException(404, 'Your published source creation was not found.')
+    enforce_content_visible(session, item)
     if item.data.get('media_id') != str(data.expected_media_id):
         raise HTTPException(409, 'The source changed. Review the current file before publishing.')
     if data.render_id:
@@ -814,7 +856,8 @@ def tiktok_pull_media(token: str, request: Request, session: Session = Depends(d
             raise HTTPException(404, 'Media handoff expired.')
         job = session.get(PublishingJob, record['job_id'])
         grant = grant_for(session, record['owner_id'], 'tiktok')
-        if (not session.get(User, record['owner_id']) or not job or job.owner_id != record['owner_id']
+        from admin_services import account_is_active
+        if (not account_is_active(session, record['owner_id']) or not job or job.owner_id != record['owner_id']
                 or job.provider != 'tiktok' or job.status not in ('sending', 'processing', 'uncertain')
                 or job.provider_data.get('stage') not in ('init_started', 'processing')
                 or not grant or grant.id != record['grant_id'] or grant.status != 'authorized'
@@ -1066,6 +1109,7 @@ def sdk_credential_saver(session, grant, target_id):
     async def save(updated):
         nonlocal cipher
         session.expire_all()
+        _enforce_actor(session, owner_id, mutation=True)
         latest = grant_for(session, owner_id, 'bluesky', lock=True)
         if (not latest or latest.id != grant_id or latest.status != 'authorized' or latest.token_cipher != cipher
                 or updated.get('provider') != 'bluesky' or updated.get('subject') != target_id):
@@ -1079,6 +1123,7 @@ def sdk_credential_saver(session, grant, target_id):
 
 @router.post('/publish', dependencies=[Depends(guard)])
 async def publish(data: PublishInput, user: User = Depends(current_user), session: Session = Depends(db)):
+    _enforce_actor(session, user.id, mutation=True)
     require_ready(data.provider)
     if data.provider == 'twitch':
         raise HTTPException(409, 'Twitch is an authorized live/channel destination. Use its live controls; arbitrary video uploads are not supported.')
@@ -1099,6 +1144,8 @@ async def publish(data: PublishInput, user: User = Depends(current_user), sessio
     item = session.scalar(select(CreatorItem).where(CreatorItem.id == str(data.item_id), CreatorItem.owner_id == user.id))
     if not item:
         raise HTTPException(404, 'Your creation was not found.')
+    from admin_services import enforce_content_visible
+    enforce_content_visible(session, item)
     if data.campaign_id is not None:
         # Draft renditions are usable only by the exact owner-reviewed campaign;
         # incoming campaign fields alone never grant access or publication.
@@ -1175,6 +1222,7 @@ async def publish(data: PublishInput, user: User = Depends(current_user), sessio
             job.detail = 'Retrying preparation after your renewed upload approval. No prior delivery was attempted.'
         session.commit()
         body = await asyncio.to_thread(original_bytes, media, owner_id)
+        _enforce_actor(session, owner_id, mutation=True)
         if data.expected_source_sha256 and hashlib.sha256(body).hexdigest() != data.expected_source_sha256:
             raise HTTPException(409, 'The selected export bytes changed after approval. Render and review the current artifact before publishing.')
         from creation_campaigns import validate_publishing_authority
@@ -1186,9 +1234,11 @@ async def publish(data: PublishInput, user: User = Depends(current_user), sessio
             tiktok_duration = await asyncio.to_thread(tiktok_adapter.probe_video, body, media.content_type)
         source_media_id, source_item_id = media.id, item.id
         def revalidate_render():
-            current_item = session.scalar(select(CreatorItem).where(CreatorItem.id == source_item_id, CreatorItem.owner_id == owner_id))
+            _enforce_actor(session, owner_id, mutation=True)
+            current_item = session.scalar(select(CreatorItem).where(CreatorItem.id == source_item_id, CreatorItem.owner_id == owner_id).execution_options(populate_existing=True))
             if not current_item or current_item.visibility != 'published' and data.campaign_id is None:
                 raise HTTPException(409, 'The published source creation was removed or made private before delivery.')
+            enforce_content_visible(session, current_item)
             if current_item.data.get('media_id') != str(data.expected_media_id):
                 raise HTTPException(409, 'The source file changed after your approval. Refresh and approve the current file.')
             if not data.render_id:
@@ -1303,6 +1353,8 @@ def jobs(user: User = Depends(current_user), session: Session = Depends(db)):
 
 
 async def refresh_adapter_job(job, grant, user, session):
+    _enforce_actor(session, user.id, mutation=True)
+    _check_job_source(session, job)
     job_id, owner_id, provider, grant_id = job.id, user.id, job.provider, grant.id
     key, lease = f'publishing_poll:{job_id}', secrets.token_urlsafe(24)
     try:
@@ -1326,8 +1378,10 @@ async def refresh_adapter_job(job, grant, user, session):
             async def checkpoint(provider_data):
                 nonlocal checkpointed, job
                 session.expire_all()
+                _enforce_actor(session, owner_id, mutation=True)
                 from creation_campaigns import validate_job_campaign_authority
                 validate_job_campaign_authority(session, session.get(PublishingJob, job_id))
+                _check_job_source(session, session.get(PublishingJob, job_id))
                 latest = grant_for(session, owner_id, provider, lock=True)
                 current = session.get(PublishingJob, job_id)
                 if (not current or not latest or latest.id != grant_id or latest.status != 'authorized' or
@@ -1341,6 +1395,8 @@ async def refresh_adapter_job(job, grant, user, session):
             adapter = tiktok_adapter if provider == 'tiktok' else bluesky_adapter if provider == 'bluesky' else meta_adapter()
             from creation_campaigns import validate_job_campaign_authority
             validate_job_campaign_authority(session, job)
+            _enforce_actor(session, owner_id, mutation=True)
+            _check_job_source(session, job)
             result = await adapter.poll(decrypt_tokens(grant), job.target_id,
                 {'external_id': job.external_id, 'provider_data': job.provider_data or {}, 'status': job.status,
                  'origin': approved_api_origin(), 'save_tokens': save_tokens},
@@ -1378,9 +1434,11 @@ async def refresh_adapter_job(job, grant, user, session):
 
 @router.post('/jobs/{job_id}/refresh', dependencies=[Depends(guard)])
 async def refresh_job(job_id: uuid.UUID, user: User = Depends(current_user), session: Session = Depends(db)):
+    _enforce_actor(session, user.id, mutation=True)
     job = session.scalar(select(PublishingJob).where(PublishingJob.id == str(job_id), PublishingJob.owner_id == user.id))
     if not job:
         raise HTTPException(404, 'Upload receipt not found.')
+    _check_job_source(session, job)
     if not job.external_id and not job.provider_data:
         return receipt(job)  # Unknown uploads must be inspected manually, not reposted.
     grant = grant_for(session, user.id, job.provider)

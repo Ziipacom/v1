@@ -258,8 +258,13 @@ def send_web(device_data, row):
 
 
 def current_permission(session, row):
+    from admin_services import account_is_active
     device = session.scalar(select(PushDevice).where(PushDevice.id == row.device_id,
         PushDevice.owner_id == row.owner_id).execution_options(populate_existing=True))
+    if not account_is_active(session, row.owner_id):
+        if device and device.status == 'active':
+            service.revoke_device(session, device)
+        return device, 'revoked'
     pref = session.get(NotificationPreference, row.owner_id, populate_existing=True)
     if not device or device.status != 'active' or device.revision != row.device_revision:
         return device, 'revoked'
