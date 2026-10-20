@@ -350,6 +350,7 @@ export function ComposerScreen({
   const [error, setError] = useState("");
   const [saved, setSaved] = useState<Item | null>(null);
   const { height } = useWindowDimensions();
+  const [mobileEditorHeight, setMobileEditorHeight] = useState(height);
   // Preserve the desktop warning for this editing session after narrowing the
   // portal. The compact/native layout itself remains unchanged.
   const [desktopEditingSession, setDesktopEditingSession] = useState(desktop);
@@ -765,10 +766,20 @@ export function ComposerScreen({
   const preview = (
     <View
       onLayout={(event) =>
-        setCanvasArea(previous => previous.width === event.nativeEvent.layout.width && previous.height === event.nativeEvent.layout.height ? previous : { width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })
+        setCanvasArea((previous) =>
+          previous.width === event.nativeEvent.layout.width &&
+          previous.height === event.nativeEvent.layout.height
+            ? previous
+            : {
+                width: event.nativeEvent.layout.width,
+                height: event.nativeEvent.layout.height,
+              },
+        )
       }
       style={{
-        height: desktop ? "100%" : Math.min(340, height * 0.43),
+        height: desktop
+          ? "100%"
+          : Math.min(300, Math.max(96, mobileEditorHeight * 0.32)),
         width: desktop ? "100%" : undefined,
         alignSelf: desktop ? "center" : undefined,
         margin: desktop ? 0 : 14,
@@ -1620,16 +1631,24 @@ export function ComposerScreen({
           </View>
         </View>
       ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 35 }}
+        <View
+          style={{ flex: 1, minHeight: 0 }}
+          onLayout={(event) =>
+            setMobileEditorHeight(event.nativeEvent.layout.height)
+          }
         >
           {preview}
           {transport}
           {stepTabs}
-          {inspector}
-        </ScrollView>
+          <ScrollView
+            style={{ flex: 1, minHeight: 0 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 35 }}
+          >
+            {inspector}
+          </ScrollView>
+        </View>
       )}
       {recorderMode && focused && (
         <Recorder
