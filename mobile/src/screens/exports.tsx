@@ -76,6 +76,8 @@ function ScopedExportsScreen({
     item?.captions,
     item?.overlays,
     item?.soundtrack,
+    item?.timeline,
+    item?.visual_effect,
   ]);
   const capture = useOperationScope(savedEdit, active);
   enabled.current = active;
@@ -193,7 +195,7 @@ function ScopedExportsScreen({
         </>
       )}
       {!item || guest ? (
-        <Notice text="Save your own uploaded video to your account before rendering an export." />
+        <Notice text="Save your own video, audio or supported image to your account before rendering an export." />
       ) : (
         <>
           {message ? <Notice text={message} /> : null}
@@ -218,6 +220,12 @@ function ScopedExportsScreen({
             <Text style={styles.small}>
               {item.captions?.length || 0} caption cues ·{" "}
               {item.overlays?.length || 0} text overlays
+              {item.timeline?.clips.length
+                ? ` · ${item.timeline.clips.length} timeline clips`
+                : ""}
+              {item.visual_effect && item.visual_effect !== "none"
+                ? ` · ${item.visual_effect} effect`
+                : ""}
               {item.soundtrack?.media_id ? ` · ${item.soundtrack.name}` : ""}
             </Text>
             <Text style={styles.small}>

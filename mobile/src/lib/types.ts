@@ -1,5 +1,14 @@
 export type Category = "video" | "music" | "games" | "live" | "nft" | "store";
 export type Caption = { start: number; end: number; text: string };
+export type TimelineClip = {
+  id: string;
+  start: number;
+  end: number;
+  speed?: 0.5 | 1 | 1.5 | 2;
+};
+export type EditTimeline = { version: 1; clips: TimelineClip[] };
+export type VisualEffect =
+  "none" | "vivid" | "mono" | "warm" | "cool" | "fade" | "cinema";
 export type Overlay = {
   id: string;
   text: string;
@@ -11,6 +20,8 @@ export type Soundtrack = {
   name: string;
   volume: number;
   start: number;
+  /** Only locally registered sample-draft audio. Never sent in ItemInput. */
+  local_uri?: string;
 };
 export type SocialProvider =
   "bluesky" | "facebook" | "instagram" | "tiktok" | "twitch" | "youtube";
@@ -57,6 +68,8 @@ export type Item = {
   trim_start?: number;
   trim_end?: number | null;
   captions?: Caption[];
+  timeline?: EditTimeline | null;
+  visual_effect?: VisualEffect;
   price_cents?: number | null;
   remix_of?: string | null;
   overlays?: Overlay[];
@@ -74,6 +87,8 @@ export type ItemInput = Pick<
   trim_start: number;
   trim_end: number | null;
   captions: Caption[];
+  timeline?: EditTimeline | null;
+  visual_effect?: VisualEffect;
   price_cents: number | null;
   remix_of: string | null;
   overlays: Overlay[];
@@ -126,7 +141,8 @@ export type Comment = {
 export type RootStack = {
   Welcome: undefined;
   Login: { register?: boolean } | undefined;
-  Main: { category?: Category; query?: string; collection?: "saved" } | undefined;
+  Main:
+    { category?: Category; query?: string; collection?: "saved" } | undefined;
   Watch: { itemId?: string; category?: Category } | undefined;
   Studio: { category?: Category; edit?: boolean } | undefined;
   CreatorStudio:

@@ -25,7 +25,13 @@ from sqlalchemy import select
 
 from creator import CreatorItem, CreatorMedia
 from personal_media import OSAssetMetadata, rights_json
-from render_services import FORMATS, MAX_INPUT_BYTES, _materialize
+from render_services import MAX_INPUT_BYTES, _materialize
+
+# Speech inputs are deliberately independent of renderer capabilities. A still
+# image may render a video canvas, but must never be read for transcription.
+SPEECH_FORMATS = {'video/mp4': 'mov', 'video/quicktime': 'mov', 'video/webm': 'matroska',
+                  'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/mp4': 'mov', 'audio/aac': 'aac',
+                  'audio/flac': 'flac', 'audio/ogg': 'ogg'}
 
 
 class TranscriptionSettings(BaseSettings):
@@ -164,7 +170,7 @@ def _run(command, work, deadline, watched=None):
 
 
 def _extract(ffmpeg, ffprobe, content_type, work, deadline):
-    format_name = FORMATS[content_type]
+    format_name = SPEECH_FORMATS[content_type]
     input_flags = ['-protocol_whitelist', 'file', '-f', format_name]
     raw = _run([ffprobe, '-v', 'error', '-max_alloc', '67108864', '-threads', '2',
         *input_flags, '-show_entries', 'format=duration:stream=codec_type', '-of', 'json', 'source.bin'],
@@ -234,7 +240,7 @@ def transcribe_media(session, owner_id: int, item_id: str) -> dict:
     descriptor = _owned_source(session, owner_id, item_id)
     if not config.enabled:
         return _result('unavailable', 'Local transcription is disabled. Add a manual transcript or timed captions.')
-    if (descriptor['content_type'] not in FORMATS or not 0 < descriptor['size'] <= MAX_INPUT_BYTES):
+    if (descriptor['content_type'] not in SPEECH_FORMATS or not 0 < descriptor['size'] <= MAX_INPUT_BYTES):
         return _result('unavailable', 'Choose owned audio or video up to 100 MiB and 90 seconds, or add a manual transcript.')
     deadline = time.monotonic() + config.timeout_seconds
     try:

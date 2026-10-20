@@ -1,31 +1,88 @@
 """Integration tests use a dedicated Redis DB and rollback-only PostgreSQL transaction."""
 import os
+import uuid
 os.environ.setdefault('REDIS_URL', 'redis://127.0.0.1:56389/15')
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app import app, db, engine, Base, cache, passwords, User
 
 
+def _namespaced_command(args, prefix):
+    """Keep real Redis/Lua semantics while isolating every fixture's keys."""
+    args = list(args)
+    def word(value):
+        return value.decode('ascii').upper() if isinstance(value, bytes) else str(value).upper()
+    def key(value):
+        return prefix.encode('ascii') + value if isinstance(value, bytes) else prefix + str(value)
+    command = word(args[0])
+    if command in {'GET', 'GETDEL', 'SET', 'SETEX', 'PSETEX', 'SADD', 'SREM', 'SMEMBERS', 'EXPIRE', 'PEXPIRE', 'TTL', 'PTTL', 'INCR', 'DECR'}:
+        args[1] = key(args[1])
+    elif command in {'DEL', 'UNLINK', 'EXISTS'}:
+        args[1:] = [key(value) for value in args[1:]]
+    elif command == 'EVAL':
+        count = int(args[2])
+        args[3:3 + count] = [key(value) for value in args[3:3 + count]]
+    elif command == 'SCAN':
+        # redis-py emits b'MATCH'; adding another MATCH would override the caller's
+        # selective pattern and let cooldown cleanup remove this test's sessions.
+        match = next((i for i in range(2, len(args)) if word(args[i]) == 'MATCH'), None)
+        if match is None:
+            args += ['MATCH', prefix + '*']
+        else:
+            args[match + 1] = key(args[match + 1])
+    elif command == 'KEYS':
+        args[1] = key(args[1])
+    elif command not in {'PING', 'MULTI', 'EXEC', 'DISCARD'}:
+        raise AssertionError('Add explicit test-key scoping before using this Redis command.')
+    return args
+
+
 @pytest.fixture
-def client():
-    Base.metadata.create_all(engine)
+def client(monkeypatch):
+    if engine.dialect.name == 'postgresql' and engine.url.host not in {'localhost', '127.0.0.1', '::1'}:
+        pytest.skip('API integration fixtures require local PostgreSQL, never a hosted account database')
+    redis_host = cache.connection_pool.connection_kwargs.get('host')
+    if redis_host not in {'localhost', '127.0.0.1', '::1'}:
+        pytest.skip('API integration fixtures require local Redis, never hosted sessions')
+    prefix = 'ziipa_test_api_' + uuid.uuid4().hex + ':'
+    execute, pipeline, scan = cache.execute_command, cache.pipeline, cache.scan_iter
+    def scoped_execute(*args, **kwargs):
+        return execute(*_namespaced_command(args, prefix), **kwargs)
+    def scoped_pipeline(*args, **kwargs):
+        pipe = pipeline(*args, **kwargs)
+        queued = pipe.execute_command
+        pipe.execute_command = lambda *values, **options: queued(*_namespaced_command(values, prefix), **options)
+        return pipe
+    def scoped_scan(*args, **kwargs):
+        for key in scan(*args, **kwargs):
+            assert isinstance(key, str) and key.startswith(prefix)
+            yield key[len(prefix):]
+    monkeypatch.setattr(cache, 'execute_command', scoped_execute)
+    monkeypatch.setattr(cache, 'pipeline', scoped_pipeline)
+    monkeypatch.setattr(cache, 'scan_iter', scoped_scan)
     with engine.connect() as connection:
         transaction = connection.begin()
+        if connection.dialect.name == 'postgresql':
+            schema = 'ziipa_test_api_' + uuid.uuid4().hex
+            connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+            connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
+            connection = connection.execution_options(schema_translate_map={None: schema})
+        Base.metadata.create_all(connection)
         session = Session(bind=connection, join_transaction_mode='create_savepoint')
         def test_db():
             yield session
         app.dependency_overrides[db] = test_db
-        for key in cache.scan_iter('rate:*'):
-            cache.delete(key)
-        with TestClient(app) as client:
-            yield client
-        session.close()
-        transaction.rollback()
-        app.dependency_overrides.clear()
-        for prefix in ('session:*', 'mobile_session:*', 'user_sessions:*'):
-            for key in cache.scan_iter(prefix):
-                cache.delete(key)
+        try:
+            with TestClient(app) as client:
+                yield client
+        finally:
+            session.close()
+            transaction.rollback()  # Includes only this fixture's schema and rows.
+            app.dependency_overrides.clear()
+            for key in cache.scan_iter('*'):
+                cache.delete(key)  # SCAN/DELETE are confined to the random namespace.
 
 
 def test_registration_session_logout(client):
@@ -70,6 +127,19 @@ def test_health(client, monkeypatch):
 def register_creator(client, email='creator@example.com'):
     result = client.post('/api/auth/register', json={'name':'Creator Test','email':email,'password':'creator-test-pass-123'})
     assert result.status_code == 201
+
+
+def test_selective_redis_cleanup_keeps_session_and_unrelated_keys(client):
+    register_creator(client)
+    cache.set('social_sync:fixture', 'cooldown')
+    cache.set('unrelated-proof', 'retained')
+    cooldown_keys = list(cache.scan_iter(b'social_sync:*', count=1))
+    assert cooldown_keys == ['social_sync:fixture']
+    for key in cooldown_keys:
+        cache.delete(key)
+    assert cache.get('social_sync:fixture') is None
+    assert cache.get('unrelated-proof') == 'retained'
+    assert client.get('/api/me').status_code == 200
 
 
 def test_creator_drafts_feeds_and_filters(client):

@@ -557,7 +557,11 @@ def apply_captions(campaign_id: uuid.UUID, data: CaptionApproval, user: User = D
     if not cues or len(cues) > 100:
         raise HTTPException(422, 'Review between one and 100 timed caption cues before applying them.')
     try:
-        parsed = ItemInput.model_validate({**item.data, 'captions': cues})
+        from timeline_edit import sequence_captions
+        output_cues = sequence_captions(cues, item.data['timeline']) if item.data.get('timeline') else cues
+        if not output_cues or len(output_cues) > 100:
+            raise HTTPException(422, 'The edited timeline needs between one and 100 matching cues. Review the cuts or captions in Studio.')
+        parsed = ItemInput.model_validate({**item.data, 'captions': output_cues})
     except ValidationError:
         raise HTTPException(422, 'The current Studio edit and reviewed captions are invalid. Correct them in Studio first.') from None
     item.data = {**item.data, 'captions': parsed.model_dump(mode='json')['captions']}

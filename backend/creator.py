@@ -13,6 +13,7 @@ from app import Base, User, db, current_user, guard, settings
 from catalog import CATALOG
 from storage_services import LocalStorage, storage
 from media_quota import lock_admission, available_bytes, require_capacity, MediaAdmissionError
+from timeline_edit import TimelineEdit, VisualEffect
 
 router = APIRouter(prefix='/api/creator', dependencies=[Depends(current_user)])
 MEDIA_ROOT = Path(settings.uploads_dir).expanduser().resolve()
@@ -136,6 +137,8 @@ class ItemInput(BaseModel):
     visibility: Literal['draft', 'published'] = 'draft'
     trim_start: float = Field(default=0, ge=0, le=86400)
     trim_end: float | None = Field(default=None, gt=0, le=86400)
+    timeline: TimelineEdit | None = None
+    visual_effect: VisualEffect = 'none'
     captions: list[Caption] = Field(default_factory=list, max_length=100)
     price_cents: int | None = Field(default=None, ge=0, le=100000000)
     remix_of: str | None = Field(default=None, max_length=64)
@@ -312,6 +315,10 @@ def save_item(data, session, user, row=None):
         media = session.get(CreatorMedia, data.media_id)
         if not media or media.owner_id != user.id:
             raise HTTPException(404, 'Your media file was not found')
+        if data.timeline and not media.content_type.startswith(('video/', 'audio/')):
+            raise HTTPException(422, 'A timeline requires an owned video or audio source.')
+    elif data.timeline:
+        raise HTTPException(422, 'Save an owned source file before saving timeline regions.')
     if data.soundtrack and data.soundtrack.media_id:
         soundtrack = session.get(CreatorMedia, data.soundtrack.media_id)
         if not soundtrack or soundtrack.owner_id != user.id or not soundtrack.content_type.startswith('audio/'):

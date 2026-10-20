@@ -127,5 +127,7 @@ export function recordingClipPreview(
     captions: [],
     overlays: [],
     soundtrack: null,
+    timeline: null,
+    visual_effect: "none",
   };
 }

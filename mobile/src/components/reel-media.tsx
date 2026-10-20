@@ -14,6 +14,9 @@ import { visibleCaption } from "../lib/domain";
 import { useZiipa } from "../provider";
 import type { Item } from "../lib/types";
 import { font } from "../theme";
+import { EditorCanvasLayers } from "./editor-canvas-layers";
+import { EditorPreview, EditorSoundtrack } from "./editor-preview";
+import type { TimelineClip } from "../lib/types";
 
 export function ReelMedia({
   item,
@@ -30,13 +33,36 @@ export function ReelMedia({
 }) {
   const { session } = useZiipa();
   const focused = useIsFocused();
+  const editedSequence =
+    !!item.timeline?.clips?.length ||
+    (!!item.visual_effect && item.visual_effect !== "none") ||
+    !!item.soundtrack ||
+    !!item.overlays?.length ||
+    !!item.captions?.length;
   const { source, loading, error } = usePlaybackSource(
     item.media_url,
     session?.access_token,
     !!item.demo,
-    active && focused,
+    active && focused && !editedSequence,
     localUri,
   );
+  if (editedSequence && active)
+    return (
+      <EditedReel
+        key={JSON.stringify([
+          item.id,
+          item.media_url,
+          item.timeline,
+          item.trim_start,
+          item.trim_end,
+          item.content_type,
+        ])}
+        item={item}
+        paused={paused}
+        muted={muted}
+        localUri={localUri}
+      />
+    );
   return (
     <View style={StyleSheet.absoluteFill}>
       <Cover item={item} style={{ flex: 1 }} />
@@ -65,6 +91,88 @@ export function ReelMedia({
       {!source && !!item.captions?.[0]?.text && (
         <Text style={r.caption}>{item.captions[0].text}</Text>
       )}
+    </View>
+  );
+}
+function EditedReel({
+  item,
+  paused,
+  muted,
+  localUri,
+}: {
+  item: Item;
+  paused: boolean;
+  muted: boolean;
+  localUri?: string;
+}) {
+  const [time, setTime] = useState(0);
+  const [area, setArea] = useState({ width: 320, height: 400 });
+  const [aspect, setAspect] = useState(16 / 9);
+  const width = Math.min(area.width, area.height * aspect),
+    height = width / aspect;
+  const frame = {
+    x: (area.width - width) / 2,
+    y: (area.height - height) / 2,
+    width,
+    height,
+  };
+  const [clips, setClips] = useState<TimelineClip[]>(
+    item.timeline?.clips || [],
+  );
+  const [seek] = useState({ time: 0, nonce: 0 });
+  const caption = visibleCaption(
+    item.captions,
+    item.timeline ? time : time + (item.trim_start || 0),
+  );
+  return (
+    <View
+      style={StyleSheet.absoluteFill}
+      onLayout={(event) =>
+        setArea(previous => previous.width === event.nativeEvent.layout.width && previous.height === event.nativeEvent.layout.height ? previous : { width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })
+      }
+    >
+      <EditorPreview
+        item={item}
+        paused={paused}
+        muted={muted}
+        localUri={localUri}
+        clips={clips}
+        seek={seek}
+        onTime={setTime}
+        onDuration={(duration) =>
+          setClips((current) =>
+            current.length
+              ? current
+              : [
+                  {
+                    id: "legacy",
+                    start: item.trim_start || 0,
+                    end: Math.min(item.trim_end || duration, duration),
+                  },
+                ],
+          )
+        }
+        onFrames={() => {}}
+        generateFrames={false}
+        onDimensions={(w, h) => {
+          if (w > 0 && h > 0) setAspect(w / h);
+        }}
+      />
+      {item.soundtrack && (
+        <EditorSoundtrack
+          mediaId={item.soundtrack.media_id}
+          uri={item.demo ? item.soundtrack.local_uri : undefined}
+          start={item.soundtrack.start}
+          paused={paused || muted}
+          time={time}
+          volume={item.soundtrack.volume}
+        />
+      )}
+      <EditorCanvasLayers
+        frame={frame}
+        overlays={item.overlays || []}
+        caption={caption}
+      />
     </View>
   );
 }

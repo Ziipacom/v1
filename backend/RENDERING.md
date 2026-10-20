@@ -1,10 +1,48 @@
-# Private video rendering
+# Private media rendering
 
 The API saves immutable rendering jobs; `python render_worker.py` processes them
 separately, one at a time. FFmpeg creates a new owned MP4 containing the saved
 trim, timed captions, positioned text overlays and owned/licensed soundtrack.
 Original video and audio objects remain unchanged. This is an actual media
 transcode, not just metadata attached to a download.
+
+The saved item optionally carries `timeline: {version: 1, clips: [{id, start,
+end, speed}]}`. Clips are ordered regions of the same owned source; split, delete,
+repeat and reorder are real exported edits. Identifiers use 1–64 ASCII letters,
+digits, underscores or hyphens and must be unique. There are at most 12 regions,
+each containing at least 0.2 source seconds. Speed is fixed to 0.5, 1, 1.5 or 2
+(default 1), and the combined output cannot exceed 90 seconds. The worker checks
+every region against the probed source before encoding. Audio tempo changes keep
+its pitch. Timeline captions use **output** seconds; legacy trim captions retain
+their source clock. Explicit campaign caption application maps reviewed source
+transcripts through the selected regions, rather than silently shifting words.
+
+`visual_effect` is one of `none`, `vivid`, `mono`, `warm`, `cool`, `fade`, or
+`cinema`. These select fixed FFmpeg filters; callers cannot supply filter graphs.
+Effects run before the existing text/caption layers. JPEG, PNG, WebP and GIF
+originals can export a six-second still video with effects, overlays and owned
+soundtrack; GIF freezes its first frame. Still images do not support timeline
+regions. Audio-only originals export a plain black canvas with their edited
+audio and any text/captions. HEIC/HEIF may upload but are not renderer inputs.
+Music plays once from its selected offset, then pads silence; no looping or
+licensed commercial music catalog is implied.
+
+Items use existing JSON storage, so this edit model needs no SQL migration.
+Absent timeline/`none` effects preserve the exact legacy schema-1 render hash;
+new edits use snapshot schema 2. Changing region order/speed/effect invalidates
+old exports and campaign approvals. Older clients preserve omitted edit fields.
+
+**Protocol-2 rollout:** stop every older renderer before updating the API or
+queueing new edits, then run the reviewed matching API/renderer release. Both
+worker heartbeat and wake keys now include `v2`; an old heartbeat cannot enable
+the new API's render button. The new worker rejects unsupported snapshot versions
+before reading media. It still processes valid schema-1 jobs. An old binary can
+still scan the shared SQL queue, so heartbeat versioning does not make mixed
+old/new worker operation safe. Preserve durable jobs and do not clear the queue
+to perform this upgrade. No production worker is activated by this source change.
+The free 256-MiB scheduler/push-only profile must never run FFmpeg or these jobs;
+the renderer retains its separate 1-GiB child limit and requires native resource
+acceptance on an eligible host before claiming hosted readiness.
 
 Configure the API and worker with `RENDER_ENABLED=true`, matching database,
 Redis and media storage settings. The Docker image includes FFmpeg, ffprobe and

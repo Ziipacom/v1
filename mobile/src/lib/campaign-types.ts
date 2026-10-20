@@ -217,6 +217,24 @@ export function campaignApprovalKey(campaign: Campaign) {
   ]);
 }
 
+/** Local invalidation only; the server's artifact digest remains authoritative. */
+export function campaignSourceEditKey(source?: Item) {
+  return JSON.stringify([
+    source?.id,
+    source?.creator_id,
+    source?.media_id,
+    source?.content_type,
+    source?.visibility,
+    source?.trim_start || 0,
+    source?.trim_end ?? null,
+    source?.captions || [],
+    source?.overlays || [],
+    source?.soundtrack ?? null,
+    source?.timeline ?? null,
+    source?.visual_effect || "none",
+  ]);
+}
+
 export function campaignNeedsPolling(campaign: Campaign | null) {
   return (
     !!campaign &&
@@ -336,6 +354,8 @@ export function campaignPreviewItem(
     captions: [],
     overlays: [],
     soundtrack: null,
+    timeline: null,
+    visual_effect: "none",
     demo: false,
   };
 }

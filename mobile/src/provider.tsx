@@ -15,6 +15,7 @@ import {
   writeSession,
 } from "./lib/api";
 import { demoEnabled, policyVersion, portalMode } from "./lib/config";
+import { clearDraftMedia } from "./lib/local-media";
 import {
   emptyPreferences,
   type Bootstrap,
@@ -158,6 +159,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     setData(value);
   }, []);
   const forgetSession = useCallback(async () => {
+    clearDraftMedia();
     void disconnectWallet().catch(() => {});
     activeToken.current = null;
     queue.current = Promise.resolve();
@@ -276,6 +278,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     await writeSession(result);
     const user = await request<User>("/api/me", result.access_token);
     activeToken.current = result.access_token;
+    clearDraftMedia();
     setSession({ ...result, user });
     setGuest(false);
     setError("");
@@ -297,6 +300,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     await forgetSession();
   }
   function enterGuest() {
+    clearDraftMedia();
     setGuest(true);
     setError("");
     putData(previewData());

@@ -43,6 +43,7 @@ import { useOperationScope } from "../lib/use-operation-scope";
 import { isoInstant } from "../lib/media-os-types";
 import {
   campaignApprovalKey,
+  campaignSourceEditKey,
   campaignCanApprove,
   campaignArtifact,
   campaignFormats,
@@ -276,10 +277,6 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
   const owner = useRef(session?.access_token);
   owner.current = session?.access_token;
   const requests = useRef(new Set<AbortController>());
-  const capture = useOperationScope(
-    `${session?.access_token}:${selectedId || "new"}`,
-    active,
-  );
   const sources = data.drafts.filter(
     (item) =>
       !item.demo &&
@@ -291,6 +288,11 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
   );
   const source = sources.find(
     (item) => item.id === (campaign?.item_id || sourceId),
+  );
+  const sourceEditKey = campaignSourceEditKey(source);
+  const capture = useOperationScope(
+    JSON.stringify([session?.access_token, selectedId || "new", sourceEditKey]),
+    active,
   );
   const approvalKey = campaign ? campaignApprovalKey(campaign) : "";
   const dirty =
@@ -333,6 +335,17 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
     setApproval(noApproval());
     setPreview(null);
   }, [selectedId]);
+  useEffect(() => {
+    // A known source change invalidates local review immediately. Captured
+    // async operations are also invalidated by sourceEditKey above, so a late
+    // preview or approval response cannot reinstate the previous edit.
+    requests.current.forEach((request) => request.abort());
+    setApproval(noApproval());
+    setPreview(null);
+    setCaptionsReviewed(false);
+    setBusy(false);
+    setLoading(false);
+  }, [sourceEditKey]);
   useEffect(() => {
     if (!campaign) return;
     const version = `${campaign.id}:${campaign.revision}`;

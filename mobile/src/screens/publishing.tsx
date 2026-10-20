@@ -277,6 +277,8 @@ function ScopedPublishingScreen({
           captions: [],
           overlays: [],
           soundtrack: null,
+          timeline: null,
+          visual_effect: "none",
         }
       : null;
   const approvalScope = JSON.stringify([

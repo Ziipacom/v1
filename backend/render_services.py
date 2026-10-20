@@ -28,6 +28,7 @@ from app import Base, User, cache, settings
 from creator import CreatorItem, CreatorMedia, ItemInput
 from storage_services import LocalStorage, object_key, storage
 from media_quota import lock_admission, require_capacity, MediaAdmissionError, config as quota_config
+from timeline_edit import EFFECT_FILTERS, checked_timeline
 
 
 class RenderSettings(BaseSettings):
@@ -80,11 +81,14 @@ def coordination_scope():
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:24]
 
 
-HEARTBEAT_KEY = 'ziipa:render:worker:' + coordination_scope()
-WAKE_KEY = 'ziipa:render:queue-revision:' + coordination_scope()
+EDIT_PROTOCOL = 2
+HEARTBEAT_KEY = 'ziipa:render:worker:v2:' + coordination_scope()
+WAKE_KEY = 'ziipa:render:queue-revision:v2:' + coordination_scope()
 FORMATS = {'video/mp4': 'mov', 'video/quicktime': 'mov', 'video/webm': 'matroska',
            'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/mp4': 'mov', 'audio/aac': 'aac',
-           'audio/flac': 'flac', 'audio/ogg': 'ogg'}
+           'audio/flac': 'flac', 'audio/ogg': 'ogg',
+           'image/jpeg': 'image2', 'image/png': 'image2', 'image/webp': 'image2', 'image/gif': 'gif'}
+IMAGE_FORMATS = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
 
 
 def notify_worker():
@@ -140,10 +144,15 @@ def readiness():
     except Exception:
         worker_ready = False
     return {'configured': not requirements, 'worker_ready': worker_ready,
+            'edit_protocol': EDIT_PROTOCOL,
             'can_render': not requirements and worker_ready, 'requirements': requirements,
             'max_input_bytes': MAX_INPUT_BYTES, 'max_output_bytes': MAX_OUTPUT_BYTES,
             'max_duration_seconds': MAX_DURATION, 'max_output_long_edge': 1280,
-            'output_type': 'video/mp4', 'features': ['trim', 'timed_captions', 'text_overlays', 'owned_soundtrack_mix', 'contain_renditions'],
+            'output_type': 'video/mp4', 'features': ['trim', 'timed_captions', 'text_overlays', 'owned_soundtrack_mix', 'contain_renditions', 'timeline_v1', 'visual_effects', 'audio_canvas', 'still_image_canvas'],
+            'still_image_seconds': 6, 'still_image_types': sorted(IMAGE_FORMATS),
+            'timeline': {'version': 1, 'max_clips': 12, 'min_source_clip_seconds': 0.2, 'max_output_seconds': MAX_DURATION,
+                         'speeds': [0.5, 1, 1.5, 2], 'caption_clock': 'output'},
+            'visual_effects': list(EFFECT_FILTERS),
             'renditions': [rendition_descriptor(name) for name in RENDITIONS], 'rendition_fit': 'contain'}
 
 
@@ -155,8 +164,8 @@ def _owned_media(session, owner_id, media_id, audio=False):
     media = session.get(CreatorMedia, parsed)
     if not media or media.owner_id != owner_id:
         raise HTTPException(404, 'Your source media was not found.')
-    if media.content_type not in FORMATS or not media.content_type.startswith('audio/' if audio else 'video/'):
-        raise HTTPException(422, 'Rendering requires a supported video original and, optionally, an owned audio file.')
+    if media.content_type not in FORMATS or (audio and not media.content_type.startswith('audio/')):
+        raise HTTPException(422, 'Choose a supported owned video, audio or still image and, optionally, an owned audio soundtrack.')
     if not 0 < media.size <= MAX_INPUT_BYTES:
         raise HTTPException(422, 'The source file exceeds the rendering limit.')
     return {'id': media.id, 'content_type': media.content_type, 'size': media.size}
@@ -168,7 +177,13 @@ def input_snapshot(session, item: CreatorItem, rendition: Rendition = 'original'
     except Exception as exc:
         raise HTTPException(422, 'Save valid editor settings before rendering.') from exc
     source = _owned_media(session, item.owner_id, parsed.media_id)
+    if parsed.timeline is not None and source['content_type'] in IMAGE_FORMATS:
+        raise HTTPException(422, 'Still images export as six-second videos; timeline regions require audio or video.')
     edit = parsed.model_dump(include={'trim_start', 'trim_end', 'captions', 'overlays', 'soundtrack'})
+    if parsed.timeline is not None:
+        edit['timeline'] = parsed.timeline.model_dump(mode='json')
+    if parsed.visual_effect != 'none':
+        edit['visual_effect'] = parsed.visual_effect
     if not all(math.isfinite(value) for value in (edit['trim_start'], edit['trim_end'] or 0)):
         raise HTTPException(422, 'Trim times must be finite.')
     soundtrack = edit.get('soundtrack')
@@ -184,7 +199,7 @@ def input_snapshot(session, item: CreatorItem, rendition: Rendition = 'original'
             raise HTTPException(422, 'Caption times must be finite.')
     descriptor = rendition_descriptor(rendition)
     # Original is deliberately absent: every existing snapshot/hash stays valid.
-    return {'schema': 1, 'source': source, 'audio': audio, 'edit': edit,
+    return {'schema': 2 if parsed.timeline is not None or parsed.visual_effect != 'none' else 1, 'source': source, 'audio': audio, 'edit': edit,
             **({'rendition': descriptor} if rendition != 'original' else {})}
 
 
@@ -333,32 +348,118 @@ def _display_text(text, width):
                      for line in (textwrap.wrap(paragraph, width=width, replace_whitespace=False) or ['']))
 
 
+def _still_source(snapshot, work):
+    """Probe then freeze exactly the first image frame under the same limits."""
+    ffmpeg, ffprobe, _ = runtime_paths()
+    raw = _run([ffprobe, '-v', 'error', '-max_alloc', '67108864', '-threads', '1', '-protocol_whitelist', 'file',
+                '-f', FORMATS[snapshot['source']['content_type']], '-show_entries', 'stream=codec_type,width,height',
+                '-of', 'json', 'source.bin'], work, 15)
+    try:
+        streams = json.loads(raw)['streams']
+        video = next(stream for stream in streams if stream.get('codec_type') == 'video')
+        width, height = int(video['width']), int(video['height'])
+        if not 2 <= width <= 4096 or not 2 <= height <= 4096 or width * height > 4096 * 4096:
+            raise ValueError()
+    except (ValueError, TypeError, KeyError, StopIteration) as exc:
+        raise RuntimeError('The still image dimensions exceed the supported source limit.') from exc
+    _run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-max_alloc', '67108864',
+          '-threads', '1', '-protocol_whitelist', 'file', '-f', FORMATS[snapshot['source']['content_type']], '-i', 'source.bin',
+          '-frames:v', '1', '-threads', '1', '-update', '1', 'still.png'], work, 20)
+    if not (work / 'still.png').is_file() or (work / 'still.png').stat().st_size > MAX_INPUT_BYTES:
+        raise RuntimeError('The frozen still image exceeds the supported source limit.')
+    return 6.0, [video]
+
+
+def validate_snapshot_version(snapshot):
+    version = snapshot.get('schema')
+    if type(version) is not int or version not in (1, EDIT_PROTOCOL):
+        raise RuntimeError('The render snapshot version is unsupported; save and queue this edit again.')
+    edit = snapshot.get('edit')
+    if not isinstance(edit, dict) or (version == 1 and (edit.get('timeline') is not None or edit.get('visual_effect', 'none') != 'none')):
+        raise RuntimeError('The saved edit does not match its render snapshot version.')
+
+
 def render_files(snapshot: dict, work: Path):
     """Render already materialized source.bin/music.bin in an isolated folder."""
+    validate_snapshot_version(snapshot)
     ffmpeg, _, font = runtime_paths()
-    duration, streams = _probe(work / 'source.bin', snapshot['source']['content_type'])
+    still_source = snapshot['source']['content_type'] in IMAGE_FORMATS
+    duration, streams = _still_source(snapshot, work) if still_source else _probe(work / 'source.bin', snapshot['source']['content_type'])
     video = next((stream for stream in streams if stream.get('codec_type') == 'video'), None)
-    if not video or not 2 <= int(video.get('width', 0)) <= 4096 or not 2 <= int(video.get('height', 0)) <= 4096:
+    audio_source = snapshot['source']['content_type'].startswith('audio/')
+    if not video and not audio_source:
+        raise RuntimeError('The original has no supported video stream.')
+    if video and (not 2 <= int(video.get('width', 0)) <= 4096 or not 2 <= int(video.get('height', 0)) <= 4096):
         raise RuntimeError('The video dimensions exceed the 4096-pixel source limit.')
+    has_audio = any(stream.get('codec_type') == 'audio' for stream in streams)
+    if audio_source and not has_audio:
+        raise RuntimeError('The original has no supported audio stream.')
     edit = snapshot['edit']
-    start, end = float(edit['trim_start']), float(edit['trim_end'] if edit['trim_end'] is not None else duration)
-    if not 0 <= start < end <= duration + 0.05 or not 0.1 <= end - start <= MAX_DURATION:
-        raise RuntimeError('Choose a trim inside the source lasting 0.1–90 seconds.')
-    length = min(end, duration) - start
-    width, height = int(video['width']), int(video['height'])
+    timeline = None
+    if edit.get('timeline') is not None:
+        if still_source:
+            raise RuntimeError('Timeline regions require an audio or video source.')
+        try:
+            timeline = checked_timeline(edit['timeline'], duration)
+        except ValueError as exc:
+            raise RuntimeError('Choose valid timeline regions inside the source, totaling at most 90 seconds.') from exc
+        start, end, length = 0.0, timeline.duration, timeline.duration
+    else:
+        start, end = float(edit['trim_start']), float(edit['trim_end'] if edit['trim_end'] is not None else duration)
+        if not 0 <= start < end <= duration + 0.05 or not 0.1 <= end - start <= MAX_DURATION:
+            raise RuntimeError('Choose a trim inside the source lasting 0.1-90 seconds.')
+        length = min(end, duration) - start
+    effect = edit.get('visual_effect', 'none')
+    if effect not in EFFECT_FILTERS:
+        raise RuntimeError('Choose one of the supported visual effects.')
+    width, height = (int(video['width']), int(video['height'])) if video else (1280, 720)
     scale = min(1, 1280 / max(width, height), 720 / min(width, height))
     width, height = max(2, int(width * scale) // 2 * 2), max(2, int(height * scale) // 2 * 2)
     rendition = snapshot_rendition(snapshot)
     shutil.copyfile(font, work / 'font.ttf')
-    filters = [f'trim=start={start:.6f}:end={end:.6f}', 'setpts=PTS-STARTPTS', f'scale={width}:{height}', 'setsar=1', 'fps=30', 'format=yuv420p']
+    canvas = [f'scale={width}:{height}', 'setsar=1', 'fps=30', 'format=yuv420p']
     if rendition['name'] != 'original':
         width, height = rendition['width'], rendition['height']
-        # Fixed, bounded canvas. Filter DAR includes sample aspect/autorotation;
-        # no user-controlled crop/filter expressions or network input are used.
         contain = (f"scale=w='max(2,trunc(min({width},{height}*dar)/2)*2)':"
                    f"h='max(2,trunc(min({height},{width}/dar)/2)*2)'")
-        filters = [f'trim=start={start:.6f}:end={end:.6f}', 'setpts=PTS-STARTPTS', contain,
-                   'setsar=1', f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black', 'fps=30', 'format=yuv420p']
+        canvas = [contain, 'setsar=1', f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black', 'fps=30', 'format=yuv420p']
+    command = [ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-max_alloc', '67108864', '-filter_threads', '1', '-threads', '2']
+    graph_prefix = []
+    if timeline:
+        # Separate bounded file inputs seek each requested region. A reversed
+        # timeline never buffers the intervening raw frames in a split graph.
+        for index, clip in enumerate(timeline.clips):
+            raw_length = min(clip.end, duration) - clip.start
+            clip_length = raw_length / clip.speed
+            command += ['-threads', '1', '-protocol_whitelist', 'file', '-ss', f'{clip.start:.6f}', '-t', f'{raw_length:.6f}',
+                        '-f', FORMATS[snapshot['source']['content_type']], '-i', 'source.bin']
+            if video:
+                clip_filters = [f'trim=duration={raw_length:.6f}', f'setpts=(PTS-STARTPTS)/{clip.speed:.6f}', *canvas]
+                graph_prefix.append(f'[{index}:v:0]' + ','.join(clip_filters) + f'[cv{index}]')
+            else:
+                graph_prefix.append(f'color=c=black:s={width}x{height}:r=30:d={clip_length:.6f}[cv{index}]')
+            if has_audio:
+                graph_prefix.append(f'[{index}:a:0]atrim=duration={raw_length:.6f},asetpts=PTS-STARTPTS,'
+                                    f'atempo={clip.speed:.6f},aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,'
+                                    f'apad,atrim=duration={clip_length:.6f}[ca{index}]')
+        concat_inputs = ''.join(f'[cv{i}]' + (f'[ca{i}]' if has_audio else '') for i in range(len(timeline.clips)))
+        graph_prefix.append(concat_inputs + f'concat=n={len(timeline.clips)}:v=1:a={int(has_audio)}[vbase]' + ('[aoriginal]' if has_audio else ''))
+        video_input = '[vbase]'
+        filters = []
+        music_index = len(timeline.clips)
+    else:
+        if still_source:
+            command += ['-threads', '1', '-protocol_whitelist', 'file', '-loop', '1', '-framerate', '30', '-f', 'image2', '-i', 'still.png']
+        else:
+            command += ['-protocol_whitelist', 'file', '-f', FORMATS[snapshot['source']['content_type']], '-i', 'source.bin']
+        if video:
+            filters = [f'trim=start={start:.6f}:end={end:.6f}', 'setpts=PTS-STARTPTS', *canvas]
+            video_input = '[0:v:0]'
+        else:
+            graph_prefix.append(f'color=c=black:s={width}x{height}:r=30:d={length:.6f}[vbase]')
+            filters, video_input = [], '[vbase]'
+        music_index = 1
+    filters.extend(EFFECT_FILTERS[effect])
     index = 0
     themes = {'light': ('black', 'white@0.9'), 'dark': ('white', 'black@0.75'),
               'purple': ('white', '0x5424AF@0.9'), 'lime': ('black', '0xA4E900@0.95')}
@@ -375,18 +476,15 @@ def render_files(snapshot: dict, work: Path):
         filename = f'text{index}.txt'; index += 1
         (work / filename).write_text(_display_text(caption['text'], max(12, round(width / (max(16,round(width/23))*0.65)))), encoding='utf-8')
         filters.append(f"drawtext=fontfile=font.ttf:textfile={filename}:expansion=none:fontsize={max(16,round(width/23))}:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=8:x=(w-text_w)/2:y=h*0.91-text_h:enable='between(t,{caption_start:.6f},{caption_end:.6f})'")
-    graph = '[0:v:0]' + ','.join(filters) + '[vout]'
-    command = [ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-max_alloc', '67108864', '-filter_threads', '1', '-threads', '2',
-               '-protocol_whitelist', 'file', '-f', FORMATS[snapshot['source']['content_type']], '-i', 'source.bin']
-    has_audio = any(stream.get('codec_type') == 'audio' for stream in streams)
+    graph = ';'.join([*graph_prefix, video_input + (','.join(filters) if filters else 'null') + '[vout]'])
     if snapshot['audio']:
         music_duration, music_streams = _probe(work / 'music.bin', snapshot['audio']['content_type'])
         music_start = float(edit['soundtrack']['start'])
         if not any(stream.get('codec_type') == 'audio' for stream in music_streams) or not 0 <= music_start < music_duration:
             raise RuntimeError('The soundtrack start is outside the owned audio file.')
         command += ['-threads', '2', '-protocol_whitelist', 'file', '-f', FORMATS[snapshot['audio']['content_type']], '-i', 'music.bin']
-        graph += f";[1:a:0]atrim=start={music_start:.6f}:end={music_start+length:.6f},asetpts=PTS-STARTPTS,aresample=48000,volume={edit['soundtrack']['volume']:.6f},apad[amusic]"
-    if has_audio:
+        graph += f";[{music_index}:a:0]atrim=start={music_start:.6f}:end={music_start+length:.6f},asetpts=PTS-STARTPTS,aresample=48000,volume={edit['soundtrack']['volume']:.6f},apad[amusic]"
+    if has_audio and not timeline:
         graph += f';[0:a:0]atrim=start={start:.6f}:end={end:.6f},asetpts=PTS-STARTPTS,aresample=48000[aoriginal]'
     audio_map = None
     if has_audio and snapshot['audio']:
@@ -466,6 +564,7 @@ def process_job(session_factory, job_id: str, claim: str):
         owner_id, snapshot = job.owner_id, dict(job.snapshot)
         session.commit()
     try:
+        validate_snapshot_version(snapshot)
         with tempfile.TemporaryDirectory(prefix='render-', dir=root) as temporary:
             work = Path(temporary)
             source_hash = _materialize(owner_id, snapshot['source'], work / 'source.bin')
@@ -498,7 +597,7 @@ def process_job(session_factory, job_id: str, claim: str):
                     backend.delete(owner_id, job.output_media_id)
                 _store_output(backend, owner_id, job.output_media_id, output)
                 session.add(CreatorMedia(id=job.output_media_id, owner_id=owner_id, content_type='video/mp4', size=output.stat().st_size))
-                job.status, job.detail = 'ready', 'Trim, captions, overlays and selected soundtrack are baked into this private MP4.'
+                job.status, job.detail = 'ready', 'The saved timeline, visual effect, captions, overlays and selected soundtrack are baked into this private MP4.'
                 job.output_sha256, job.source_sha256, job.duration = digest, source_hash, duration
                 _, output_streams = _probe(output, 'video/mp4')
                 output_video = next(s for s in output_streams if s.get('codec_type') == 'video')

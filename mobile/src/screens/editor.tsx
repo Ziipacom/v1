@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -9,7 +9,6 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { Image } from "expo-image";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { useIsFocused, usePreventRemove } from "@react-navigation/native";
@@ -31,12 +30,32 @@ import {
   Scissors,
   Share2,
   SlidersHorizontal,
-  Sparkles,
   Upload,
+  Volume2,
+  VolumeX,
+  SkipBack,
 } from "lucide-react-native";
 import { Action, Cover, Field, Notice, Pill } from "../components/ui";
 import { FloatButton, worlds } from "../components/floating";
-import { ReelMedia } from "../components/reel-media";
+import {
+  EditorPreview,
+  EditorSoundtrack,
+  type EditorFrame,
+} from "../components/editor-preview";
+import { EditorTimeline } from "../components/editor-timeline";
+import { EditorOverlays } from "../components/editor-overlays";
+import { EditorCanvasLayers } from "../components/editor-canvas-layers";
+import { MusicWorkspace } from "../components/music-workspace";
+import {
+  canSplitAt,
+  deleteClip,
+  formatTimelineTime,
+  sequenceToSource,
+  splitClip,
+  totalDuration,
+  trimClip,
+  validateClips,
+} from "../lib/editor-timeline";
 import { Recorder } from "../components/recorder";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { color, font, styles } from "../theme";
@@ -47,8 +66,14 @@ import {
   uploadMedia,
   type UploadFile,
 } from "../lib/api";
+import { editorCaptions } from "../lib/editor-captions";
 import { inCreativeWorld, parseEditing, parsePrice } from "../lib/domain";
-import { rememberLocalMedia, forgetLocalMedia } from "../lib/local-media";
+import {
+  rememberLocalMedia,
+  forgetLocalMedia,
+  retainDraftMedia,
+  isRetainedDraftMedia,
+} from "../lib/local-media";
 import {
   providerSupports,
   socialProvider,
@@ -60,6 +85,8 @@ import type {
   Item,
   ItemInput,
   Overlay,
+  TimelineClip,
+  VisualEffect,
   RootStack,
   SocialProvider,
 } from "../lib/types";
@@ -76,8 +103,9 @@ export function ComposerScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStack, "Composer">) {
-  const { desktop, contentWidth } = useDesktopLayout();
+  const { desktop } = useDesktopLayout();
   const existing = route.params?.item;
+  const persistedId = useRef(existing?.id);
   const remix = route.params?.remix;
   const { data, session, guest, api, refresh, savePreviewDraft } = useZiipa();
   const originalUpload = !guest && session ? route.params?.upload : undefined;
@@ -149,7 +177,21 @@ export function ComposerScreen({
   const [mediaId, setMediaId] = useState(
     existing?.media_id || originalUpload?.id || null,
   );
-  const [soundtrackFile, setSoundtrackFile] = useState<UploadFile | null>(null);
+  const [soundtrackFile, setSoundtrackFile] = useState<UploadFile | null>(() =>
+    existing?.demo &&
+    existing.soundtrack?.local_uri &&
+    isRetainedDraftMedia(existing.soundtrack.local_uri)
+      ? {
+          uri: existing.soundtrack.local_uri,
+          name: existing.soundtrack.name,
+          mimeType: "audio/wav",
+          size: 0,
+        }
+      : null,
+  );
+  const [soundtrackStart, setSoundtrackStart] = useState(
+    existing?.soundtrack?.start || 0,
+  );
   const [soundtrackId, setSoundtrackId] = useState(
     existing?.soundtrack?.media_id || null,
   );
@@ -159,15 +201,143 @@ export function ComposerScreen({
   const [soundtrackVolume, setSoundtrackVolume] = useState(
     String(Math.round((existing?.soundtrack?.volume ?? 0.7) * 100)),
   );
-  const [overlayText, setOverlayText] = useState(
-    existing?.overlays?.[0]?.text || "",
+  const [overlays, setOverlays] = useState<Overlay[]>(existing?.overlays || []);
+  const [selectedOverlay, setSelectedOverlay] = useState<string | null>(
+    existing?.overlays?.[0]?.id || null,
   );
-  const [overlayPosition, setOverlayPosition] = useState<Overlay["position"]>(
-    existing?.overlays?.[0]?.position || "center",
+  const [visualEffect, setVisualEffect] = useState<VisualEffect>(
+    existing?.visual_effect || "none",
   );
-  const [overlayTheme, setOverlayTheme] = useState<Overlay["theme"]>(
-    existing?.overlays?.[0]?.theme || "purple",
+  const [clips, setClips] = useState<TimelineClip[]>(
+    existing?.timeline?.clips || [],
   );
+  const [timelineEdited, setTimelineEdited] = useState(!!existing?.timeline);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [seek, setSeek] = useState({ time: 0, nonce: 0 });
+  const [selectedClip, setSelectedClip] = useState<string | null>(
+    existing?.timeline?.clips[0]?.id || null,
+  );
+  const [frames, setFrames] = useState<EditorFrame[]>([]);
+  const [canvasArea, setCanvasArea] = useState({ width: 320, height: 280 });
+  const [sourceAspect, setSourceAspect] = useState(16 / 9);
+  const receiveDimensions = useCallback((width: number, height: number) => {
+    if (width > 0 && height > 0 && Number.isFinite(width / height))
+      setSourceAspect(width / height);
+  }, []);
+  const [muted, setMuted] = useState(false);
+  type EditState = {
+    clips: TimelineClip[];
+    timelineEdited: boolean;
+    overlays: Overlay[];
+    visualEffect: VisualEffect;
+    caption: string;
+  };
+  const [history, setHistory] = useState<{
+    past: EditState[];
+    future: EditState[];
+  }>({ past: [], future: [] });
+  const editSnapshot = {
+    clips,
+    timelineEdited,
+    overlays,
+    visualEffect,
+    caption,
+  };
+  function applyEdit(patch: Partial<EditState>) {
+    if (busy) return;
+    setHistory((h) => ({
+      past: [...h.past.slice(-39), editSnapshot],
+      future: [],
+    }));
+    restoreEdit({ ...editSnapshot, ...patch });
+    setSaved(null);
+  }
+  function restoreEdit(state: EditState) {
+    setClips(state.clips);
+    setTimelineEdited(state.timelineEdited);
+    setOverlays(state.overlays);
+    setVisualEffect(state.visualEffect);
+    setCaption(state.caption);
+  }
+  function undoEdit(redo = false) {
+    const stack = redo ? history.future : history.past;
+    if (!stack.length || busy) return;
+    const next = stack[stack.length - 1];
+    setHistory(
+      redo
+        ? { past: [...history.past, editSnapshot], future: stack.slice(0, -1) }
+        : {
+            past: stack.slice(0, -1),
+            future: [...history.future, editSnapshot],
+          },
+    );
+    restoreEdit(next);
+    setSelectedClip(next.clips[0]?.id || null);
+    seekTo(0);
+    setSaved(null);
+  }
+  function seekTo(time: number) {
+    setCurrentTime(time);
+    setSeek((value) => ({ time, nonce: value.nonce + 1 }));
+  }
+  const receiveDuration = useCallback(
+    (value: number) => {
+      if (!Number.isFinite(value) || value <= 0 || value > 86400) return;
+      setDuration(value);
+      setClips((current) =>
+        current.length
+          ? current
+          : [
+              {
+                id: "clip-original",
+                start: Number(start) || 0,
+                end: Math.min(value, Number(end) || value),
+              },
+            ],
+      );
+      setSelectedClip((current) => current || "clip-original");
+    },
+    [start, end],
+  );
+  function resetSource() {
+    setDuration(0);
+    setFrames([]);
+    setClips([]);
+    setTimelineEdited(false);
+    setHistory({ past: [], future: [] });
+    setStart("0");
+    setEnd("");
+    seekTo(0);
+    setPaused(true);
+  }
+  const selectedSoundtrackUris = useRef(new Set<string>());
+  useEffect(
+    () => () => {
+      for (const uri of selectedSoundtrackUris.current)
+        if (!isRetainedDraftMedia(uri)) void disposePickedAudio(uri);
+    },
+    [],
+  );
+  const generatedRelease = useRef<(() => Promise<void>) | null>(null);
+  useEffect(
+    () => () => {
+      void generatedRelease.current?.().catch(() => {});
+    },
+    [],
+  );
+  function releaseSoundtrack() {
+    void generatedRelease.current?.().catch(() => {});
+    generatedRelease.current = null;
+    if (
+      soundtrackFile &&
+      selectedSoundtrackUris.current.has(soundtrackFile.uri) &&
+      !isRetainedDraftMedia(soundtrackFile.uri)
+    ) {
+      selectedSoundtrackUris.current.delete(soundtrackFile.uri);
+      void disposePickedAudio(soundtrackFile.uri);
+    }
+  }
   const [targets, setTargets] = useState<SocialProvider[]>(
     existing?.distribution_targets || [],
   );
@@ -216,9 +386,12 @@ export function ComposerScreen({
       : null,
     soundtrackName,
     soundtrackVolume,
-    overlayText,
-    overlayPosition,
-    overlayTheme,
+    soundtrackStart,
+    overlays,
+    visualEffect,
+    timeline: timelineEdited
+      ? { version: 1, clips }
+      : (!file ? existing?.timeline : null) || null,
     targets: [...targets].sort(),
     sampleId: sample?.id || null,
     remixId: remix?.id || null,
@@ -292,16 +465,18 @@ export function ComposerScreen({
     ...editing,
     content_type: file?.mimeType || base.content_type,
     title: title || base.title,
-    overlays: overlayText.trim()
-      ? [
-          {
-            id: existing?.overlays?.[0]?.id || "primary-overlay",
-            text: overlayText.trim(),
-            position: overlayPosition,
-            theme: overlayTheme,
-          },
-        ]
-      : [],
+    captions: editorCaptions(
+      existing,
+      caption,
+      clips,
+      timelineEdited,
+      editing.captions || [],
+    ),
+    overlays: overlays.filter((layer) => layer.text.trim()),
+    timeline: timelineEdited
+      ? { version: 1, clips }
+      : (!file ? existing?.timeline : null) || null,
+    visual_effect: visualEffect,
   };
   function fileFromAsset(
     asset: {
@@ -341,14 +516,21 @@ export function ComposerScreen({
       if (kind === "soundtrack") {
         if (!selected.mimeType.startsWith("audio/"))
           throw new Error("Choose an audio file for the soundtrack.");
+        releaseSoundtrack();
+        rememberLocalMedia(selected.uri);
+        selectedSoundtrackUris.current.add(selected.uri);
         setSoundtrackFile(selected);
         setSoundtrackId(null);
+        setSoundtrackStart(0);
         setSoundtrackName(selected.name.replace(/\.[^.]+$/, ""));
       } else {
+        resetSource();
         rememberLocalMedia(selected.uri);
         selectedUris.current.add(selected.uri);
         setFile(selected);
         setMediaId(null);
+        setTitle((current) => current || selected.name.replace(/\.[^.]+$/, ""));
+        setTab("Edit");
         if (selected.mimeType.startsWith("video/")) setCategory("video");
         if (selected.mimeType.startsWith("audio/")) setCategory("music");
       }
@@ -358,6 +540,7 @@ export function ComposerScreen({
     }
   }
   function useRecording(cameraFile: UploadFile) {
+    resetSource();
     rememberLocalMedia(cameraFile.uri);
     selectedUris.current.add(cameraFile.uri);
     capturedUris.current.add(cameraFile.uri);
@@ -393,6 +576,20 @@ export function ComposerScreen({
       if (parsedTags.length > 12 || parsedTags.some((t) => t.length > 40))
         throw new Error("Use up to 12 tags, each under 40 characters.");
       parsed = parseEditing(start, end, caption);
+      if (timelineEdited) {
+        validateClips(clips, duration || 86400);
+        if (!clips.length)
+          throw new Error("Add a clip to your timeline before saving.");
+        parsed = {
+          trim_start: 0,
+          trim_end: null,
+          captions: editorCaptions(existing, caption, clips, true, []),
+        };
+      } else if (
+        caption === (existing?.captions?.[0]?.text || "") &&
+        existing?.captions?.length
+      )
+        parsed.captions = existing.captions;
       price_cents = category === "store" ? parsePrice(price) : null;
       if (!guest && visibility === "published" && !mediaId && !file)
         throw new Error(
@@ -414,7 +611,7 @@ export function ComposerScreen({
         const draft: Item = {
           ...base,
           ...parsed,
-          id: existing?.id || `preview-draft-${Date.now()}`,
+          id: persistedId.current || `preview-draft-${Date.now()}`,
           title: title.trim(),
           description,
           category,
@@ -425,12 +622,15 @@ export function ComposerScreen({
           price_cents,
           remix_of: remix?.id || existing?.remix_of || null,
           overlays: canvas.overlays,
+          timeline: canvas.timeline,
+          visual_effect: visualEffect,
           soundtrack: soundtrackName.trim()
             ? {
                 media_id: null,
                 name: soundtrackName.trim(),
                 volume: Number(soundtrackVolume) / 100,
-                start: 0,
+                start: soundtrackStart,
+                ...(soundtrackFile ? { local_uri: soundtrackFile.uri } : {}),
               }
             : null,
           distribution_targets: targets,
@@ -457,6 +657,16 @@ export function ComposerScreen({
               : "Sample draft",
         };
         if (file) retainedCaptureUris.current.add(file.uri);
+        if (soundtrackFile) {
+          retainDraftMedia(
+            `${draft.id}:soundtrack`,
+            soundtrackFile.uri,
+            generatedRelease.current ||
+              (() => disposePickedAudio(soundtrackFile.uri)),
+          );
+          generatedRelease.current = null;
+        }
+        persistedId.current = draft.id;
         savePreviewDraft(draft);
         setSaved(draft);
         setCleanFingerprint(fingerprint);
@@ -493,20 +703,25 @@ export function ComposerScreen({
           price_cents,
           remix_of: remix?.id || existing?.remix_of || null,
           overlays: canvas.overlays || [],
+          timeline: canvas.timeline,
+          visual_effect: visualEffect,
           soundtrack: soundtrackName.trim()
             ? {
                 media_id: selectedSoundtrackId,
                 name: soundtrackName.trim(),
                 volume: Number(soundtrackVolume) / 100,
-                start: 0,
+                start: soundtrackStart,
               }
             : null,
           distribution_targets: targets,
         };
         const result = await api<Item>(
-          existing ? `/api/creator/items/${existing.id}` : "/api/creator/items",
+          persistedId.current
+            ? `/api/creator/items/${persistedId.current}`
+            : "/api/creator/items",
           payload,
         );
+        persistedId.current = result.id;
         // Only the submitted snapshot is clean. If a control changed while
         // saving, its current fingerprint still differs and remains unsaved.
         setCleanFingerprint(
@@ -533,65 +748,72 @@ export function ComposerScreen({
       setBusy(false);
     }
   }
-  const previewColumnWidth = Math.min(420, Math.max(250, contentWidth * 0.4));
-  const desktopPreviewHeight = Math.min(
-    640,
-    Math.max(300, height - 250),
-    (previewColumnWidth * 16) / 9,
+  const frameWidth = Math.min(
+    canvasArea.width,
+    canvasArea.height * sourceAspect,
   );
+  const frameHeight = frameWidth / sourceAspect;
+  const previewFrame = {
+    x: (canvasArea.width - frameWidth) / 2,
+    y: (canvasArea.height - frameHeight) / 2,
+    width: frameWidth,
+    height: frameHeight,
+  };
+  const previewCaptionTime = canvas.timeline
+    ? currentTime
+    : currentTime + (Number(start) || 0);
   const preview = (
     <View
+      onLayout={(event) =>
+        setCanvasArea(previous => previous.width === event.nativeEvent.layout.width && previous.height === event.nativeEvent.layout.height ? previous : { width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })
+      }
       style={{
-        height: desktop ? desktopPreviewHeight : Math.min(340, height * 0.43),
-        width: desktop ? (desktopPreviewHeight * 9) / 16 : undefined,
+        height: desktop ? "100%" : Math.min(340, height * 0.43),
+        width: desktop ? "100%" : undefined,
         alignSelf: desktop ? "center" : undefined,
         margin: desktop ? 0 : 14,
         marginBottom: 0,
-        borderRadius: 22,
+        borderRadius: desktop ? 0 : 16,
         overflow: "hidden",
         borderWidth: 1,
         borderColor: "#574366",
       }}
     >
-      {file?.mimeType.startsWith("image/") ? (
-        <>
-          <Image
-            source={{ uri: file.uri }}
-            style={{ flex: 1 }}
-            contentFit="cover"
-          />
-          {!!caption && <Text style={eStyle.caption}>{caption}</Text>}
-        </>
-      ) : (
-        <ReelMedia
-          item={canvas}
-          active
-          paused={paused}
-          muted
-          localUri={file?.uri}
-        />
-      )}
-      {!!overlayText.trim() && (
-        <Text
-          style={[
-            eStyle.overlay,
-            overlayPosition === "top"
-              ? { top: 62 }
-              : overlayPosition === "bottom"
-                ? { bottom: 64 }
-                : { top: "44%" },
-            overlayTheme === "light"
-              ? { color: "#160F20", backgroundColor: "#FFFFFFE8" }
-              : overlayTheme === "lime"
-                ? { color: "#132000", backgroundColor: "#A6E21BE8" }
-                : overlayTheme === "purple"
-                  ? { backgroundColor: "#5420ABE8" }
-                  : { backgroundColor: "#09060EDB" },
-          ]}
-        >
-          {overlayText.trim()}
-        </Text>
-      )}
+      <EditorPreview
+        item={canvas}
+        paused={paused}
+        muted={muted}
+        localUri={file?.uri}
+        clips={clips}
+        seek={seek}
+        onTime={setCurrentTime}
+        onDuration={receiveDuration}
+        onFrames={setFrames}
+        onDimensions={receiveDimensions}
+      />
+      <EditorSoundtrack
+        mediaId={soundtrackId}
+        uri={soundtrackFile?.uri}
+        paused={paused || muted}
+        time={currentTime}
+        volume={Number(soundtrackVolume) / 100}
+        start={soundtrackStart}
+      />
+      <EditorCanvasLayers
+        frame={previewFrame}
+        overlays={overlays}
+        caption={
+          canvas.captions?.find(
+            (cue) =>
+              previewCaptionTime >= cue.start && previewCaptionTime < cue.end,
+          )?.text
+        }
+        selectedId={tab === "Overlay" ? selectedOverlay : null}
+        onSelect={(id) => {
+          setSelectedOverlay(id);
+          setTab("Overlay");
+        }}
+      />
       <View
         style={{
           position: "absolute",
@@ -613,20 +835,6 @@ export function ComposerScreen({
           onPress={() => setPaused(!paused)}
         />
       </View>
-      <View style={{ position: "absolute", bottom: 12, left: 15, right: 15 }}>
-        <Text
-          numberOfLines={1}
-          style={{
-            color: "white",
-            fontFamily: font.semibold,
-            fontSize: 19,
-            textShadowColor: "#000",
-            textShadowRadius: 4,
-          }}
-        >
-          {title || "Your next creation"}
-        </Text>
-      </View>
     </View>
   );
   const stepTabs = (
@@ -645,7 +853,10 @@ export function ComposerScreen({
           accessibilityRole="button"
           accessibilityLabel={`${index + 1}. ${name}`}
           accessibilityState={{ selected: tab === name }}
-          onPress={() => setTab(name)}
+          onPress={() => {
+            setPaused(true);
+            setTab(name);
+          }}
           style={{ flex: 1, alignItems: "center", gap: 5 }}
         >
           <View
@@ -667,17 +878,137 @@ export function ComposerScreen({
             {desktop
               ? (
                   {
-                    Media: "Media",
-                    Edit: "Trim & captions",
-                    Overlay: "Text & overlays",
+                    Media: "Upload",
+                    Edit: "Edit",
+                    Overlay: "Overlay",
                     Music: "Music",
                     Share: "Save & publish",
                   } as const
                 )[name]
-              : name}
+              : name === "Media"
+                ? "Upload"
+                : name}
           </Text>
         </Pressable>
       ))}
+    </View>
+  );
+  const timeline = canvas.content_type?.startsWith("image/") ? (
+    <View style={{ padding: 16, gap: 5 }}>
+      <Text style={styles.label}>Still canvas · 6 seconds</Text>
+      <Text style={[styles.small, { fontSize: 11 }]}>
+        Add text, effects and music. Export creates a six-second video; animated
+        images use their first frame.
+      </Text>
+    </View>
+  ) : (
+    <EditorTimeline
+      duration={duration}
+      currentTime={currentTime}
+      sourceTime={sequenceToSource(clips, currentTime)?.sourceTime}
+      clips={clips}
+      selectedId={selectedClip}
+      thumbnails={frames}
+      captionLabel={caption}
+      musicLabel={soundtrackName}
+      onCaption={() => setTab("Overlay")}
+      onMusic={() => {
+        setPaused(true);
+        setTab("Music");
+      }}
+      disabled={busy}
+      onInteractionStart={() => setPaused(true)}
+      onSeek={seekTo}
+      onSelect={setSelectedClip}
+      onTrim={(id, range) => {
+        try {
+          const next = trimClip(clips, id, range.start, range.end, duration);
+          applyEdit({ clips: next, timelineEdited: true });
+          seekTo(0);
+        } catch (e) {
+          setError((e as Error).message);
+        }
+      }}
+      onSplit={() => {
+        try {
+          const next = splitClip(clips, currentTime, `clip-${Date.now()}`);
+          applyEdit({ clips: next, timelineEdited: true });
+          setSelectedClip(
+            next[sequenceToSource(next, currentTime)?.index || 0]?.id || null,
+          );
+          seekTo(currentTime);
+        } catch (e) {
+          setError((e as Error).message);
+        }
+      }}
+      onDelete={() => {
+        if (clips.length <= 1 || !selectedClip) return;
+        const next = deleteClip(clips, selectedClip);
+        applyEdit({ clips: next, timelineEdited: true });
+        setSelectedClip(next[0].id);
+        seekTo(0);
+      }}
+      onUndo={() => undoEdit()}
+      onRedo={() => undoEdit(true)}
+      canSplit={canSplitAt(clips, currentTime)}
+      canDelete={clips.length > 1 && !!selectedClip}
+      canUndo={history.past.length > 0}
+      canRedo={history.future.length > 0}
+    />
+  );
+  const transport = (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 18,
+        padding: 10,
+      }}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back to start"
+        onPress={() => seekTo(0)}
+        style={{ padding: 9 }}
+      >
+        <SkipBack size={20} color="white" />
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={paused ? "Play timeline" : "Pause timeline"}
+        onPress={() => setPaused(!paused)}
+        style={{ backgroundColor: color.purple, padding: 13, borderRadius: 24 }}
+      >
+        {paused ? (
+          <Play size={22} color="white" />
+        ) : (
+          <Pause size={22} color="white" />
+        )}
+      </Pressable>
+      <Text
+        style={{
+          color: "white",
+          fontFamily: font.medium,
+          fontSize: 12,
+          minWidth: 95,
+        }}
+      >
+        {formatTimelineTime(currentTime)} /{" "}
+        {formatTimelineTime(totalDuration(clips))}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={muted ? "Unmute preview" : "Mute preview"}
+        onPress={() => setMuted(!muted)}
+        style={{ padding: 9 }}
+      >
+        {muted ? (
+          <VolumeX size={19} color={color.muted} />
+        ) : (
+          <Volume2 size={19} color="white" />
+        )}
+      </Pressable>
     </View>
   );
   const inspector = (
@@ -709,6 +1040,7 @@ export function ComposerScreen({
                     accessibilityRole="button"
                     accessibilityLabel={`Use sample ${i.title}`}
                     onPress={() => {
+                      resetSource();
                       setFile(null);
                       setMediaId(null);
                       setSample(i);
@@ -801,149 +1133,88 @@ export function ComposerScreen({
         </>
       )}
       {tab === "Edit" && (
-        <>
+        <View style={{ gap: 15 }}>
           <View style={styles.row}>
             <Scissors size={20} color={color.lime} />
-            <Text style={[styles.heading, { fontSize: 19 }]}>
-              Trim & captions
+            <Text style={[styles.heading, { fontSize: 20 }]}>
+              Make your cut
             </Text>
           </View>
           <Text style={styles.small}>
-            Set the playback range in seconds. The source file stays unchanged.
+            Drag the playhead, split at a moment, then select a clip to trim or
+            remove it. Your original stays untouched.
           </Text>
-          <View style={styles.row}>
-            <View style={{ flex: 1 }}>
-              <Field
-                label="Start (seconds)"
-                value={start}
-                onChangeText={setStart}
-                keyboardType="decimal-pad"
-                maxLength={10}
-                editable={!busy}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Field
-                label="End (optional)"
-                value={end}
-                onChangeText={setEnd}
-                keyboardType="decimal-pad"
-                maxLength={10}
-                editable={!busy}
-              />
-            </View>
-          </View>
-          <Text
+          {!desktop && timeline}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add text and captions"
+            onPress={() => setTab("Overlay")}
             style={{
-              color: color.lime,
-              fontFamily: font.medium,
-              fontSize: 12,
+              flexDirection: "row",
+              alignItems: "center",
+              padding: 14,
+              gap: 12,
+              backgroundColor: color.panel,
+              borderRadius: 10,
             }}
           >
-            {start || "0"}s → {end ? `${end}s` : "end of media"}
-          </Text>
-          <View style={styles.separator} />
-          <View style={styles.row}>
-            <Captions size={20} color={color.lime} />
-            <Text style={[styles.heading, { fontSize: 19 }]}>
-              On-screen captions
+            <Captions size={21} color={color.lime} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Text, captions & effects</Text>
+              <Text style={styles.small}>
+                Titles, lower thirds and color looks
+              </Text>
+            </View>
+            <ChevronRight color={color.muted} size={18} />
+          </Pressable>
+          {duration > 90 && (
+            <Text style={[styles.small, { fontSize: 11 }]}>
+              Your source is {formatTimelineTime(duration)}. Trim the edited
+              sequence to 90 seconds or less for the current export worker.
             </Text>
-          </View>
-          <Field
-            label="Caption"
-            value={caption}
-            onChangeText={setCaption}
-            maxLength={250}
-            multiline
-            editable={!busy}
-            placeholder="Put your story into words…"
-          />
-          <Text style={styles.small}>
-            This caption is timed to the trim range and stays editable. Auto
-            captions can be connected to a transcription worker later.
-          </Text>
-        </>
+          )}
+        </View>
       )}
       {tab === "Overlay" && (
-        <>
-          <View style={styles.row}>
-            <Sparkles size={20} color={color.lime} />
-            <Text style={[styles.heading, { fontSize: 19 }]}>
-              Add an overlay
-            </Text>
-          </View>
-          <Field
-            label="Overlay text"
-            value={overlayText}
-            onChangeText={setOverlayText}
-            placeholder="New episode · Watch now"
-            maxLength={120}
-            editable={!busy}
-          />
-          <Text style={styles.label}>Position</Text>
-          <View style={[styles.row, { flexWrap: "wrap" }]}>
-            {(["top", "center", "bottom"] as const).map((position) => (
-              <Pill
-                key={position}
-                title={position[0].toUpperCase() + position.slice(1)}
-                active={overlayPosition === position}
-                onPress={() => setOverlayPosition(position)}
-              />
-            ))}
-          </View>
-          <Text style={styles.label}>Style</Text>
-          <View style={[styles.row, { flexWrap: "wrap" }]}>
-            {(["purple", "dark", "light", "lime"] as const).map((theme) => (
-              <Pill
-                key={theme}
-                title={theme[0].toUpperCase() + theme.slice(1)}
-                active={overlayTheme === theme}
-                onPress={() => setOverlayTheme(theme)}
-              />
-            ))}
-          </View>
-          <Notice text="Overlay placement is saved non-destructively with the Ziipa creation. External delivery requires the render worker to burn it into exported media." />
-        </>
+        <EditorOverlays
+          overlays={overlays}
+          selectedId={selectedOverlay}
+          effect={visualEffect}
+          sourceCover={frames[Math.min(2, frames.length - 1)]?.source}
+          caption={caption}
+          disabled={busy}
+          onChange={(value) => applyEdit({ overlays: value })}
+          onSelect={setSelectedOverlay}
+          onEffect={(value) => applyEdit({ visualEffect: value })}
+          onCaption={(value) => applyEdit({ caption: value })}
+        />
       )}
       {tab === "Music" && (
-        <>
-          <View style={styles.row}>
-            <Music2 size={20} color={color.lime} />
-            <Text style={[styles.heading, { fontSize: 19 }]}>Soundtrack</Text>
-          </View>
-          <Text style={styles.small}>
-            Add music you own or are licensed to use. Ziipa keeps the source and
-            mix settings together with this creation.
-          </Text>
-          <Action
-            title={soundtrackFile ? "Replace audio" : "Choose audio"}
-            icon={Music2}
-            secondary
-            onPress={() => void pick("soundtrack")}
-          />
-          {!!soundtrackFile && (
-            <Notice
-              text={`${soundtrackFile.name} · ${(soundtrackFile.size / 1024 / 1024).toFixed(1)} MB`}
-            />
-          )}
-          <Field
-            label="Track title"
-            value={soundtrackName}
-            onChangeText={setSoundtrackName}
-            maxLength={180}
-            placeholder="Original audio"
-            editable={!busy}
-          />
-          <Field
-            label="Mix volume · 0–100%"
-            value={soundtrackVolume}
-            onChangeText={setSoundtrackVolume}
-            keyboardType="number-pad"
-            maxLength={3}
-            editable={!busy}
-          />
-          <Notice text="Commercial music catalogues require track-by-track licensing. This uploader accepts creator-owned or licensed audio." />
-        </>
+        <MusicWorkspace
+          busy={busy}
+          onAuditionStart={() => setPaused(true)}
+          selectedName={soundtrackName}
+          selectedFile={soundtrackFile}
+          selectedMediaId={soundtrackId}
+          volume={Number(soundtrackVolume)}
+          onVolumeChange={(value) => setSoundtrackVolume(String(value))}
+          onUpload={() => void pick("soundtrack")}
+          onUseOwned={(audio) => {
+            releaseSoundtrack();
+            setSoundtrackFile(null);
+            setSoundtrackId(audio.media_id);
+            setSoundtrackName(audio.name);
+            setSaved(null);
+          }}
+          onUseGenerated={(generated, release) => {
+            releaseSoundtrack();
+            generatedRelease.current = release;
+            setSoundtrackFile(generated);
+            setSoundtrackId(null);
+            setSoundtrackName(generated.name.replace(/\.[^.]+$/, ""));
+            setSaved(null);
+          }}
+        />
       )}
       {tab === "Share" && (
         <>
@@ -1279,71 +1550,72 @@ export function ComposerScreen({
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       {desktop ? (
-        <View
-          style={{
-            flex: 1,
-            minHeight: 0,
-            flexDirection: "row",
-            gap: 24,
-            paddingHorizontal: 24,
-            width: "100%",
-            maxWidth: 1400,
-            alignSelf: "center",
-          }}
-        >
-          <ScrollView
-            style={{ width: previewColumnWidth, flexGrow: 0, minHeight: 0 }}
-            contentContainerStyle={{ paddingVertical: 24, gap: 16 }}
-            showsVerticalScrollIndicator={false}
-          >
-            <Text style={styles.eyebrow}>YOUR CREATIVE CANVAS</Text>
-            <Text style={styles.heading}>Preview your creation</Text>
-            {preview}
-            <Text
-              style={[
-                styles.label,
-                { color: unsaved ? color.lime : color.muted },
-              ]}
-            >
-              {busy
-                ? "Saving your creation…"
-                : unsaved
-                  ? "Unsaved changes"
-                  : "No unsaved changes"}
-            </Text>
-            <Text style={styles.small}>
-              Source preview · your edits stay non-destructive. Render the saved
-              edit to review its exported captions, overlays and soundtrack.
-            </Text>
-            <Notice text="Save a private draft before opening its export or reviewed release campaign. Nothing is saved automatically." />
+        <View style={{ flex: 1, minHeight: 0, padding: 18, gap: 12 }}>
+          <View style={[styles.between, { gap: 12 }]}>
+            <View>
+              <Text style={[styles.heading, { fontSize: 22 }]}>
+                {title || "Untitled creation"}
+              </Text>
+              <Text style={[styles.small, { fontSize: 11 }]}>
+                {busy
+                  ? "Saving..."
+                  : unsaved
+                    ? "Unsaved changes"
+                    : "All changes saved"}{" "}
+                · Non-destructive editor
+              </Text>
+            </View>
             <Action
-              title="Save private draft"
+              title="Save draft"
               icon={Save}
               busy={busy}
               onPress={() => void save("draft")}
             />
-          </ScrollView>
+          </View>
           <View
-            style={{
-              flex: 1,
-              minWidth: 0,
-              minHeight: 0,
-              marginVertical: 24,
-              borderWidth: 1,
-              borderColor: color.border,
-              borderRadius: 22,
-              overflow: "hidden",
-              backgroundColor: color.bg,
-            }}
+            style={{ flex: 1, minHeight: 0, flexDirection: "row", gap: 16 }}
           >
-            {stepTabs}
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: 35 }}
+            <View
+              style={{
+                flex: 1.6,
+                minWidth: 0,
+                minHeight: 0,
+                borderWidth: 1,
+                borderColor: color.border,
+                borderRadius: 12,
+                overflow: "hidden",
+                backgroundColor: "#09060E",
+              }}
             >
-              {inspector}
-            </ScrollView>
+              <View
+                style={{ flex: 1, minHeight: 150, justifyContent: "center" }}
+              >
+                {preview}
+              </View>
+              {transport}
+              {timeline}
+            </View>
+            <View
+              style={{
+                flex: 1,
+                minWidth: 300,
+                maxWidth: 490,
+                minHeight: 0,
+                borderWidth: 1,
+                borderColor: color.border,
+                borderRadius: 12,
+                overflow: "hidden",
+              }}
+            >
+              {stepTabs}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 24 }}
+              >
+                {inspector}
+              </ScrollView>
+            </View>
           </View>
         </View>
       ) : (
@@ -1353,6 +1625,7 @@ export function ComposerScreen({
           contentContainerStyle={{ paddingBottom: 35 }}
         >
           {preview}
+          {transport}
           {stepTabs}
           {inspector}
         </ScrollView>
@@ -1453,3 +1726,11 @@ const eStyle = {
     justifyContent: "center" as const,
   },
 };
+
+async function disposePickedAudio(uri: string) {
+  forgetLocalMedia(uri);
+  if (Platform.OS === "web") {
+    if (uri.startsWith("blob:")) URL.revokeObjectURL(uri);
+  } else
+    await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+}

@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import {
   campaignApprovalKey,
+  campaignSourceEditKey,
   campaignCanApprove,
   campaignHasPublishedRendition,
   campaignArtifact,
@@ -130,6 +131,8 @@ test("preview verifies exact rendered bytes and uses only authenticated Ziipa pl
     trim_end: 12,
     captions: [{ start: 4, end: 6, text: "Original caption" }],
     overlays: [{ id: "1", text: "overlay", theme: "light", position: "top" }],
+    timeline: { version: 1, clips: [{ id: "cut", start: 4, end: 8, speed: 1 }] },
+    visual_effect: "mono",
   } as Item;
   const info = {
     ...campaign.artifact,
@@ -147,6 +150,10 @@ test("preview verifies exact rendered bytes and uses only authenticated Ziipa pl
   assert.deepEqual(preview.overlays, []);
   assert.equal(preview.trim_start, 0);
   assert.equal(preview.trim_end, null);
+  assert.equal(preview.timeline, null);
+  assert.equal(preview.visual_effect, "none");
+  assert.equal(source.timeline?.clips[0].start, 4);
+  assert.equal(source.visual_effect, "mono");
   assert.equal(preview.title, campaign.title);
   for (const patch of [
     { rendered: false },
@@ -166,6 +173,34 @@ test("preview verifies exact rendered bytes and uses only authenticated Ziipa pl
   assert.throws(() =>
     campaignPreviewItem(campaign, { ...source, demo: true }, info),
   );
+});
+
+test("local source edit scope changes with cuts and effects but not rotating playback URLs", () => {
+  const source = {
+    id: campaign.item_id,
+    creator_id: 1,
+    media_id: "original",
+    visibility: "draft",
+    content_type: "video/mp4",
+    timeline: { version: 1, clips: [{ id: "cut", start: 2, end: 5, speed: 1 }] },
+    visual_effect: "warm",
+  } as Item;
+  const key = campaignSourceEditKey(source);
+  assert.equal(key, campaignSourceEditKey({ ...source, media_url: "https://storage.example/new-lease" }));
+  for (const patch of [
+    { timeline: null },
+    { timeline: { version: 1, clips: [{ id: "cut", start: 3, end: 5, speed: 1 }] } },
+    { timeline: { version: 1, clips: [{ id: "cut", start: 2, end: 5, speed: 2 }] } },
+    { visual_effect: "cool" },
+    { media_id: "replacement" },
+    { visibility: "hidden" },
+    { captions: [{ start: 0, end: 1, text: "Changed" }] },
+    { overlays: [{ id: "new", text: "Changed", theme: "dark", position: "top" }] },
+  ] as Partial<Item>[])
+    assert.notEqual(key, campaignSourceEditKey({ ...source, ...patch }));
+  assert.notEqual(key, campaignSourceEditKey());
+  assert.equal(campaignSourceEditKey({ id: "legacy" } as Item),
+    campaignSourceEditKey({ id: "legacy", timeline: null, visual_effect: "none" } as Item));
 });
 
 test("manual transcript cues preserve text and reject ambiguous or out-of-bounds timing", () => {

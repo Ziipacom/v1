@@ -128,7 +128,8 @@ def test_disabled_and_missing_runtime_never_fabricate_or_read(source, monkeypatc
 
 
 @pytest.mark.parametrize('size,kind', [(100 * 1024 * 1024 + 1, 'video/mp4'), (0, 'video/mp4'),
-                                     (123, 'image/png'), (123, 'application/vnd.apple.mpegurl')])
+                                     (123, 'image/png'), (123, 'image/jpeg'), (123, 'image/webp'), (123, 'image/gif'),
+                                     (123, 'application/vnd.apple.mpegurl')])
 def test_unsupported_or_large_media_never_read(source, monkeypatch, size, kind):
     session, owner, _, item, media, _, _ = source
     media.size, media.content_type = size, kind; session.commit()

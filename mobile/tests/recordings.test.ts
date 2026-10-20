@@ -55,6 +55,8 @@ test("clip preview binds ready render to its owned source, clears baked effects 
     captions: [{ start: 1, end: 2, text: "Caption" }],
     overlays: [{ text: "Overlay" }],
     soundtrack: { media_id: "sound" },
+    timeline: { version: 1, clips: [{ id: "cut", start: 30, end: 40, speed: 1 }] },
+    visual_effect: "vivid",
   } as Item;
   const clip = {
     item_id: "item",
@@ -85,6 +87,10 @@ test("clip preview binds ready render to its owned source, clears baked effects 
   assert.deepEqual(preview.captions, []);
   assert.deepEqual(preview.overlays, []);
   assert.equal(preview.soundtrack, null);
+  assert.equal(preview.timeline, null);
+  assert.equal(preview.visual_effect, "none");
+  assert.equal(item.timeline?.clips[0].start, 30);
+  assert.equal(item.visual_effect, "vivid");
   assert.equal(item.trim_start, 30);
   assert.throws(() =>
     recordingClipPreview(item, clip, { ...job, status: "stale" }, info),
