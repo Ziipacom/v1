@@ -45,6 +45,7 @@ import {
   destinationFromSearch,
   destinationSearch,
 } from "./lib/desktop-navigation";
+import { composerRouteId } from "./lib/composer-navigation";
 import {
   LegalScreen,
   ModerationScreen,
@@ -301,6 +302,7 @@ function NavigationContent() {
               <Stack.Screen
                 name="Composer"
                 component={ComposerScreen}
+                getId={composerRouteId}
                 options={{
                   title: "Creator Studio",
                   headerShown: true,
