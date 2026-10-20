@@ -159,6 +159,31 @@ def test_total_note_and_polyphony_limits():
         music.arrangement(score, data)
 
 
+@pytest.mark.parametrize('duration', range(5, 31))
+def test_inference_schema_limits_every_generated_grid_note_to_requested_duration(duration):
+    data = music.ComposeInput.model_validate(request(duration=duration))
+    schema = music.response_schema(data)
+    notes = schema['properties']['tracks']['items']['properties']['notes']
+    fields = notes['items']['properties']
+    assert notes['maxItems'] == 4 and len(json.dumps(schema)) < 3500
+    assert max(fields['t']['enum']) + max(fields['d']['enum']) == duration
+    assert all(0 <= start + length <= duration for start in fields['t']['enum'] for length in fields['d']['enum'])
+    ending = notes['prefixItems'][0]['properties']
+    assert ending['t']['enum'][0] + ending['d']['enum'][0] == duration
+    examples = music.messages(data)
+    example = json.loads(examples[2]['content'])
+    assert json.loads(examples[1]['content'])['duration_seconds'] == duration
+    assert music.arrangement(example, data)['duration'] == duration
+
+
+def test_incomplete_model_score_is_rejected_without_extending_or_fabricating_notes():
+    score = candidate()
+    before = json.dumps(score)
+    with pytest.raises(ValueError, match='ending'):
+        music.arrangement(score, music.ComposeInput.model_validate(request(duration=20)))
+    assert json.dumps(score) == before
+
+
 def test_user_budget_and_global_slot_do_not_call_model_when_denied(workspace, monkeypatch):
     client, _, _, _, budget = workspace
     calls = []
