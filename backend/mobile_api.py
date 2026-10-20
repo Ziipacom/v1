@@ -214,6 +214,8 @@ async def delete_account(data: DeleteAccount, user: User = Depends(current_user)
     from social_publishing import delete_publishing_account
     await delete_live_account(user.id, session)
     await delete_publishing_account(user.id, session)
+    from soundcloud import delete_soundcloud_account
+    await delete_soundcloud_account(user.id, session)
     from render_services import delete_render_jobs
     delete_render_jobs(user.id, session)
     # Durable workflows and proposals must stop before the account/media vanish.

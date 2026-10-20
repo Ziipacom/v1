@@ -1,6 +1,17 @@
 # Data disclosure worksheet — owner review required
 
-Updated 2026-09-09. This describes source behavior to investigate, not completed privacy labels, Data safety answers or a legal policy. Confirm the signed binary, deployed settings, vendors/subprocessors, audience, logs and retention before answering consoles.
+Updated 2026-10-20. This describes source behavior to investigate, not completed privacy labels, Data safety answers or a legal policy. Confirm the signed binary, deployed settings, vendors/subprocessors, audience, logs and retention before answering consoles.
+
+Editor music additions: AI composition sends only the explicitly consented
+musical description/settings to the configured private model or Cloudflare
+Workers AI. It does not send uploaded audio/video, SoundCloud tracks, the media
+library or account history. Bounded note scores are synthesized to WAV on the
+device and remain local until the user attaches/saves the draft. SoundCloud OAuth
+tokens are encrypted on the server; the optional official SoundCloud widget
+contacts SoundCloud after separate playback consent and follows that provider's
+privacy/cookie behavior. Ziipa does not copy SoundCloud audio into its storage,
+exports or model inputs. Recheck all deployed providers, permissions and policies
+before answering store disclosures; these notes do not constitute legal review.
 
 | Data                                                                                                                 | Purpose and possible recipient                                        | Storage/control to verify                                                                                                                                                                                                                                              |
 | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

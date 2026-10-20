@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
-  Linking,
   Pressable,
   Text,
   View,
@@ -15,7 +14,6 @@ import {
 } from "expo-audio";
 import {
   Check,
-  ExternalLink,
   Music2,
   Pause,
   Play,
@@ -25,6 +23,7 @@ import {
 } from "lucide-react-native";
 import { Action, Field, Notice, Pill } from "./ui";
 import { useDesktopLayout } from "./desktop-layout";
+import { MusicSoundCloud } from "./music-soundcloud";
 import { useZiipa } from "../provider";
 import { useOperationScope } from "../lib/use-operation-scope";
 import { usePlaybackSource } from "../lib/media-playback";
@@ -39,11 +38,11 @@ import {
   musicStyles,
   ownedAudioTracks,
   planMusicPrompt,
-  soundCloudSearch,
   type MusicSettings,
   type MusicPlan,
   type OwnedAudio,
 } from "../lib/music-composer";
+import { synthesizeAiMusic, type AiMusicConfig } from "../lib/ai-music";
 import type { UploadFile } from "../lib/api";
 import type { Library } from "../lib/media-os-types";
 import { color, styles } from "../theme";
@@ -65,7 +64,22 @@ export type MusicWorkspaceProps = {
 };
 
 type Audition = { name: string; path?: string; uri?: string };
-type Generated = GeneratedMusicFile & { plan: MusicPlan; transferred: boolean };
+type GeneratedPlan =
+  | MusicPlan
+  | {
+      engine: "ziipa-llm-composer-v1";
+      style: MusicSettings["style"];
+      summary: string;
+      title: string;
+      model: string;
+      fingerprint: string;
+    };
+type Generated = GeneratedMusicFile & {
+  plan: GeneratedPlan;
+  transferred: boolean;
+};
+const generatedName = (plan: GeneratedPlan) =>
+  "title" in plan ? plan.title : `${plan.style} instrumental`;
 const emptyLibrary = (): Library => ({ items: [], media: [] });
 const initialSettings: MusicSettings = {
   prompt: "A calm lo-fi instrumental for a short creator video, 90 BPM",
@@ -103,13 +117,20 @@ function ScopedMusicWorkspace({
   const [library, setLibrary] = useState<Library>(emptyLibrary);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
-  const [discovery, setDiscovery] = useState("");
   const [rights, setRights] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [audition, setAudition] = useState<Audition | null>(null);
   const [settings, setSettings] = useState<MusicSettings>(initialSettings);
   const [generating, setGenerating] = useState(false);
+  const [createMode, setCreateMode] = useState<"ai" | "offline">("ai");
+  const [aiConsent, setAiConsent] = useState(false);
+  const [aiConfig, setAiConfig] = useState<AiMusicConfig | null>(null);
+  const [configLoading, setConfigLoading] = useState(false);
+  const generationCapture = useOperationScope(
+    `${session?.access_token || "guest"}:${tab}`,
+    focused && tab === "create",
+  );
   const [generated, setGenerated] = useState<Generated | null>(null);
   const [attached, setAttached] = useState(false);
   const generatedRef = useRef<Generated | null>(null);
@@ -167,8 +188,33 @@ function ScopedMusicWorkspace({
     }
   }, [selectedFile?.uri, selectedMediaId]);
   useEffect(() => {
-    if (!focused) setGenerating(false);
-  }, [focused]);
+    if (!focused || tab !== "create") setGenerating(false);
+    if (!focused) setConfigLoading(false);
+  }, [focused, tab]);
+  const loadAiConfig = useCallback(async () => {
+    if (!session || !focused) return;
+    const current = capture();
+    setConfigLoading(true);
+    try {
+      const result = await api<AiMusicConfig>("/api/music/config");
+      if (current()) setAiConfig(result);
+    } catch (cause) {
+      if (current()) {
+        setAiConfig(null);
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Model readiness could not load.",
+        );
+      }
+    } finally {
+      if (current()) setConfigLoading(false);
+    }
+  }, [api, session?.access_token, focused, capture]);
+  useEffect(() => {
+    if (tab === "create") void loadAiConfig();
+  }, [tab, loadAiConfig]);
+  useEffect(() => setAiConsent(false), [aiConfig?.provider, aiConfig?.model]);
   useEffect(
     () => () => {
       const held = generatedRef.current;
@@ -178,8 +224,17 @@ function ScopedMusicWorkspace({
   );
 
   async function generate() {
-    if (disabled || generationLock.current) return;
-    const current = capture();
+    if (disabled || generationLock.current || !focused || tab !== "create")
+      return;
+    if (
+      createMode === "ai" &&
+      (!session ||
+        !aiConfig?.available ||
+        !aiConsent ||
+        !settings.prompt.trim())
+    )
+      return;
+    const current = generationCapture();
     generationLock.current = true;
     setGenerating(true);
     setError("");
@@ -189,11 +244,38 @@ function ScopedMusicWorkspace({
       // Let the progress message paint before this bounded, local CPU task.
       await new Promise<void>((resolve) => setTimeout(resolve, 30));
       if (!current()) return;
-      const nextSettings = generatedRef.current
-        ? { ...settings, variation: (settings.variation + 1) % 10000 }
-        : settings;
-      const result = composeMusic(nextSettings);
-      next = await generatedMusicFile(result.bytes);
+      const nextSettings =
+        createMode === "offline" && generatedRef.current
+          ? { ...settings, variation: (settings.variation + 1) % 10000 }
+          : { ...settings };
+      let bytes: Uint8Array;
+      let resultPlan: GeneratedPlan;
+      if (createMode === "ai") {
+        const response = await api<unknown>("/api/music/compose", {
+          prompt: nextSettings.prompt.trim(),
+          style: nextSettings.style,
+          mood: nextSettings.mood,
+          bpm: nextSettings.bpm,
+          duration: nextSettings.duration,
+          consent: true,
+        });
+        if (!current()) return;
+        const result = synthesizeAiMusic(response, nextSettings);
+        bytes = result.bytes;
+        resultPlan = {
+          engine: result.engine,
+          title: result.arrangement.title,
+          model: result.model,
+          fingerprint: result.fingerprint,
+          style: nextSettings.style,
+          summary: result.summary,
+        };
+      } else {
+        const result = composeMusic(nextSettings);
+        bytes = result.bytes;
+        resultPlan = result.plan;
+      }
+      next = await generatedMusicFile(bytes);
       if (!current()) {
         await next.release();
         return;
@@ -206,7 +288,7 @@ function ScopedMusicWorkspace({
       }
       const held: Generated = {
         ...next,
-        plan: result.plan,
+        plan: resultPlan,
         transferred: false,
       };
       generatedRef.current = held;
@@ -214,11 +296,13 @@ function ScopedMusicWorkspace({
       setGenerated(held);
       setAttached(false);
       setAudition({
-        name: `${result.plan.style} instrumental`,
+        name: generatedName(resultPlan),
         uri: next.file.uri,
       });
       setNotice(
-        "Original synthesized WAV is ready to preview. It is local only until you attach it and save the draft.",
+        resultPlan.engine === "ziipa-llm-composer-v1"
+          ? "AI-composed score rendered to WAV on this device. Preview it, then explicitly attach and save; nothing was published."
+          : "Offline procedural WAV is ready. No AI model was used. It stays local until you attach it and save the draft.",
       );
       next = undefined;
     } catch (cause) {
@@ -263,14 +347,6 @@ function ScopedMusicWorkspace({
       "Owned audio attached. Review the mix and save your draft before publishing.",
     );
   }
-  async function discover() {
-    setError("");
-    try {
-      await Linking.openURL(soundCloudSearch(discovery));
-    } catch {
-      setError("SoundCloud could not open. Try again in your browser.");
-    }
-  }
   const plan = musicPlan(settings);
   const safeVolume = Number.isFinite(volume)
     ? Math.max(0, Math.min(100, volume))
@@ -314,7 +390,7 @@ function ScopedMusicWorkspace({
       </View>
       {!!error && <Notice error text={error} />}
       {!!notice && <Notice text={notice} />}
-      {selected && (
+      {selected && tab !== "discover" && (
         <View style={[styles.panel, { gap: 12, padding: desktop ? 16 : 20 }]}>
           <Text style={styles.label}>Audition · {selected.name}</Text>
           <MusicAudition
@@ -448,41 +524,72 @@ function ScopedMusicWorkspace({
         </View>
       )}
       {tab === "discover" && (
-        <View style={[styles.panel, { gap: 14 }]}>
-          <Text style={[styles.heading, { fontSize: 18 }]}>
-            Discover on SoundCloud
-          </Text>
-          <Field
-            label="Find tracks or creators"
-            value={discovery}
-            onChangeText={setDiscovery}
-            maxLength={140}
-            placeholder="Ambient instrumental, creator, or genre"
-          />
-          <Action
-            title="Search SoundCloud"
-            icon={ExternalLink}
-            secondary
-            onPress={() => void discover()}
-          />
-          <Notice text="Opens official SoundCloud search outside Ziipa. This is not a connected account or an imported music catalog. No track is downloaded, attached, licensed or used for training." />
-          <Text style={styles.small}>
-            In-app SoundCloud search/playback requires a registered API
-            application. New application credentials currently require Artist
-            Pro; no paid plan or connection has been enabled. For reuse, obtain
-            permission and upload your authorized source file.
-          </Text>
-        </View>
+        <MusicSoundCloud disabled={disabled} onListen={onAuditionStart} />
       )}
       {tab === "create" && (
         <View style={[styles.panel, { gap: 14 }]}>
           <View style={styles.row}>
             <Sparkles size={22} color={color.lime} />
             <Text style={[styles.heading, { fontSize: 18 }]}>
-              Local music creator
+              Create original music
             </Text>
           </View>
-          <Notice text="Procedural composer · not a generative AI model. Prompt keywords suggest tempo, mood and arrangement; mathematical synthesis creates a real WAV on this device. No vocals, artist imitation, samples, paid API or external training." />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <Pill
+              title="AI composer"
+              active={createMode === "ai"}
+              onPress={() => {
+                if (!disabled) setCreateMode("ai");
+              }}
+            />
+            <Pill
+              title="Offline fallback"
+              active={createMode === "offline"}
+              onPress={() => {
+                if (!disabled) setCreateMode("offline");
+              }}
+            />
+          </View>
+          {createMode === "ai" ? (
+            <View style={{ gap: 10 }}>
+              <Notice
+                text={`A language model composes the actual melody, harmony, rhythm and instrument events; Ziipa renders the score to WAV locally. ${aiConfig?.provider === "cloudflare" ? "Your description and controls are sent to Cloudflare Workers AI, a third-party inference service subject to its policies." : aiConfig?.provider === "private" ? "Your description and controls are sent to Ziipa's private configured inference service." : "Refresh status to identify the configured inference provider before consenting."} No uploaded audio, library context or SoundCloud tracks are sent. This is instrumental score synthesis, not a vocals or studio-audio model.`}
+              />
+              <Text style={styles.small}>
+                {!session
+                  ? "Sign in to use Ziipa's AI composer. The offline fallback remains available."
+                  : configLoading
+                    ? "Checking music model readiness..."
+                    : aiConfig?.available
+                      ? `Model ready: ${aiConfig.model || "configured model"}. Up to 48 notes / 30 seconds.`
+                      : aiConfig?.detail ||
+                        "AI model availability has not been verified. Refresh status or explicitly choose the offline fallback."}
+              </Text>
+              <Action
+                secondary
+                title="Refresh model status"
+                icon={RefreshCw}
+                busy={configLoading}
+                disabled={disabled || !session}
+                onPress={() => void loadAiConfig()}
+              />
+              <Consent
+                checked={aiConsent}
+                disabled={disabled}
+                onChange={() => setAiConsent((value) => !value)}
+                label={
+                  aiConfig?.provider === "cloudflare"
+                    ? "Send my description and arrangement controls to Cloudflare Workers AI (third-party inference) to compose this instrumental."
+                    : aiConfig?.provider === "private"
+                      ? "Send my description and arrangement controls to Ziipa's private inference model to compose this instrumental."
+                      : "I will review the identified inference provider before generating music."
+                }
+              />
+            </View>
+          ) : (
+            <Notice text="Offline procedural composer: no AI model. Keyword rules suggest controls; mathematical synthesis creates a WAV on this device. No vocals, artist imitation, samples, paid API or external training. It is never used silently when AI is unavailable." />
+          )}
+
           <Field
             label="Describe your instrumental"
             value={settings.prompt}
@@ -494,17 +601,19 @@ function ScopedMusicWorkspace({
             editable={!disabled}
             placeholder="Bright electronic instrumental, 120 BPM, for a travel video"
           />
-          <Action
-            secondary
-            title="Plan from prompt"
-            disabled={disabled}
-            onPress={() => {
-              setSettings((value) => planMusicPrompt(value.prompt, value));
-              setNotice(
-                "Arrangement updated from recognized keywords. Review the controls before creating audio.",
-              );
-            }}
-          />
+          {createMode === "offline" && (
+            <Action
+              secondary
+              title="Plan from prompt"
+              disabled={disabled}
+              onPress={() => {
+                setSettings((value) => planMusicPrompt(value.prompt, value));
+                setNotice(
+                  "Arrangement updated from recognized keywords. Review the controls before creating audio.",
+                );
+              }}
+            />
+          )}
           <Text style={styles.label}>Arrangement</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {musicStyles.map((style) => (
@@ -558,34 +667,51 @@ function ScopedMusicWorkspace({
             ))}
           </View>
           <Text style={styles.small}>
-            {plan.summary} · {plan.voices.join(", ")}
+            {createMode === "offline"
+              ? `${plan.summary} · ${plan.voices.join(", ")}`
+              : `${settings.duration}s / ${settings.bpm} BPM / ${settings.style} / ${settings.mood}. The AI chooses the actual notes and voices.`}
           </Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <Action
               title={
-                generated ? "Create another version" : "Create instrumental"
+                createMode === "ai"
+                  ? "Generate AI Music"
+                  : generated
+                    ? "Create another offline version"
+                    : "Create offline instrumental"
               }
               icon={Sparkles}
               busy={generating}
-              disabled={busy}
+              disabled={
+                busy ||
+                (createMode === "ai" &&
+                  (!session ||
+                    !aiConfig?.available ||
+                    !aiConsent ||
+                    !settings.prompt.trim()))
+              }
               onPress={() => void generate()}
             />
-            <Action
-              secondary
-              title="New variation"
-              disabled={disabled}
-              onPress={() =>
-                setSettings((value) => ({
-                  ...value,
-                  variation: (value.variation + 1) % 10000,
-                }))
-              }
-            />
+            {createMode === "offline" && (
+              <Action
+                secondary
+                title="New variation"
+                disabled={disabled}
+                onPress={() =>
+                  setSettings((value) => ({
+                    ...value,
+                    variation: (value.variation + 1) % 10000,
+                  }))
+                }
+              />
+            )}
           </View>
           <Text style={styles.small}>
-            Variation {settings.variation + 1} · PCM WAV, mono 22.05 kHz · up to
-            30 seconds. Changing controls does not alter an already generated
-            version.
+            {createMode === "offline"
+              ? `Variation ${settings.variation + 1}. `
+              : "AI score rendered locally. "}{" "}
+            PCM WAV, mono 22.05 kHz, up to 30 seconds. Changing controls does
+            not alter an already generated version.
           </Text>
           {generated && (
             <View
@@ -599,7 +725,16 @@ function ScopedMusicWorkspace({
               <Text style={styles.label}>
                 Generated version · {generated.plan.summary}
               </Text>
+              {"model" in generated.plan && (
+                <Text style={styles.small}>
+                  AI model: {generated.plan.model}. Score{" "}
+                  {generated.plan.fingerprint.slice(0, 12)}
+                </Text>
+              )}
               <Text style={styles.small}>
+                {generated.plan.engine === "ziipa-llm-composer-v1"
+                  ? "AI-composed. "
+                  : "Offline procedural. "}
                 {(generated.file.size / 1024 / 1024).toFixed(1)} MB · original
                 synthesized sound, no third-party samples. No claim of copyright
                 exclusivity.
@@ -611,7 +746,7 @@ function ScopedMusicWorkspace({
                 disabled={disabled}
                 onPress={() =>
                   setAudition({
-                    name: `${generated.plan.style} instrumental`,
+                    name: generatedName(generated.plan),
                     uri: generated.file.uri,
                   })
                 }

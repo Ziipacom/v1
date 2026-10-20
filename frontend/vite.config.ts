@@ -18,6 +18,9 @@ const localBindingConfig = {
   // Operators manage runtime API settings in Cloudflare; do not erase them
   // when this generated Worker config is deployed. Secrets stay dashboard-only.
   keep_vars: true,
+  // Binding alone invokes no model. The private music bridge additionally
+  // requires the manually verified Workers Free activation flag and API HMAC.
+  ai: { binding: 'ZIIPA_MUSIC_AI' },
   // OAuth codes and signed media capabilities travel in request URLs. Do not
   // persist raw invocation URLs or traces; API health/Sentry remain separate.
   observability: {
