@@ -28,12 +28,14 @@ import { useZiipa } from "../provider";
 import { useDesktopLayout } from "./desktop-layout";
 
 export function Logo({ width = 116 }: { width?: number }) {
-  const { resolvedMode } = useTheme();
   return (
     <RNImage
       source={logo}
-      style={{ width, height: (width * 3104) / 9446,
-        backgroundColor: resolvedMode === "light" ? "#120D1F" : "transparent", borderRadius: resolvedMode === "light" ? 5 : 0 }}
+      style={{
+        width,
+        height: (width * 3104) / 9446,
+        backgroundColor: "transparent",
+      }}
       resizeMode="contain"
       accessibilityLabel="Ziipa"
     />
