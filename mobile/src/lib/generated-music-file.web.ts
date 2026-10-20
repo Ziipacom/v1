@@ -25,7 +25,7 @@ export async function generatedMusicFile(
   return {
     file: {
       uri,
-      name: "ziipa-original-music.wav",
+      name: "ziipa-created-music.wav",
       mimeType: "audio/wav",
       size: blob.size,
     },

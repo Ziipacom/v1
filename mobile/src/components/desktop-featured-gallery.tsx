@@ -4,17 +4,17 @@ import {
   Animated,
   AppState,
   Pressable,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react-native";
 import { ReelMedia } from "./reel-media";
+import { useDevicePreferences } from "./device-preferences";
 import { Action, categories } from "./ui";
 import { useDesktopLayout } from "./desktop-layout";
 import type { Item } from "../lib/types";
-import { color, font, styles } from "../theme";
+import { color, font, styles, themedStyles } from "../theme";
 
 /** Only the selected, published source mounts a player. Never preload a reel wall. */
 export function DesktopFeaturedGallery({
@@ -25,16 +25,25 @@ export function DesktopFeaturedGallery({
   open: (item: Item) => void;
 }) {
   const focused = useIsFocused();
+  const {
+    preferences,
+    ready,
+    reducedMotion: deviceReducedMotion,
+  } = useDevicePreferences();
   const { contentWidth } = useDesktopLayout();
   const [selectedId, setSelectedId] = useState(items[0]?.id);
   const [userPaused, setUserPaused] = useState(false);
+  const [explicitPlaybackId, setExplicitPlaybackId] = useState<string | null>(
+    null,
+  );
   const [hovered, setHovered] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
   const [foreground, setForeground] = useState(
     AppState.currentState === "active",
   );
   // Do not start motion until the OS preference has been read successfully.
-  const [reducedMotion, setReducedMotion] = useState(true);
+  const [systemReducedMotion, setReducedMotion] = useState(true);
+  const reducedMotion = systemReducedMotion || deviceReducedMotion;
   const region = useRef<View>(null);
   const opacity = useRef(new Animated.Value(1)).current;
   const selectedIndex = Math.max(
@@ -42,8 +51,12 @@ export function DesktopFeaturedGallery({
     items.findIndex((item) => item.id === selectedId),
   );
   const current = items[selectedIndex];
-  const paused =
+  const requestedPaused =
     userPaused ||
+    !ready ||
+    (!preferences.autoplay && explicitPlaybackId !== current?.id);
+  const paused =
+    requestedPaused ||
     hovered ||
     focusWithin ||
     reducedMotion ||
@@ -144,10 +157,13 @@ export function DesktopFeaturedGallery({
             item={current}
             active={focused && foreground}
             paused={paused}
-            muted
+            muted={preferences.startMuted}
           />
           <View pointerEvents="none" style={g.featureBadge}>
-            <Text style={g.badgeText}>FEATURED · MUTED PREVIEW</Text>
+            <Text style={g.badgeText}>
+              FEATURED ·{" "}
+              {preferences.startMuted ? "MUTED PREVIEW" : "MEDIA PREVIEW"}
+            </Text>
           </View>
         </Animated.View>
         <View style={[g.copy, { width: compact ? 270 : 330 }]}>
@@ -177,9 +193,9 @@ export function DesktopFeaturedGallery({
                 ? "Motion paused by your accessibility preference."
                 : hovered || focusWithin
                   ? "Preview paused while you interact."
-                  : userPaused
+                  : requestedPaused
                     ? "Gallery paused. Resume when you’re ready."
-                    : "Muted media · next creation every 7.5 seconds."}
+                    : `${preferences.startMuted ? "Muted media" : "Media preview"} · next creation every 7.5 seconds.`}
             </Text>
           </View>
         </View>
@@ -197,14 +213,17 @@ export function DesktopFeaturedGallery({
             label={
               reducedMotion
                 ? "Gallery motion paused by accessibility preference"
-                : userPaused
+                : requestedPaused
                   ? "Resume featured gallery"
                   : "Pause featured gallery"
             }
             disabled={reducedMotion}
-            onPress={() => setUserPaused((value) => !value)}
+            onPress={() => {
+              setExplicitPlaybackId(current.id);
+              setUserPaused(!requestedPaused);
+            }}
           >
-            {userPaused || reducedMotion ? (
+            {requestedPaused || reducedMotion ? (
               <Play size={15} color={color.text} />
             ) : (
               <Pause size={15} color={color.text} />
@@ -212,7 +231,7 @@ export function DesktopFeaturedGallery({
             <Text style={g.controlText}>
               {reducedMotion
                 ? "Motion paused"
-                : userPaused
+                : requestedPaused
                   ? "Resume"
                   : "Pause"}
             </Text>
@@ -274,7 +293,7 @@ function GalleryButton({
   );
 }
 
-const g = StyleSheet.create({
+const g = themedStyles(() => ({
   gallery: {
     overflow: "hidden",
     borderRadius: 16,
@@ -343,4 +362,4 @@ const g = StyleSheet.create({
   controlText: { color: color.muted, fontFamily: font.medium, fontSize: 12 },
   dot: { width: 6, height: 6, borderRadius: 4, backgroundColor: color.faint },
   activeDot: { width: 20, backgroundColor: color.lime },
-});
+}));

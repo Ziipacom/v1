@@ -19,6 +19,7 @@ import {
   LayoutGrid,
   Megaphone,
   Menu,
+  Settings,
   Sparkles,
   Network,
   Pencil,
@@ -34,7 +35,8 @@ import {
 } from "../components/floating";
 import { Cover, Logo } from "../components/ui";
 import { StudioFeed } from "../components/studio-feed";
-import { color, font, styles } from "../theme";
+import { useDevicePreferences } from "../components/device-preferences";
+import { color, font, styles, themedStyles } from "../theme";
 import { useZiipa } from "../provider";
 import { inCreativeWorld, studioDiscoverItems } from "../lib/domain";
 import type { Category, RootStack } from "../lib/types";
@@ -45,6 +47,7 @@ export function StudioScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Studio">) {
   const { data, guest } = useZiipa();
+  const { reducedMotion } = useDevicePreferences();
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<Category>(
     route.params?.category || "nft",
@@ -59,6 +62,10 @@ export function StudioScreen({
   }, [route.params]);
   useEffect(() => {
     if (editing) {
+      if (reducedMotion) {
+        slide.setValue(0);
+        return;
+      }
       slide.setValue(40);
       Animated.timing(slide, {
         toValue: 0,
@@ -66,7 +73,7 @@ export function StudioScreen({
         useNativeDriver: true,
       }).start();
     }
-  }, [editing, slide]);
+  }, [editing, slide, reducedMotion]);
   const items = data.drafts.filter(
     (i) => inCreativeWorld(i, selected) && i.visibility !== "hidden",
   );
@@ -83,7 +90,7 @@ export function StudioScreen({
       <View
         style={[
           floating.header,
-          { borderBottomWidth: 1, borderBottomColor: "#29232F" },
+          { borderBottomWidth: 1, borderBottomColor: color.border },
         ]}
       >
         <Pressable
@@ -93,14 +100,29 @@ export function StudioScreen({
         >
           <Logo width={96} />
         </Pressable>
-        <FloatButton
-          label={menuVisible ? "Hide Studio menu" : "Open Studio menu"}
-          icon={Menu}
-          plain
-          onPress={() => setMenuVisible((visible) => !visible)}
-        />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <FloatButton
+            label="Open settings"
+            icon={Settings}
+            plain
+            onPress={() => navigation.navigate("Settings")}
+          />
+          <FloatButton
+            label={menuVisible ? "Hide Studio menu" : "Open Studio menu"}
+            icon={Menu}
+            plain
+            onPress={() => setMenuVisible((visible) => !visible)}
+          />
+        </View>
       </View>
-      <View style={{ flex: 1, marginBottom: dockHeight, overflow: "hidden" }}>
+      <View
+        style={{
+          flex: 1,
+          marginBottom: dockHeight,
+          overflow: "hidden",
+          backgroundColor: "#120D1F",
+        }}
+      >
         <StudioFeed
           items={discoverItems}
           editing={editing}
@@ -138,7 +160,7 @@ export function StudioScreen({
             >
               <Text style={s.menuText}>Create</Text>
               <View style={s.circleSlot}>
-                <SquarePlus size={25} color={color.text} strokeWidth={1.5} />
+                <SquarePlus size={25} color={color.onMedia} strokeWidth={1.5} />
               </View>
             </Pressable>
             <Pressable
@@ -149,7 +171,7 @@ export function StudioScreen({
             >
               <Text style={s.menuText}>Gallery</Text>
               <View style={[s.circleSlot, s.circle]}>
-                <Images size={25} color={color.text} strokeWidth={1.5} />
+                <Images size={25} color={color.onMedia} strokeWidth={1.5} />
               </View>
             </Pressable>
             {menuOrder
@@ -188,7 +210,7 @@ export function StudioScreen({
                         },
                     ]}
                   >
-                    <WorldGlyph id={w.id} size={25} />
+                    <WorldGlyph id={w.id} size={25} media />
                   </View>
                 </Pressable>
               ))}
@@ -200,7 +222,7 @@ export function StudioScreen({
             >
               <Text style={s.menuText}>Networks</Text>
               <View style={[s.circleSlot, s.circle]}>
-                <Network size={25} color={color.text} strokeWidth={1.5} />
+                <Network size={25} color={color.onMedia} strokeWidth={1.5} />
               </View>
             </Pressable>
             <Pressable
@@ -228,7 +250,11 @@ export function StudioScreen({
             >
               <Text style={s.menuText}>Close</Text>
               <View style={s.circleSlot}>
-                <ChevronDown size={29} color={color.text} strokeWidth={1.5} />
+                <ChevronDown
+                  size={29}
+                  color={color.onMedia}
+                  strokeWidth={1.5}
+                />
               </View>
             </Pressable>
           </ScrollView>
@@ -252,7 +278,7 @@ export function StudioScreen({
           >
             <Text style={s.menuText}>Menu</Text>
             <View style={[s.circleSlot, s.circle]}>
-              <ChevronRight size={29} color={color.text} strokeWidth={1.5} />
+              <ChevronRight size={29} color={color.onMedia} strokeWidth={1.5} />
             </View>
           </Pressable>
         )}
@@ -284,7 +310,7 @@ export function StudioScreen({
                 navigation.navigate("Main", { category: selected })
               }
             >
-              <WorldGlyph id={selected} size={21} />
+              <WorldGlyph id={selected} size={21} media />
             </FloatButton>
           </View>
           <View
@@ -443,8 +469,8 @@ export function StudioScreen({
           borderTopLeftRadius: 25,
           borderTopRightRadius: 25,
           borderWidth: 1,
-          borderColor: "#342A42",
-          backgroundColor: "#09060D",
+          borderColor: color.border,
+          backgroundColor: color.dock,
           flexDirection: "row",
           justifyContent: "space-around",
           alignItems: "center",
@@ -486,15 +512,15 @@ export function StudioScreen({
           >
             <Icon
               size={25}
-              color={active ? "white" : "#8E8795"}
+              color={active ? color.text : color.faint}
               strokeWidth={1.5}
-              fill={label === "Dashboard" && active ? "white" : "none"}
+              fill={label === "Dashboard" && active ? color.text : "none"}
             />
             <Text
               style={{
                 fontSize: 12,
                 fontFamily: font.regular,
-                color: active ? "white" : "#8E8795",
+                color: active ? color.text : color.faint,
               }}
             >
               {label}
@@ -505,7 +531,7 @@ export function StudioScreen({
     </SafeAreaView>
   );
 }
-const s = {
+const s = themedStyles(() => ({
   menuRow: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
@@ -532,4 +558,4 @@ const s = {
     backgroundColor: "#120D1F80",
   },
   trayText: { color: "#E9E0F5", fontFamily: font.regular, fontSize: 12 },
-};
+}));

@@ -500,7 +500,7 @@ def library(q: str = Query(default='', max_length=140), project_id: str | None =
                              *item.data.get('tags', []), *meta['tags']]).casefold()
         if query and query not in haystack:
             continue
-        items.append({**serialize_item(item, session), 'metadata': meta})
+        items.append({**serialize_item(item, session, viewer_id=user.id), 'metadata': meta})
     # Unattached originals remain visible; project filtering shows only attached files.
     all_media = session.scalars(select(CreatorMedia).where(CreatorMedia.owner_id == user.id).order_by(CreatorMedia.id)).all()
     media_ids = {item.get('media_id') for item in items}

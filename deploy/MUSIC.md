@@ -1,11 +1,11 @@
 # Editor music providers (free-plan rollout)
 
-The shared native/web music workspace keeps three distinct paths: owned audio,
-an optional SoundCloud connection/player, and original instrumental composition.
-SoundCloud playback is not a source for editor mixing, copying, sampling or AI.
-New SoundCloud application credentials require Artist Pro; do not purchase it
-under Ziipa's free-only constraint. Use an existing eligible registered app, or
-leave the connection unavailable and retain official external discovery.
+The shared native/web music workspace supports owned audio uploads and original
+Ziipa-created instrumental composition. SoundCloud connection, discovery, player,
+imports and OAuth are not part of this release. No SoundCloud credentials or
+subscription are required. Users remain responsible for uploaded-audio rights.
+Minting or sharing is a separate explicit choice after saving and reviewing a
+creation; creating or attaching music does not automatically publish or mint it.
 
 ## AI composition
 
@@ -15,7 +15,7 @@ model-composed instrumental music, not a vocal/sample-generating audio model.
 The separate local procedural composer is explicitly labeled and never silently
 substitutes for an unavailable AI model. No artist-imitation or exclusive-rights
 claim is made. Only the user's consented description/settings reach inference;
-no uploaded media, SoundCloud audio, library, email or account history is sent.
+no uploaded media, library, email or account history is sent.
 
 `MUSIC_INFERENCE_PROVIDER=private` uses the existing protected local/private LLM.
 `MUSIC_INFERENCE_PROVIDER=cloudflare` uses the fixed
@@ -34,17 +34,18 @@ provider limit; other applications on the account share that allowance. Quota
 exhaustion returns an unavailable message, not a paid upgrade. Recheck the plan
 before each activation or billing change.
 
-First deploy the API and matching worker/schema, then the shared web/native
-clients. Because the private bridge ships with the website, activate hosted AI
-only after both API and website are live. Verify one real score-to-WAV request;
+Deploy the API and shared web/native clients. Schema head stays
+`20261020_0012`; no music-provider table is added, and the existing `45db0ed`
+compact calendar/push worker can remain unchanged. Do not use the prepared but
+unexecuted SoundCloud schema0013 worker rollout for this release. Because the
+private bridge ships with the website, activate hosted AI only after both API
+and website are live. Verify one real score-to-WAV request;
 the no-inference status endpoint proves binding configuration, not model output.
 No social post, broadcast, notification test or mainnet transaction is part of
 this deployment. Rebuild native APKs for changes to the shared editor.
 
 ## References
 
-- https://developers.soundcloud.com/docs/api/guide
-- https://developers.soundcloud.com/docs/api/terms-of-use
 - https://developers.cloudflare.com/workers-ai/platform/pricing/
 - https://developers.cloudflare.com/workers-ai/features/json-mode/
 - https://developers.cloudflare.com/workers-ai/platform/data-usage/

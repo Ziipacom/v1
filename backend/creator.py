@@ -2,11 +2,12 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
+import math
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import ForeignKey, String, JSON, DateTime, select, func, delete, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, Session
 from app import Base, User, db, current_user, guard, settings
@@ -140,11 +141,25 @@ class ItemInput(BaseModel):
     timeline: TimelineEdit | None = None
     visual_effect: VisualEffect = 'none'
     captions: list[Caption] = Field(default_factory=list, max_length=100)
+    caption_source_cues: list[Caption] | None = Field(default=None, max_length=100)
     price_cents: int | None = Field(default=None, ge=0, le=100000000)
     remix_of: str | None = Field(default=None, max_length=64)
     overlays: list[Overlay] = Field(default_factory=list, max_length=8)
     soundtrack: Soundtrack | None = None
     distribution_targets: list[SocialProvider] = Field(default_factory=list, max_length=6)
+    @field_validator('caption_source_cues', mode='before')
+    @classmethod
+    def source_cue_numbers(cls, cues):
+        if cues is not None:
+            if not isinstance(cues, list):
+                raise ValueError('Source captions must be a list')
+            for cue in cues:
+                if isinstance(cue, Caption):
+                    continue
+                if (not isinstance(cue, dict) or any(type(cue.get(k)) not in (int, float)
+                        for k in ('start', 'end'))):
+                    raise ValueError('Source caption timestamps must be finite numbers')
+        return cues
     @model_validator(mode='after')
     def valid(self):
         if self.trim_end is not None and self.trim_end <= self.trim_start:
@@ -153,6 +168,12 @@ class ItemInput(BaseModel):
             raise ValueError('Tags must be under 40 characters')
         if len(set(self.distribution_targets)) != len(self.distribution_targets):
             raise ValueError('Choose each distribution network once')
+        previous_end = 0.0
+        for cue in self.caption_source_cues or []:
+            if (not math.isfinite(cue.start) or not math.isfinite(cue.end)
+                    or not 0 <= cue.start < cue.end <= 90 or cue.start < previous_end):
+                raise ValueError('Source caption cues must be ordered, nonoverlapping and within 90 seconds')
+            previous_end = cue.end
         return self
 
 
@@ -232,13 +253,16 @@ def prefs_for(session, user):
     return PreferencesInput(**row.data).model_dump() if row else PreferencesInput().model_dump()
 
 
-def serialize_item(item, session):
+def serialize_item(item, session, *, viewer_id=None):
     owner = session.get(User, item.owner_id)
     media = session.get(CreatorMedia, item.data.get('media_id')) if item.data.get('media_id') else None
     media_url = globals()['media_url'](media.id) if media else None
     image = media and media.content_type.startswith('image/')
     distributions = session.scalars(select(CreatorDistribution).where(CreatorDistribution.item_id == item.id, CreatorDistribution.owner_id == item.owner_id)).all()
-    return {**item.data, 'visibility': item.visibility, 'id': item.id, 'creator': owner.name, 'creator_id': owner.id, 'cover': media_url if image else '/brand/ziipa-background.png', 'media_url': None if image else media_url, 'content_type': media.content_type if media else None, 'demo': False, 'label': 'Post' if item.visibility == 'published' else ('Removed by moderation' if item.visibility == 'hidden' else 'Draft'), 'created_at': item.created_at.isoformat(), 'distribution': [serialize_distribution(d) for d in distributions]}
+    # Raw recognition may include speech removed by a timeline cut. It is an
+    # owner's editor track, never public feed or other-viewer metadata.
+    data = {key: value for key, value in item.data.items() if key != 'caption_source_cues' or viewer_id == item.owner_id}
+    return {**data, 'visibility': item.visibility, 'id': item.id, 'creator': owner.name, 'creator_id': owner.id, 'cover': media_url if image else '/brand/ziipa-background.png', 'media_url': None if image else media_url, 'content_type': media.content_type if media else None, 'demo': False, 'label': 'Post' if item.visibility == 'published' else ('Removed by moderation' if item.visibility == 'hidden' else 'Draft'), 'created_at': item.created_at.isoformat(), 'distribution': [serialize_distribution(d) for d in distributions]}
 
 
 def serialize_distribution(row):
@@ -294,7 +318,7 @@ def bootstrap(user: User = Depends(current_user), session: Session = Depends(db)
     feeds = session.scalars(select(CreatorFeed).where(CreatorFeed.owner_id == user.id)).all()
     community_feeds = session.scalars(select(CreatorFeed).where(CreatorFeed.data['shared'].as_boolean() == True).limit(100)).all()
     distributions = session.scalars(select(CreatorDistribution).where(CreatorDistribution.owner_id == user.id).order_by(CreatorDistribution.updated_at.desc()).limit(200)).all()
-    return {'items': items, 'drafts': [serialize_item(i, session) for i in own], 'preferences': prefs, 'feeds': [{'id': f.id, **f.data} for f in feeds], 'community_feeds': [{'id': f.id, **f.data, 'owner_name': session.get(User, f.owner_id).name} for f in community_feeds if account_is_discoverable(session, f.owner_id)], 'connections': connections_for(user, session), 'distributions': [serialize_distribution(d) for d in distributions]}
+    return {'items': items, 'drafts': [serialize_item(i, session, viewer_id=user.id) for i in own], 'preferences': prefs, 'feeds': [{'id': f.id, **f.data} for f in feeds], 'community_feeds': [{'id': f.id, **f.data, 'owner_name': session.get(User, f.owner_id).name} for f in community_feeds if account_is_discoverable(session, f.owner_id)], 'connections': connections_for(user, session), 'distributions': [serialize_distribution(d) for d in distributions]}
 
 
 def save_item(data, session, user, row=None):
@@ -306,6 +330,8 @@ def save_item(data, session, user, row=None):
         # for fields that permit clearing. Visibility in the column is canonical.
         merged = {**row.data, 'visibility': row.visibility,
                   **data.model_dump(include=data.model_fields_set)}
+        if merged.get('media_id') != row.data.get('media_id'):
+            merged['caption_source_cues'] = None
         try:
             data = ItemInput.model_validate(merged)
         except ValidationError as exc:
@@ -339,7 +365,7 @@ def save_item(data, session, user, row=None):
     session.refresh(row)
     from media_workflows import notify_workflows
     notify_workflows(user.id)
-    return serialize_item(row, session)
+    return serialize_item(row, session, viewer_id=user.id)
 
 
 @router.post('/items', status_code=201, dependencies=[Depends(guard)])

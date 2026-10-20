@@ -12,8 +12,17 @@ import {
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { Bell, LogOut, ShieldCheck, Trash2 } from "lucide-react-native";
+import {
+  FolderOpen,
+  Link2,
+  LogOut,
+  ShieldCheck,
+  Trash2,
+  UserRound,
+  Wallet,
+} from "lucide-react-native";
 import { Action, Field, Notice } from "../components/ui";
+import { SettingsControls } from "../components/settings-controls";
 import { useZiipa } from "../provider";
 import { color, styles } from "../theme";
 import { apiOrigin, legalUrls, supportEmail } from "../lib/config";
@@ -24,7 +33,15 @@ import {
   type AdminIdentity,
 } from "../lib/admin-api";
 
-export function SettingsScreen({
+export function SettingsScreen(
+  props: NativeStackScreenProps<RootStack, "Settings">,
+) {
+  const { session } = useZiipa();
+  return (
+    <ScopedSettingsScreen key={session?.access_token || "guest"} {...props} />
+  );
+}
+function ScopedSettingsScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Settings">) {
   const { desktop, contentWidth } = useDesktopLayout();
@@ -66,12 +83,25 @@ export function SettingsScreen({
     personalized_feeds: true,
     marketing_emails: false,
   });
+  const [privacyReady, setPrivacyReady] = useState(false);
   useEffect(() => {
     if (!session) return;
+    let active = true;
+    setPrivacyReady(false);
     void api<typeof privacy>("/api/account/privacy")
-      .then(setPrivacy)
-      .catch((e) => setError((e as Error).message));
-  }, [session?.access_token]);
+      .then((value) => {
+        if (active) {
+          setPrivacy(value);
+          setPrivacyReady(true);
+        }
+      })
+      .catch((e) => {
+        if (active) setError((e as Error).message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session?.access_token, api]);
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -213,7 +243,7 @@ export function SettingsScreen({
       <Action
         secondary
         title={`Profile visibility · ${privacy.profile_visibility}`}
-        disabled={busy}
+        disabled={busy || !privacyReady}
         onPress={() => {
           const values = ["public", "members", "private"];
           const next =
@@ -237,7 +267,7 @@ export function SettingsScreen({
             value={privacy[key]}
             onValueChange={(value) => setPrivacy({ ...privacy, [key]: value })}
             trackColor={{ true: color.purple }}
-            disabled={busy}
+            disabled={busy || !privacyReady}
           />
         </View>
       ))}
@@ -245,6 +275,7 @@ export function SettingsScreen({
         title="Save privacy controls"
         icon={ShieldCheck}
         busy={busy}
+        disabled={!privacyReady}
         onPress={() =>
           void run(async () => {
             setPrivacy(
@@ -315,14 +346,46 @@ export function SettingsScreen({
           description="Manage your profile, privacy and safety preferences."
         />
       ) : (
-        <Text style={styles.title}>Make it{"\n"}your space.</Text>
+        <Text style={styles.title}>Settings</Text>
       )}
-      <Action
-        title="Private updates · notification preferences"
-        secondary
-        icon={Bell}
-        onPress={() => navigation.navigate("Notifications")}
-      />
+      <SettingsControls navigation={navigation} />
+      <View style={[styles.panel, desktop && workspace.panel]}>
+        <Text accessibilityRole="header" style={styles.heading}>
+          Account & connected tools
+        </Text>
+        <Text style={styles.small}>
+          Manage your profile, networks, wallet and workspace here. Opening a
+          tool does not connect, publish or sign a transaction.
+        </Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          <Action
+            title="Creator profile"
+            icon={UserRound}
+            secondary
+            onPress={() => navigation.navigate("Profile")}
+          />
+          <Action
+            title="Connected networks"
+            icon={Link2}
+            secondary
+            onPress={() =>
+              navigation.navigate("Connections", { tab: "accounts" })
+            }
+          />
+          <Action
+            title="Wallet & tokens"
+            icon={Wallet}
+            secondary
+            onPress={() => navigation.navigate("Utility", { kind: "wallet" })}
+          />
+          <Action
+            title="Personal library & rights"
+            icon={FolderOpen}
+            secondary
+            onPress={() => navigation.navigate("MediaOS", { tab: "Library" })}
+          />
+        </View>
+      </View>
       {administration &&
         administration.role !== "member" &&
         administration.permissions.length > 0 && (
@@ -345,8 +408,8 @@ export function SettingsScreen({
           ]}
         >
           <View style={workspace.main}>
-            {identityPanel}
-            {privacyPanel}
+            {session && identityPanel}
+            {session && privacyPanel}
           </View>
           <View style={workspace.main}>
             {safetyPanel}
@@ -355,9 +418,9 @@ export function SettingsScreen({
         </View>
       ) : (
         <>
-          {identityPanel}
+          {session && identityPanel}
           {safetyPanel}
-          {privacyPanel}
+          {session && privacyPanel}
         </>
       )}
 
@@ -365,64 +428,75 @@ export function SettingsScreen({
       {!!message && <Notice text={message} />}
       {!desktop && policyPanel}
 
-      <Action
-        title="Sign out"
-        secondary
-        icon={LogOut}
-        onPress={() => void run(logout)}
-        busy={busy}
-      />
-      <View style={styles.separator} />
-      <Text style={styles.heading}>Account deletion</Text>
-      <Text style={styles.body}>
-        Permanently remove your account and its content from this server.
-        Confirm with your password before anything is deleted.
-      </Text>
-      {!deleting ? (
+      {session ? (
         <Action
+          title="Sign out"
           secondary
-          title="Delete my account…"
-          icon={Trash2}
-          disabled={busy}
-          onPress={() => setDeleting(true)}
+          icon={LogOut}
+          onPress={() => void run(logout)}
+          busy={busy}
         />
       ) : (
+        <Action
+          title="Sign in to Ziipa"
+          onPress={() => navigation.navigate("Login")}
+        />
+      )}
+      {session && (
         <>
-          <Field
-            label="Current password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            maxLength={128}
-            autoCapitalize="none"
-            editable={!busy}
-          />
-          <Field
-            label="Type DELETE to confirm"
-            value={confirmation}
-            onChangeText={setConfirmation}
-            autoCapitalize="characters"
-            maxLength={6}
-            editable={!busy}
-          />
-          <Action
-            danger
-            title="Permanently delete account"
-            icon={Trash2}
-            onPress={deleteAccount}
-            busy={busy}
-            disabled={confirmation !== "DELETE" || !password}
-          />
-          <Action
-            secondary
-            title="Cancel deletion"
-            onPress={() => {
-              setDeleting(false);
-              setPassword("");
-              setConfirmation("");
-            }}
-            disabled={busy}
-          />
+          <View style={styles.separator} />
+          <Text style={styles.heading}>Account deletion</Text>
+          <Text style={styles.body}>
+            Permanently remove your account and its content from this server.
+            Confirm with your password before anything is deleted.
+          </Text>
+          {!deleting ? (
+            <Action
+              secondary
+              title="Delete my account…"
+              icon={Trash2}
+              disabled={busy}
+              onPress={() => setDeleting(true)}
+            />
+          ) : (
+            <>
+              <Field
+                label="Current password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                maxLength={128}
+                autoCapitalize="none"
+                editable={!busy}
+              />
+              <Field
+                label="Type DELETE to confirm"
+                value={confirmation}
+                onChangeText={setConfirmation}
+                autoCapitalize="characters"
+                maxLength={6}
+                editable={!busy}
+              />
+              <Action
+                danger
+                title="Permanently delete account"
+                icon={Trash2}
+                onPress={deleteAccount}
+                busy={busy}
+                disabled={confirmation !== "DELETE" || !password}
+              />
+              <Action
+                secondary
+                title="Cancel deletion"
+                onPress={() => {
+                  setDeleting(false);
+                  setPassword("");
+                  setConfirmation("");
+                }}
+                disabled={busy}
+              />
+            </>
+          )}
         </>
       )}
       {__DEV__ && (

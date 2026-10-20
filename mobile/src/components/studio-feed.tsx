@@ -11,9 +11,10 @@ import {
   VolumeX,
 } from "lucide-react-native";
 import { ReelMedia } from "./reel-media";
+import { useDevicePreferences } from "./device-preferences";
 import { pageAtOffset, isPlayableMedia } from "../lib/domain";
 import type { Item } from "../lib/types";
-import { color, font } from "../theme";
+import { color, font, themedStyles, useTheme } from "../theme";
 
 /** The menu is a sibling overlay: this list owns gestures on the exposed media. */
 export function StudioFeed({
@@ -25,10 +26,15 @@ export function StudioFeed({
   editing: boolean;
   onOpen: (item: Item) => void;
 }) {
+  useTheme();
+  const { preferences, ready, reducedMotion } = useDevicePreferences();
+  const autoplay = ready && preferences.autoplay && !reducedMotion;
   const [height, setHeight] = useState(0);
   const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const [paused, setPaused] = useState(!autoplay);
+  const [muted, setMuted] = useState(preferences.startMuted);
+  useEffect(() => setPaused(!autoplay), [autoplay]);
+  useEffect(() => setMuted(preferences.startMuted), [preferences.startMuted]);
   const list = useRef<FlatList<Item>>(null);
   const currentIndex = useRef(0);
   const activeItemId = useRef(items[0]?.id);
@@ -42,7 +48,10 @@ export function StudioFeed({
       retained >= 0
         ? retained
         : Math.min(currentIndex.current, Math.max(0, items.length - 1));
-    if (activeItemId.current !== items[next]?.id) setPaused(false);
+    if (activeItemId.current !== items[next]?.id) {
+      setPaused(!autoplay);
+      setMuted(preferences.startMuted);
+    }
     activeItemId.current = items[next]?.id;
     currentIndex.current = next;
     setIndex(next);
@@ -51,7 +60,7 @@ export function StudioFeed({
         offset: next * height,
         animated: false,
       });
-  }, [height, items]);
+  }, [height, items, autoplay, preferences.startMuted]);
   function page(direction: number) {
     const next = Math.max(0, Math.min(items.length - 1, index + direction));
     list.current?.scrollToOffset({ offset: next * height, animated: true });
@@ -94,7 +103,8 @@ export function StudioFeed({
               currentIndex.current = next;
               activeItemId.current = items[next]?.id;
               setIndex(next);
-              setPaused(false);
+              setPaused(!autoplay);
+              setMuted(preferences.startMuted);
             }
           }}
           renderItem={({ item, index: i }) => (
@@ -245,7 +255,7 @@ export function StudioFeed({
     </View>
   );
 }
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   top: {
     position: "absolute",
     top: 22,
@@ -317,4 +327,4 @@ const s = StyleSheet.create({
     paddingLeft: 19,
   },
   empty: { position: "absolute", left: 22, right: 22, bottom: 45, gap: 8 },
-});
+}));

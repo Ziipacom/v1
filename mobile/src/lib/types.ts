@@ -68,6 +68,8 @@ export type Item = {
   trim_start?: number;
   trim_end?: number | null;
   captions?: Caption[];
+  /** Private source cues returned only to the owner for re-editing. */
+  caption_source_cues?: Caption[] | null;
   timeline?: EditTimeline | null;
   visual_effect?: VisualEffect;
   price_cents?: number | null;
@@ -87,6 +89,7 @@ export type ItemInput = Pick<
   trim_start: number;
   trim_end: number | null;
   captions: Caption[];
+  caption_source_cues?: Caption[] | null;
   timeline?: EditTimeline | null;
   visual_effect?: VisualEffect;
   price_cents: number | null;

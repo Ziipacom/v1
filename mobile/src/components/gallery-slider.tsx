@@ -22,10 +22,11 @@ import {
 } from "lucide-react-native";
 import { Cover } from "./ui";
 import { ReelMedia } from "./reel-media";
+import { useDevicePreferences } from "./device-preferences";
 import { isPlayableMedia } from "../lib/domain";
 import { galleryIndex, galleryRotationAllowed } from "../lib/gallery";
 import type { Item } from "../lib/types";
-import { color, font } from "../theme";
+import { color, font, useTheme } from "../theme";
 
 /** The adjacent cards are covers; only the active trusted media player mounts. */
 export function GallerySlider({
@@ -37,6 +38,12 @@ export function GallerySlider({
   label: string;
   onOpen: (item: Item) => void;
 }) {
+  useTheme();
+  const {
+    preferences,
+    ready,
+    reducedMotion: deviceReducedMotion,
+  } = useDevicePreferences();
   const focused = useIsFocused();
   const { width: windowWidth } = useWindowDimensions();
   const [width, setWidth] = useState(windowWidth);
@@ -48,20 +55,32 @@ export function GallerySlider({
   const [hovering, setHovering] = useState(false);
   const [controlFocused, setControlFocused] = useState(false);
   // Until accessibility settings resolve, do not start motion or video.
-  const [reducedMotion, setReducedMotion] = useState(true);
+  const [systemReducedMotion, setReducedMotion] = useState(true);
+  const reducedMotion = systemReducedMotion || deviceReducedMotion;
   const [rotationEnabled, setRotationEnabled] = useState(true);
   const [mediaPaused, setMediaPaused] = useState(false);
   const [explicitPlaybackId, setExplicitPlaybackId] = useState<string | null>(
     null,
   );
-  const [unmutedItemId, setUnmutedItemId] = useState<string | null>(null);
+  const [audioOverride, setAudioOverride] = useState<{
+    id: string;
+    muted: boolean;
+  } | null>(null);
   const container = useRef<View>(null);
   const fade = useRef(new Animated.Value(1)).current;
   const translation = useRef(new Animated.Value(0)).current;
   const current = galleryIndex(index, items.length);
   const item = items[current];
   const explicitPlayback = !!item && explicitPlaybackId === item.id;
-  const muted = !item || unmutedItemId !== item.id;
+  const muted =
+    !item ||
+    !ready ||
+    (audioOverride?.id === item.id
+      ? audioOverride.muted
+      : preferences.startMuted);
+  const playbackPaused =
+    mediaPaused ||
+    ((reducedMotion || !ready || !preferences.autoplay) && !explicitPlayback);
   const playable = !!item && isPlayableMedia(item);
   const activeId = useRef(item?.id);
   const currentIndex = useRef(current);
@@ -79,11 +98,11 @@ export function GallerySlider({
   useEffect(() => {
     activeId.current = item?.id;
     currentIndex.current = current;
-    setMediaPaused(false);
+    setMediaPaused(!ready || !preferences.autoplay);
     setExplicitPlaybackId(null);
     // Never carry audible playback into the next creator's post.
-    setUnmutedItemId(null);
-  }, [item?.id, current]);
+    setAudioOverride(null);
+  }, [item?.id, current, ready, preferences.autoplay, preferences.startMuted]);
   useEffect(() => {
     let mounted = true;
     void AccessibilityInfo.isReduceMotionEnabled()
@@ -281,7 +300,7 @@ export function GallerySlider({
               key={item.id}
               item={item}
               active={mediaActive}
-              paused={mediaPaused || (reducedMotion && !explicitPlayback)}
+              paused={playbackPaused}
               muted={muted}
             />
             <LinearGradient
@@ -456,9 +475,9 @@ export function GallerySlider({
             }}
           >
             {rotationEnabled && !reducedMotion ? (
-              <Pause color={color.muted} size={15} />
+              <Pause color={color.onMedia} size={15} />
             ) : (
-              <Play color={color.muted} size={15} />
+              <Play color={color.onMedia} size={15} />
             )}
           </Pressable>
         )}
@@ -468,15 +487,11 @@ export function GallerySlider({
               {...interaction}
               accessibilityRole="button"
               accessibilityLabel={
-                mediaPaused || (reducedMotion && !explicitPlayback)
-                  ? "Play gallery media"
-                  : "Pause gallery media"
+                playbackPaused ? "Play gallery media" : "Pause gallery media"
               }
               onPress={() => {
                 setExplicitPlaybackId(item.id);
-                setMediaPaused(
-                  !(mediaPaused || (reducedMotion && !explicitPlayback)),
-                );
+                setMediaPaused(!playbackPaused);
                 setRotationEnabled(false);
               }}
               style={{
@@ -486,10 +501,10 @@ export function GallerySlider({
                 justifyContent: "center",
               }}
             >
-              {mediaPaused || (reducedMotion && !explicitPlayback) ? (
-                <Play color={color.text} size={18} />
+              {playbackPaused ? (
+                <Play color={color.onMedia} size={18} />
               ) : (
-                <Pause color={color.text} size={18} />
+                <Pause color={color.onMedia} size={18} />
               )}
             </Pressable>
             <Pressable
@@ -499,7 +514,7 @@ export function GallerySlider({
                 muted ? "Unmute gallery media" : "Mute gallery media"
               }
               onPress={() => {
-                setUnmutedItemId(muted ? item.id : null);
+                setAudioOverride({ id: item.id, muted: !muted });
                 setRotationEnabled(false);
               }}
               style={{
@@ -510,9 +525,9 @@ export function GallerySlider({
               }}
             >
               {muted ? (
-                <VolumeX color={color.text} size={18} />
+                <VolumeX color={color.onMedia} size={18} />
               ) : (
-                <Volume2 color={color.text} size={18} />
+                <Volume2 color={color.onMedia} size={18} />
               )}
             </Pressable>
           </>

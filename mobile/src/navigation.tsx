@@ -11,7 +11,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useZiipa } from "./provider";
-import { color, font, styles } from "./theme";
+import { color, font, styles, useTheme } from "./theme";
 import { portalMode } from "./lib/config";
 import { Action, Logo, Notice } from "./components/ui";
 import type { RootStack } from "./lib/types";
@@ -84,6 +84,7 @@ function StudioRoute(props: NativeStackScreenProps<RootStack, "Studio">) {
 }
 
 function NavigationContent() {
+  const { resolvedMode } = useTheme();
   const { loading, session, guest, error, restore, forgetSession, data } =
     useZiipa();
   const { desktop } = useDesktopLayout();
@@ -203,6 +204,7 @@ function NavigationContent() {
       }
       theme={{
         ...DarkTheme,
+        dark: resolvedMode === "dark",
         colors: {
           ...DarkTheme.colors,
           primary: color.purple,

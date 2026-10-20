@@ -3,7 +3,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -19,7 +18,7 @@ import {
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { UploadFile } from "../lib/api";
-import { color, font, styles } from "../theme";
+import { color, font, styles, themedStyles, themeValue, useTheme } from "../theme";
 import { Action, Notice } from "./ui";
 import { recordingSeconds, recordingTime } from "./recorder-utils";
 
@@ -71,6 +70,7 @@ export function RecorderLayout({
   onClose: () => void;
   onNetworks: () => void;
 }) {
+  useTheme();
   const [discard, setDiscard] = useState(false);
   const insets = useSafeAreaInsets();
   function close() {
@@ -124,7 +124,7 @@ export function RecorderLayout({
             </Text>
           </View>
         </View>
-        <View style={r.stage}>
+        <View style={[r.stage, !enabled && !clip && { backgroundColor: themeValue("#08060D", color.panel) }]}>
           {children}
           {!enabled && !clip && (
             <ScrollView
@@ -287,7 +287,7 @@ export function RecorderLayout({
   );
 }
 
-const r = StyleSheet.create({
+const r = themedStyles(() => ({
   screen: {
     flex: 1,
     backgroundColor: color.bg,
@@ -295,21 +295,21 @@ const r = StyleSheet.create({
     paddingBottom: 16,
   },
   header: { flexDirection: "row", alignItems: "center", gap: 10, padding: 16 },
-  title: { color: "white", fontSize: 17, fontFamily: font.semibold },
+  title: { color: color.text, fontSize: 17, fontFamily: font.semibold },
   small: {
-    color: "#C8BFD6",
+    color: color.muted,
     fontSize: 12,
     lineHeight: 17,
     fontFamily: font.regular,
   },
   badge: {
-    backgroundColor: "#2D213B",
+    backgroundColor: themeValue("#2D213B", color.purple),
     borderRadius: 20,
     paddingVertical: 6,
     paddingHorizontal: 9,
   },
   badgeText: {
-    color: "white",
+    color: color.onAccent,
     fontSize: 10,
     fontFamily: font.semibold,
     letterSpacing: 0.6,
@@ -321,7 +321,7 @@ const r = StyleSheet.create({
     marginHorizontal: 12,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#443053",
+    borderColor: themeValue("#443053", color.border),
     backgroundColor: "#08060D",
   },
   round: {
@@ -347,7 +347,7 @@ const r = StyleSheet.create({
     borderRadius: 20,
   },
   cameraLabelText: {
-    color: "white",
+    color: color.onMedia,
     fontFamily: font.medium,
     fontSize: 10,
     letterSpacing: 0.7,
@@ -355,7 +355,7 @@ const r = StyleSheet.create({
   dot: { width: 7, height: 7, backgroundColor: color.lime, borderRadius: 4 },
   permission: { flexGrow: 1, justifyContent: "center", padding: 23, gap: 18 },
   cameraMark: {
-    backgroundColor: "#2D1749",
+    backgroundColor: themeValue("#2D1749", color.accentSoft),
     width: 82,
     height: 82,
     alignSelf: "center",
@@ -364,13 +364,13 @@ const r = StyleSheet.create({
     borderRadius: 41,
   },
   permissionTitle: {
-    color: "white",
+    color: color.text,
     fontFamily: font.bold,
     fontSize: 25,
     textAlign: "center",
   },
   explain: {
-    color: "#C8BFD6",
+    color: color.muted,
     fontFamily: font.regular,
     fontSize: 13,
     lineHeight: 20,
@@ -402,4 +402,4 @@ const r = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.border,
   },
-});
+}));

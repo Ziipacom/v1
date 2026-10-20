@@ -8,6 +8,7 @@ import {
 import { Platform, useWindowDimensions } from "react-native";
 import { isDesktopPortal } from "../lib/desktop-navigation";
 import { portalMode } from "../lib/config";
+import { useTheme } from "../theme";
 
 type DesktopLayout = {
   desktop: boolean;
@@ -39,5 +40,6 @@ export function DesktopLayoutProvider({ children }: PropsWithChildren) {
 }
 
 export function useDesktopLayout() {
+  useTheme();
   return useContext(Context);
 }

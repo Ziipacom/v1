@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppState, Text, View } from "react-native";
 import { request } from "../lib/api";
-import { color, font } from "../theme";
+import { color, font, useTheme } from "../theme";
 
 type PlatformStatus = {
   maintenance_mode: boolean;
@@ -11,6 +11,7 @@ type PlatformStatus = {
 
 /** Public, plain-text operator notice; authorization always stays on the API. */
 export function PlatformNotice() {
+  useTheme();
   const [status, setStatus] = useState<PlatformStatus | null>(null);
   useEffect(() => {
     let live = true;

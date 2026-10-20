@@ -30,7 +30,7 @@ import {
   totalDuration,
   type TimelineClip,
 } from "../lib/editor-timeline";
-import { color, font } from "../theme";
+import { color, font, themedStyles, themeValue } from "../theme";
 
 export type TimelineThumbnail = {
   time: number;
@@ -808,17 +808,17 @@ function TrimHandle(props: {
         Platform.OS === "web" && { cursor: "pointer" },
       ]}
     >
-      <GripVertical size={15} color="#172000" />
+      <GripVertical size={15} color={color.onLime} />
     </View>
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   panel: {
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#4A365E",
-    backgroundColor: "#171020",
+    borderColor: themeValue("#4A365E", color.border),
+    backgroundColor: themeValue("#171020", color.panel),
     overflow: "hidden",
     paddingTop: 14,
     gap: 12,
@@ -837,7 +837,7 @@ const s = StyleSheet.create({
     minHeight: 38,
     paddingHorizontal: 9,
     borderRadius: 8,
-    backgroundColor: "#2B1D3B",
+    backgroundColor: themeValue("#2B1D3B", color.raised),
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
@@ -862,7 +862,7 @@ const s = StyleSheet.create({
     fontSize: 11,
     fontVariant: ["tabular-nums"],
   },
-  ruler: { height: 36, borderBottomWidth: 1, borderColor: "#493654" },
+  ruler: { height: 36, borderBottomWidth: 1, borderColor: themeValue("#493654", color.border) },
   tick: {
     color: color.faint,
     fontFamily: font.medium,
@@ -875,7 +875,7 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     height: 74,
-    backgroundColor: "#21152C",
+    backgroundColor: themeValue("#21152C", color.raised),
     borderRadius: 6,
   },
   clip: {
@@ -923,7 +923,7 @@ const s = StyleSheet.create({
     left: -5,
     width: 12,
     height: 10,
-    backgroundColor: "white",
+    backgroundColor: themeValue("white", color.purple),
     borderRadius: 3,
   },
   footer: {
@@ -948,4 +948,4 @@ const s = StyleSheet.create({
     justifyContent: "center",
     gap: 9,
   },
-});
+}));

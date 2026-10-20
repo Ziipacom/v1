@@ -291,7 +291,3 @@ export function ownedAudioTracks(
       };
     });
 }
-
-export function soundCloudSearch(query: string) {
-  return `https://soundcloud.com/search/sounds?q=${encodeURIComponent(query.trim().slice(0, 140))}`;
-}

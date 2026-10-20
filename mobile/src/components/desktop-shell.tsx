@@ -52,7 +52,7 @@ import {
   isAdminIdentity,
   type AdminIdentity,
 } from "../lib/admin-api";
-import { color, font } from "../theme";
+import { color, font, themeValue } from "../theme";
 import type { RootStack } from "../lib/types";
 
 export type DesktopRoute = {
@@ -99,25 +99,25 @@ function NavButton({
         justifyContent: collapsed ? "center" : "flex-start",
         gap: 11,
         backgroundColor: item.active
-          ? "#5420AB45"
+          ? color.accentSoft
           : hovered
-            ? "#FFFFFF09"
+            ? color.hover
             : "transparent",
         borderWidth: 1,
-        borderColor: item.active ? "#7547B65E" : "transparent",
+        borderColor: item.active ? themeValue("#7547B65E", color.purple) : "transparent",
         opacity: pressed ? 0.7 : 1,
       })}
     >
       <item.Icon
         size={19}
-        color={item.active ? color.lime : "#B6A9C8"}
+        color={item.active ? color.lime : themeValue("#B6A9C8", color.muted)}
         strokeWidth={1.7}
       />
       {!collapsed && (
         <Text
           style={{
             fontFamily: item.active ? font.semibold : font.regular,
-            color: item.active ? color.text : "#C3B8D0",
+            color: item.active ? color.text : themeValue("#C3B8D0", color.muted),
             fontSize: 14,
             flex: 1,
           }}
@@ -134,7 +134,7 @@ function NavButton({
             paddingHorizontal: 7,
             paddingVertical: 2,
             borderRadius: 6,
-            backgroundColor: "#FFFFFF0B",
+            backgroundColor: themeValue("#FFFFFF0B", color.raised),
           }}
         >
           {item.count}
@@ -376,7 +376,7 @@ export function DesktopShell({
       {!collapsed && (
         <Text
           style={{
-            color: "#82748F",
+            color: themeValue("#82748F", color.faint),
             fontFamily: font.medium,
             fontSize: 10,
             letterSpacing: 1.6,
@@ -422,7 +422,7 @@ export function DesktopShell({
         createElement(
           "style",
           null,
-          "#ziipa-desktop-portal :focus-visible{outline:2px solid #A6E21B!important;outline-offset:3px}#ziipa-desktop-portal input:focus-visible{outline-offset:0}@media(prefers-reduced-motion:reduce){#ziipa-desktop-portal *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}",
+          `#ziipa-desktop-portal :focus-visible{outline:2px solid ${color.lime}!important;outline-offset:3px}#ziipa-desktop-portal input:focus-visible{outline-offset:0}@media(prefers-reduced-motion:reduce){#ziipa-desktop-portal *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}`,
         )}
       {chrome && (
         <View
@@ -432,8 +432,8 @@ export function DesktopShell({
           style={{
             width: collapsed ? 76 : 240,
             borderRightWidth: 1,
-            borderColor: "#2B2239",
-            backgroundColor: "#100B1B",
+            borderColor: themeValue("#2B2239", color.border),
+            backgroundColor: color.sidebar,
             paddingHorizontal: collapsed ? 9 : 13,
           }}
         >
@@ -469,7 +469,7 @@ export function DesktopShell({
             {!collapsed && (
               <Text
                 style={{
-                  color: color.text,
+                  color: color.onAccent,
                   fontFamily: font.semibold,
                   fontSize: 14,
                 }}
@@ -493,7 +493,7 @@ export function DesktopShell({
                 padding: 13,
                 gap: 5,
                 borderTopWidth: 1,
-                borderColor: "#2B2239",
+                borderColor: themeValue("#2B2239", color.border),
                 marginBottom: 10,
               }}
             >
@@ -520,7 +520,7 @@ export function DesktopShell({
               </View>
               <Text
                 style={{
-                  color: "#786D87",
+                  color: themeValue("#786D87", color.faint),
                   fontSize: 10,
                   fontFamily: font.regular,
                 }}
@@ -538,7 +538,7 @@ export function DesktopShell({
             style={{
               height: 77,
               borderBottomWidth: 1,
-              borderColor: "#2B2239",
+              borderColor: themeValue("#2B2239", color.border),
               flexDirection: "row",
               alignItems: "center",
               paddingHorizontal: 24,
@@ -562,7 +562,7 @@ export function DesktopShell({
               accessibilityRole="tablist"
               style={{
                 flexDirection: "row",
-                backgroundColor: "#1A1327",
+                backgroundColor: themeValue("#1A1327", color.input),
                 borderRadius: 10,
                 padding: 4,
                 gap: 3,
@@ -583,7 +583,7 @@ export function DesktopShell({
                     paddingVertical: 8,
                     borderRadius: 7,
                     backgroundColor: (index === 0 ? explore : !explore)
-                      ? "#35224B"
+                      ? themeValue("#35224B", color.accentSoft)
                       : "transparent",
                   }}
                 >
@@ -610,14 +610,14 @@ export function DesktopShell({
                 alignItems: "center",
                 gap: 9,
                 borderWidth: 1,
-                borderColor: "#342A44",
+                borderColor: themeValue("#342A44", color.border),
                 borderRadius: 10,
-                backgroundColor: "#1A1425",
+                backgroundColor: color.input,
                 paddingHorizontal: 12,
                 height: 39,
               }}
             >
-              <Search color="#9E8EAF" size={17} />
+              <Search color={themeValue("#9E8EAF", color.faint)} size={17} />
               <TextInput
                 ref={input}
                 accessibilityLabel={
@@ -631,7 +631,7 @@ export function DesktopShell({
                     ? "Search creations, creators, tags…"
                     : "Search your media library…"
                 }
-                placeholderTextColor="#8C7B9F"
+                placeholderTextColor={themeValue("#8C7B9F", color.faint)}
                 style={{
                   flex: 1,
                   minWidth: 50,
@@ -650,7 +650,7 @@ export function DesktopShell({
               </Pressable>
               <Text
                 style={{
-                  color: "#786988",
+                  color: themeValue("#786988", color.faint),
                   fontFamily: font.regular,
                   fontSize: 10,
                 }}
@@ -686,9 +686,9 @@ export function DesktopShell({
                 borderRadius: 18,
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: "#47256B",
+                backgroundColor: themeValue("#47256B", color.accentSoft),
                 borderWidth: 1,
-                borderColor: "#79549C",
+                borderColor: themeValue("#79549C", color.border),
               }}
             >
               <Text

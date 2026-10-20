@@ -59,7 +59,7 @@ import {
 import { prepareMediaShare } from "../lib/share-creation";
 import { creationCaption, type PreparedMedia } from "../lib/share-types";
 import type { Item, RootStack, SocialProvider } from "../lib/types";
-import { color, font, styles } from "../theme";
+import { themedStyles, themeValue, color, font, styles } from "../theme";
 import { useDesktopLayout } from "../components/desktop-layout";
 
 const tabs: { id: NetworkTab; label: string; icon: LucideIcon }[] = [
@@ -666,7 +666,7 @@ export function ConnectionsScreen({
                       desktop && nd.card,
                       desktopCard,
                       value.status !== "disconnected" && {
-                        borderColor: "#64418A",
+                        borderColor: themeValue("#64418A", color.border),
                       },
                     ]}
                   >
@@ -926,7 +926,7 @@ export function ConnectionsScreen({
                 )}
               </NetworkGrid>
               {tab === "people" && (
-                <View style={[n.account, { backgroundColor: "#27153D" }]}>
+                <View style={[n.account, { backgroundColor: themeValue("#27153D", color.accentSoft) }]}>
                   <Text style={[styles.heading, { fontSize: 22 }]}>
                     Bring your people to Ziipa
                   </Text>
@@ -1290,13 +1290,13 @@ export function ConnectionsScreen({
   );
 }
 
-const n = StyleSheet.create({
+const n = themedStyles(() => StyleSheet.create({
   hero: {
     padding: 21,
     borderRadius: 26,
-    backgroundColor: "#251438",
+    backgroundColor: themeValue("#251438", color.accentSoft),
     borderWidth: 1,
-    borderColor: "#573375",
+    borderColor: themeValue("#573375", color.border),
     gap: 16,
   },
   networkIcon: {
@@ -1310,18 +1310,18 @@ const n = StyleSheet.create({
   statRow: {
     flexDirection: "row",
     borderTopWidth: 1,
-    borderColor: "#56356B",
+    borderColor: themeValue("#56356B", color.border),
     paddingTop: 16,
   },
   stat: { flex: 1, alignItems: "center", gap: 2 },
-  statValue: { color: "white", fontFamily: font.semibold, fontSize: 24 },
-  statLabel: { fontFamily: font.regular, color: "#BFAACE", fontSize: 12 },
+  statValue: { color: color.text, fontFamily: font.semibold, fontSize: 24 },
+  statLabel: { fontFamily: font.regular, color: themeValue("#BFAACE", color.muted), fontSize: 12 },
   tabs: {
     borderRadius: 26,
     padding: 6,
     borderWidth: 1,
     borderColor: color.border,
-    backgroundColor: "#0D0915",
+    backgroundColor: themeValue("#0D0915", color.panel),
     flexDirection: "row",
     gap: 4,
   },
@@ -1340,14 +1340,14 @@ const n = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 4,
   },
-  textLink: { color: "#CAABFA", fontFamily: font.semibold, fontSize: 13 },
+  textLink: { color: themeValue("#CAABFA", color.muted), fontFamily: font.semibold, fontSize: 13 },
   account: {
     borderWidth: 1,
     borderColor: color.border,
     borderRadius: 22,
     padding: 17,
     gap: 13,
-    backgroundColor: "#1B1526",
+    backgroundColor: themeValue("#1B1526", color.panel),
   },
   accountName: { color: color.text, fontFamily: font.semibold, fontSize: 18 },
   badge: { flexDirection: "row", gap: 7, alignItems: "center" },
@@ -1362,7 +1362,7 @@ const n = StyleSheet.create({
   smallAction: {
     borderWidth: 1,
     borderColor: color.border,
-    backgroundColor: "#241B31",
+    backgroundColor: themeValue("#241B31", color.panel),
     borderRadius: 19,
     minHeight: 40,
     paddingVertical: 8,
@@ -1388,9 +1388,9 @@ const n = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: color.purple,
   },
-});
+}));
 
-const nd = StyleSheet.create({
+const nd = themedStyles(() => StyleSheet.create({
   page: { padding: 28, paddingBottom: 48, alignItems: "center", gap: 0 },
   workspace: { width: "100%", maxWidth: 1340, gap: 18 },
   header: {
@@ -1438,7 +1438,7 @@ const nd = StyleSheet.create({
     borderRadius: 9,
     padding: 4,
     gap: 4,
-    backgroundColor: "#191323",
+    backgroundColor: themeValue("#191323", color.panel),
   },
   tab: {
     flex: 0,
@@ -1448,7 +1448,7 @@ const nd = StyleSheet.create({
     paddingHorizontal: 18,
     gap: 8,
   },
-  selectedTab: { backgroundColor: "#39224F" },
+  selectedTab: { backgroundColor: themeValue("#39224F", color.accentSoft) },
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1459,7 +1459,7 @@ const nd = StyleSheet.create({
     borderRadius: 11,
     padding: 17,
     gap: 12,
-    backgroundColor: "#191421",
+    backgroundColor: themeValue("#191421", color.panel),
     minWidth: 0,
   },
   smallAction: {
@@ -1503,4 +1503,4 @@ const nd = StyleSheet.create({
     backgroundColor: color.panel,
   },
   dialogBody: { padding: 22, gap: 15 },
-});
+}));

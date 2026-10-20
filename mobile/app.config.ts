@@ -33,7 +33,7 @@ const config: ExpoConfig = {
   owner: process.env.EXPO_OWNER || undefined,
   scheme: production ? "ziipa" : "ziipa-preview",
   orientation: "portrait",
-  userInterfaceStyle: "dark",
+  userInterfaceStyle: "automatic",
   icon: "./assets/brand/app-icon.png",
   ios: {
     bundleIdentifier: production ? identifier : `${identifier}.preview`,

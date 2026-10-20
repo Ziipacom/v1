@@ -40,7 +40,7 @@ import {
 import type { RootStack } from "../lib/types";
 import { useOperationScope } from "../lib/use-operation-scope";
 import { useZiipa } from "../provider";
-import { color, font, styles } from "../theme";
+import { themedStyles, themeValue, color, font, styles } from "../theme";
 
 type Props = NativeStackScreenProps<RootStack, "Administration">;
 type Tab = "overview" | "users" | "content" | "reports" | "settings" | "audit";
@@ -1199,7 +1199,7 @@ function ScopedAdministration({ navigation }: Props) {
   );
 }
 
-const a = StyleSheet.create({
+const a = themedStyles(() => StyleSheet.create({
   page: { width: "100%", maxWidth: 1100, paddingTop: 28, gap: 22 },
   tabs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tab: {
@@ -1224,7 +1224,7 @@ const a = StyleSheet.create({
     paddingVertical: 7,
     alignSelf: "flex-start",
   },
-  ownerBadge: { borderColor: "#576D25", backgroundColor: "#202A16" },
+  ownerBadge: { borderColor: themeValue("#576D25", color.border), backgroundColor: themeValue("#202A16", color.panel) },
   badgeText: {
     color: color.muted,
     fontFamily: font.medium,
@@ -1257,4 +1257,4 @@ const a = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-});
+}));

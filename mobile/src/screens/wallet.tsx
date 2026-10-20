@@ -38,7 +38,7 @@ import QRCode from "react-native-qrcode-svg";
 import { Action, Notice } from "../components/ui";
 import { Sheet } from "../components/floating";
 import { StudioDock } from "../components/studio-dock";
-import { color, font, styles } from "../theme";
+import { themedStyles, themeValue, color, font, styles } from "../theme";
 import { useZiipa } from "../provider";
 import { request, uploadMedia } from "../lib/api";
 import type { Item, RootStack } from "../lib/types";
@@ -533,7 +533,7 @@ export function WalletScreen({ navigation, initialItem }: Props) {
             onPress={() => navigation.navigate("Studio")}
             style={s.icon}
           >
-            <ChevronLeft size={27} color="white" strokeWidth={1.4} />
+            <ChevronLeft size={27} color={color.text} strokeWidth={1.4} />
           </Pressable>
           <Text style={s.title}>
             {view === "wizard" ? "Connect Wallet" : "Your Wallet"}
@@ -550,9 +550,9 @@ export function WalletScreen({ navigation, initialItem }: Props) {
             style={s.icon}
           >
             {view === "wizard" ? (
-              <Wallet size={21} color="#C8B7DE" />
+              <Wallet size={21} color={color.muted} />
             ) : (
-              <Plus size={23} color="white" />
+              <Plus size={23} color={color.text} />
             )}
           </Pressable>
         </View>
@@ -712,7 +712,7 @@ export function WalletScreen({ navigation, initialItem }: Props) {
                         <Text style={s.inputText}>
                           {chain?.name || "Select"}
                         </Text>
-                        <ChevronDown color="white" size={19} />
+                        <ChevronDown color={color.text} size={19} />
                       </Pressable>
                       <Text style={s.hint}>
                         {chain
@@ -981,7 +981,7 @@ export function WalletScreen({ navigation, initialItem }: Props) {
                 </View>
                 <Text style={s.balance}>
                   {balance ? units(balance.native_wei) : "—"}{" "}
-                  <Text style={{ fontSize: 17, color: "#AD9CBD" }}>ETH</Text>
+                  <Text style={{ fontSize: 17, color: themeValue("#AD9CBD", color.muted) }}>ETH</Text>
                 </Text>
                 <Pressable
                   accessibilityRole="button"
@@ -1038,7 +1038,7 @@ export function WalletScreen({ navigation, initialItem }: Props) {
                       style={{ alignItems: "center", gap: 7, minWidth: 52 }}
                     >
                       <View style={s.quickIcon}>
-                        <Icon size={20} color="white" strokeWidth={1.5} />
+                        <Icon size={20} color={color.text} strokeWidth={1.5} />
                       </View>
                       <Text style={s.micro}>{label}</Text>
                     </Pressable>
@@ -1422,7 +1422,7 @@ export function WalletScreen({ navigation, initialItem }: Props) {
                 }}
                 style={s.back}
               >
-                <Text style={s.buttonText}>Back</Text>
+                <Text style={[s.buttonText, { color: color.text }]}>Back</Text>
               </Pressable>
             )}
             <Pressable
@@ -1801,7 +1801,7 @@ function Input({
     </View>
   );
 }
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   header: {
     height: 80,
     flexDirection: "row",
@@ -1816,7 +1816,7 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   title: {
-    color: "white",
+    color: color.text,
     fontFamily: font.medium,
     fontSize: 21,
     letterSpacing: 1.5,
@@ -1837,40 +1837,40 @@ const s = StyleSheet.create({
   },
   vault: { paddingHorizontal: 23, paddingTop: 15, paddingBottom: 30, gap: 20 },
   card: {
-    backgroundColor: "#0B0811",
+    backgroundColor: themeValue("#0B0811", color.panel),
     borderRadius: 26,
     borderWidth: 1,
-    borderColor: "#1B1426",
+    borderColor: themeValue("#1B1426", color.border),
     overflow: "hidden",
   },
   cardTitle: {
     fontFamily: font.medium,
     fontSize: 20,
     letterSpacing: 1,
-    color: "white",
+    color: color.text,
     textAlign: "center",
     paddingVertical: 22,
     borderBottomWidth: 1,
-    borderBottomColor: "#1A1422",
+    borderBottomColor: color.border,
   },
   cardBody: { padding: 28, gap: 19, minHeight: 158 },
   label: {
     fontFamily: font.medium,
-    color: "#F9F4FC",
+    color: themeValue("#F9F4FC", color.text),
     fontSize: 16,
     letterSpacing: 0.5,
   },
   input: {
     minHeight: 46,
     borderWidth: 1,
-    borderColor: "#9C94A7",
+    borderColor: themeValue("#9C94A7", color.border),
     borderRadius: 10,
     paddingHorizontal: 12,
-    backgroundColor: "#020203",
+    backgroundColor: themeValue("#020203", color.panel),
   },
   inputText: {
     fontFamily: font.medium,
-    color: "white",
+    color: color.text,
     fontSize: 17,
     letterSpacing: 0.5,
   },
@@ -1880,7 +1880,7 @@ const s = StyleSheet.create({
     borderColor: "#AAA3B4",
     borderRadius: 10,
     paddingHorizontal: 12,
-    backgroundColor: "#020203",
+    backgroundColor: themeValue("#020203", color.panel),
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -1888,13 +1888,13 @@ const s = StyleSheet.create({
   },
   hint: {
     fontFamily: font.regular,
-    color: "#AFA0BD",
+    color: themeValue("#AFA0BD", color.muted),
     fontSize: 13,
     lineHeight: 19,
   },
   micro: {
     fontFamily: font.regular,
-    color: "#A89CB7",
+    color: themeValue("#A89CB7", color.muted),
     fontSize: 11,
     lineHeight: 16,
   },
@@ -1909,10 +1909,10 @@ const s = StyleSheet.create({
   },
   chip: {
     fontFamily: font.medium,
-    color: "#BF9CEB",
+    color: themeValue("#BF9CEB", color.muted),
     fontSize: 10,
     letterSpacing: 1,
-    backgroundColor: "#2B1646",
+    backgroundColor: themeValue("#2B1646", color.accentSoft),
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
@@ -1951,27 +1951,27 @@ const s = StyleSheet.create({
     width: 65,
     height: 65,
     borderRadius: 33,
-    backgroundColor: "#291444",
+    backgroundColor: themeValue("#291444", color.accentSoft),
     borderWidth: 1,
-    borderColor: "#57317D",
+    borderColor: themeValue("#57317D", color.border),
     alignItems: "center",
     justifyContent: "center",
   },
   kicker: {
-    color: "#AB95C2",
+    color: themeValue("#AB95C2", color.muted),
     fontFamily: font.medium,
     fontSize: 10,
     letterSpacing: 2,
   },
-  balance: { color: "white", fontFamily: font.semibold, fontSize: 42 },
+  balance: { color: color.text, fontFamily: font.semibold, fontSize: 42 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#A6E21B" },
   quickIcon: {
     width: 45,
     height: 45,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#53405F",
-    backgroundColor: "#1E142B",
+    borderColor: themeValue("#53405F", color.border),
+    backgroundColor: themeValue("#1E142B", color.panel),
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1979,10 +1979,10 @@ const s = StyleSheet.create({
     padding: 16,
     gap: 13,
     borderWidth: 1,
-    borderColor: "#30223D",
-    backgroundColor: "#181120",
+    borderColor: themeValue("#30223D", color.border),
+    backgroundColor: themeValue("#181120", color.panel),
     borderRadius: 17,
     flexDirection: "row",
     alignItems: "center",
   },
-});
+}));

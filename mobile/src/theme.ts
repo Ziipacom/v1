@@ -1,23 +1,25 @@
 import { StyleSheet } from "react-native";
-export const color = {
-  bg: "#120D1F",
-  panel: "#211C2C",
-  raised: "#2C213B",
-  border: "#383040",
-  text: "#FAF7FF",
-  muted: "#B5A8C7",
-  faint: "#87789A",
-  purple: "#5420AB",
-  lime: "#A6E21B",
-  danger: "#FFA6A6",
-};
+import { useSyncExternalStore } from "react";
+import { appearanceStore, palettes, themeRecord, type ThemeColor } from "./lib/appearance";
+export const color = Object.defineProperties({} as Record<ThemeColor, string>,
+  Object.fromEntries(Object.keys(palettes.dark).map(key => [key, { enumerable: true,
+    get: () => palettes[appearanceStore.getSnapshot().resolvedMode][key as ThemeColor] }])));
+export function useTheme() {
+  return useSyncExternalStore(appearanceStore.subscribe, appearanceStore.getSnapshot, appearanceStore.getSnapshot);
+}
+export function themedStyles<T extends StyleSheet.NamedStyles<T>>(factory: () => T): T {
+  return themeRecord(() => StyleSheet.create(factory()), () => appearanceStore.getSnapshot().resolvedMode);
+}
+export function themeValue<T>(dark: T, light: T): T {
+  return appearanceStore.getSnapshot().resolvedMode === "light" ? light : dark;
+}
 export const font = {
   regular: "Barlow",
   medium: "BarlowMedium",
   semibold: "BarlowSemiBold",
   bold: "BarlowBold",
 };
-export const styles = StyleSheet.create({
+export const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: color.bg },
   page: { padding: 22, paddingBottom: 32, gap: 22 },
   title: {
@@ -91,4 +93,4 @@ export const styles = StyleSheet.create({
     lineHeight: 21,
   },
   separator: { height: 1, backgroundColor: color.border },
-});
+}));

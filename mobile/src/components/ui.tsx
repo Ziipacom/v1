@@ -20,7 +20,7 @@ import {
   Store,
   type LucideIcon,
 } from "lucide-react-native";
-import { color, font, styles } from "../theme";
+import { color, font, styles, useTheme } from "../theme";
 import { logo, coverSource } from "../lib/assets";
 import { conceptsEnabled } from "../lib/config";
 import type { Category, Item } from "../lib/types";
@@ -28,10 +28,12 @@ import { useZiipa } from "../provider";
 import { useDesktopLayout } from "./desktop-layout";
 
 export function Logo({ width = 116 }: { width?: number }) {
+  const { resolvedMode } = useTheme();
   return (
     <RNImage
       source={logo}
-      style={{ width, height: (width * 3104) / 9446 }}
+      style={{ width, height: (width * 3104) / 9446,
+        backgroundColor: resolvedMode === "light" ? "#120D1F" : "transparent", borderRadius: resolvedMode === "light" ? 5 : 0 }}
       resizeMode="contain"
       accessibilityLabel="Ziipa"
     />
@@ -87,13 +89,13 @@ export function Action({
       })}
     >
       {busy ? (
-        <ActivityIndicator color={color.text} />
+        <ActivityIndicator color={secondary ? color.text : color.onAccent} />
       ) : Icon ? (
-        <Icon size={desktop ? 16 : 19} color={color.text} />
+        <Icon size={desktop ? 16 : 19} color={secondary ? color.text : color.onAccent} />
       ) : null}
       <Text
         style={{
-          color: color.text,
+          color: secondary ? color.text : color.onAccent,
           fontFamily: font.semibold,
           fontSize: desktop ? 14 : 16,
         }}
@@ -116,6 +118,7 @@ export function IconButton({
   active?: boolean;
   disabled?: boolean;
 }) {
+  useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -135,7 +138,7 @@ export function IconButton({
         opacity: pressed || disabled ? 0.6 : 1,
       })}
     >
-      <Icon size={21} color={color.text} />
+      <Icon size={21} color={active ? color.onAccent : color.text} />
     </Pressable>
   );
 }
@@ -173,11 +176,11 @@ export function Notice({ text, error }: { text: string; error?: boolean }) {
   return (
     <View
       style={{
-        backgroundColor: error ? "#341C2B" : color.panel,
+        backgroundColor: error ? color.errorPanel : color.panel,
         borderRadius: desktop ? 8 : 13,
         padding: desktop ? 12 : 14,
         borderWidth: 1,
-        borderColor: error ? "#71394D" : color.border,
+        borderColor: error ? color.errorBorder : color.border,
       }}
     >
       <Text
@@ -190,6 +193,7 @@ export function Notice({ text, error }: { text: string; error?: boolean }) {
   );
 }
 export function Empty({ title, body }: { title: string; body: string }) {
+  useTheme();
   return (
     <View style={[styles.panel, { alignItems: "center", paddingVertical: 35 }]}>
       <Text style={styles.heading}>{title}</Text>
@@ -240,7 +244,7 @@ export function Pill({
       }}
     >
       <Text
-        style={{ fontFamily: font.medium, color: color.text, fontSize: 13 }}
+        style={{ fontFamily: font.medium, color: active ? color.onAccent : color.text, fontSize: 13 }}
       >
         {title}
       </Text>
@@ -276,6 +280,7 @@ export function ItemRow({
   item: Item;
   onPress: () => void;
 }) {
+  useTheme();
   return (
     <Pressable
       accessibilityRole="button"

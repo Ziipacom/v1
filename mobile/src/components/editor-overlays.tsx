@@ -1,4 +1,5 @@
 import { Pressable, Text, TextInput, View } from "react-native";
+import type { ReactNode } from "react";
 import { Image, type ImageSource } from "expo-image";
 import {
   Trash2,
@@ -70,6 +71,7 @@ export function EditorOverlays({
   onSelect,
   onEffect,
   onCaption,
+  captionTools,
 }: {
   overlays: Overlay[];
   selectedId: string | null;
@@ -81,6 +83,7 @@ export function EditorOverlays({
   onSelect: (id: string | null) => void;
   onEffect: (effect: VisualEffect) => void;
   onCaption: (value: string) => void;
+  captionTools?: ReactNode;
 }) {
   const selected = overlays.find((layer) => layer.id === selectedId);
   function add(template: (typeof templates)[number]) {
@@ -212,7 +215,7 @@ export function EditorOverlays({
             editable={!disabled}
             multiline
             style={{
-              color: "white",
+              color: color.text,
               fontSize: 18,
               fontFamily: font.semibold,
               minHeight: 55,
@@ -284,10 +287,11 @@ export function EditorOverlays({
           </View>
         </View>
       )}
-      <View style={styles.row}>
+      {captionTools || <View style={styles.row}>
         <Captions color={color.lime} size={18} />
         <Text style={styles.label}>Caption track</Text>
-      </View>
+      </View>}
+      <Text style={[styles.small, { fontSize: 11 }]}>Manual caption · replaces the timed track when edited</Text>
       <TextInput
         accessibilityLabel="Caption text"
         placeholder="Add a caption to your edit…"

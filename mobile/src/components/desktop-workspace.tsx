@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { color, font } from "../theme";
+import { Text, View } from "react-native";
+import { color, font, themedStyles, themeValue, useTheme } from "../theme";
 
 /** Used only by desktop branches. Shared data and action components stay in place. */
 export function WorkspaceHeading({
@@ -12,6 +12,7 @@ export function WorkspaceHeading({
   description?: string;
   actions?: ReactNode;
 }) {
+  useTheme();
   return (
     <View style={workspace.heading}>
       <View style={{ flex: 1, gap: 6, minWidth: 220 }}>
@@ -27,7 +28,7 @@ export function WorkspaceHeading({
   );
 }
 
-export const workspace = StyleSheet.create({
+export const workspace = themedStyles(() => ({
   page: {
     width: "100%",
     maxWidth: 1240,
@@ -71,8 +72,8 @@ export const workspace = StyleSheet.create({
     borderRadius: 12,
     padding: 20,
     gap: 14,
-    backgroundColor: "#1A1525",
+    backgroundColor: themeValue("#1A1525", color.panel),
     borderWidth: 1,
-    borderColor: "#302738",
+    borderColor: themeValue("#302738", color.border),
   },
-});
+}));

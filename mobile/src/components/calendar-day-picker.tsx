@@ -6,7 +6,7 @@ import {
   calendarWeekdays,
   shiftCalendarMonth,
 } from "../lib/calendar-types";
-import { color, styles } from "../theme";
+import { color, styles, useTheme } from "../theme";
 
 export function CalendarDayPicker({
   value,
@@ -17,6 +17,7 @@ export function CalendarDayPicker({
   onChange: (date: string) => void;
   disabled?: boolean;
 }) {
+  useTheme();
   const selectedMonth = /^(20\d{2}|2100)-(0[1-9]|1[0-2])-\d{2}$/.test(value)
     ? value.slice(0, 7)
     : null;
@@ -98,7 +99,7 @@ export function CalendarDayPicker({
                 opacity: cell.inMonth ? 1 : 0.4,
               }}
             >
-              <Text style={[styles.body, { color: color.text }]}>
+              <Text style={[styles.body, { color: value === cell.date ? color.onAccent : color.text }]}>
                 {cell.day}
               </Text>
             </Pressable>

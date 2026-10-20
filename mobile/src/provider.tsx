@@ -28,6 +28,7 @@ import {
 import demo from "./lib/demo.json";
 import { disconnectWallet } from "./lib/wallet-connector";
 import { emptyNetworkHub, type NetworkHub } from "./lib/network-hub";
+import { useTheme } from "./theme";
 
 const empty: Bootstrap = {
   items: [],
@@ -140,6 +141,7 @@ export function useZiipa() {
   return context;
 }
 export function ZiipaProvider({ children }: React.PropsWithChildren) {
+  useTheme();
   const [session, setSession] = useState<Session | null>(null);
   const browserPreview = Platform.OS === "web" && demoEnabled && !portalMode;
   const [guest, setGuest] = useState(browserPreview);

@@ -1,6 +1,5 @@
 import React, { useEffect } from "react";
 import { Text, View } from "react-native";
-import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -9,6 +8,8 @@ import { ZiipaProvider } from "./src/provider";
 import { Navigation } from "./src/navigation";
 import { ScrollbarStyle } from "./src/components/scrollbar-style";
 import { PlatformNotice } from "./src/components/platform-notice";
+import { DevicePreferencesProvider } from "./src/components/device-preferences";
+import { AppearanceProvider, AppearanceChrome } from "./src/components/appearance-provider";
 
 void SplashScreen.preventAutoHideAsync();
 class AppBoundary extends React.Component<
@@ -61,9 +62,11 @@ export default function App() {
   if (!loaded && !error) return null;
   return (
     <AppBoundary>
+      <DevicePreferencesProvider>
+      <AppearanceProvider>
       <SafeAreaProvider>
         <ScrollbarStyle />
-        <StatusBar style="light" />
+        <AppearanceChrome />
         <ZiipaProvider>
           <View style={{ flex: 1 }}>
             <PlatformNotice />
@@ -71,6 +74,8 @@ export default function App() {
           </View>
         </ZiipaProvider>
       </SafeAreaProvider>
+      </AppearanceProvider>
+      </DevicePreferencesProvider>
     </AppBoundary>
   );
 }

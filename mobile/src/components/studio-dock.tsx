@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStack } from "../lib/types";
-import { font } from "../theme";
+import { color, font } from "../theme";
 import { useDesktopLayout } from "./desktop-layout";
 export function StudioDock() {
   const insets = useSafeAreaInsets();
@@ -25,8 +25,8 @@ export function StudioDock() {
         borderTopLeftRadius: 25,
         borderTopRightRadius: 25,
         borderWidth: 1,
-        borderColor: "#342A42",
-        backgroundColor: "#09060D",
+        borderColor: color.border,
+        backgroundColor: color.dock,
         flexDirection: "row",
         alignItems: "center",
       }}
@@ -71,13 +71,13 @@ export function StudioDock() {
           <Icon
             size={25}
             strokeWidth={1.5}
-            color={label === "Wallet" ? "white" : "#8E8795"}
+            color={label === "Wallet" ? color.text : color.faint}
           />
           <Text
             style={{
               fontFamily: font.regular,
               fontSize: 12,
-              color: label === "Wallet" ? "white" : "#8E8795",
+              color: label === "Wallet" ? color.text : color.faint,
             }}
           >
             {label}

@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
-  StyleSheet,
   Switch,
   Text,
   TextInput,
@@ -23,7 +22,7 @@ import {
 } from "lucide-react-native";
 import * as Crypto from "expo-crypto";
 import { Action, Notice } from "./ui";
-import { color, font, styles } from "../theme";
+import { color, font, styles, themedStyles, themeValue } from "../theme";
 import { useZiipa } from "../provider";
 import { ApiError } from "../lib/api";
 import {
@@ -520,7 +519,7 @@ export function MediaRewards({
   return (
     <View style={{ gap: 18 }}>
       <View
-        style={[s.card, { backgroundColor: "#21112F", borderColor: "#5D337E" }]}
+        style={[s.card, { backgroundColor: themeValue("#21112F", color.accentSoft), borderColor: themeValue("#5D337E", color.border) }]}
       >
         <View style={styles.between}>
           <Text style={s.kicker}>MEDIA REWARDS</Text>
@@ -528,7 +527,7 @@ export function MediaRewards({
         </View>
         <Text style={s.balance}>
           {wallet ? rewardPoints(wallet.balance) : "—"}
-          <Text style={{ fontSize: 17, color: "#CDB7E5" }}> pts</Text>
+          <Text style={{ fontSize: 17, color: themeValue("#CDB7E5", color.muted) }}> pts</Text>
         </Text>
         <Text style={s.label}>Your attention has a place in Ziipa.</Text>
         <Text style={s.hint}>
@@ -661,7 +660,7 @@ export function MediaRewards({
       <View style={s.card}>
         <View style={styles.between}>
           <Text style={s.label}>Creator reward programs</Text>
-          <Sparkles size={19} color="#C2A0F0" />
+          <Sparkles size={19} color={themeValue("#C2A0F0", color.purple)} />
         </View>
         <Text style={s.hint}>
           Reward people who interact with your public media. Set a finite point
@@ -972,7 +971,7 @@ export function MediaRewards({
             <Text
               style={[
                 s.points,
-                { color: entry.points >= 0 ? color.lime : "#FFB9CA" },
+                { color: entry.points >= 0 ? color.lime : themeValue("#FFB9CA", color.danger) },
               ]}
             >
               {entry.points > 0 ? "+" : ""}
@@ -1040,14 +1039,14 @@ function RewardField({
     </View>
   );
 }
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   card: {
     borderRadius: 23,
     padding: 20,
     gap: 14,
-    backgroundColor: "#0B0811",
+    backgroundColor: themeValue("#0B0811", color.panel),
     borderWidth: 1,
-    borderColor: "#30223D",
+    borderColor: themeValue("#30223D", color.border),
   },
   label: { color: color.text, fontFamily: font.medium, fontSize: 16 },
   hint: {
@@ -1063,7 +1062,7 @@ const s = StyleSheet.create({
     lineHeight: 16,
   },
   kicker: {
-    color: "#C3A3EA",
+    color: themeValue("#C3A3EA", color.purple),
     fontFamily: font.medium,
     fontSize: 11,
     letterSpacing: 2,
@@ -1076,14 +1075,14 @@ const s = StyleSheet.create({
     gap: 8,
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#181120",
+    backgroundColor: themeValue("#181120", color.raised),
     borderRadius: 14,
     padding: 9,
   },
   input: {
-    backgroundColor: "#020203",
+    backgroundColor: themeValue("#020203", color.input),
     borderWidth: 1,
-    borderColor: "#8B7A9E",
+    borderColor: themeValue("#8B7A9E", color.border),
     borderRadius: 10,
     paddingHorizontal: 12,
     minHeight: 46,
@@ -1097,15 +1096,15 @@ const s = StyleSheet.create({
     gap: 12,
     paddingVertical: 13,
     borderTopWidth: 1,
-    borderTopColor: "#30223D",
+    borderTopColor: themeValue("#30223D", color.border),
   },
   program: {
     gap: 10,
-    backgroundColor: "#181120",
+    backgroundColor: themeValue("#181120", color.raised),
     borderRadius: 17,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#30223D",
+    borderColor: themeValue("#30223D", color.border),
   },
   status: { fontFamily: font.medium, fontSize: 12 },
   pill: {
@@ -1116,4 +1115,4 @@ const s = StyleSheet.create({
     gap: 7,
     alignItems: "center",
   },
-});
+}));

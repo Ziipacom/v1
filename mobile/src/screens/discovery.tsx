@@ -9,6 +9,7 @@ import {
   LockKeyholeOpen,
   Menu,
   Search,
+  Settings,
   SlidersHorizontal,
 } from "lucide-react-native";
 import {
@@ -63,12 +64,21 @@ function MobileDiscoverScreen({
       style={[styles.screen, { overflow: "hidden" }]}
     >
       <View style={[floating.header, { height: 87 }]}>
-        <FloatButton
-          label="Open Studio"
-          icon={Menu}
-          plain
-          onPress={() => navigation.navigate("Studio")}
-        />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 0 }}>
+          <FloatButton
+            label="Open settings"
+            icon={Settings}
+            plain
+            size={40}
+            onPress={() => navigation.navigate("Settings")}
+          />
+          <FloatButton
+            label="Open Studio"
+            icon={Menu}
+            plain
+            onPress={() => navigation.navigate("Studio")}
+          />
+        </View>
         <Logo width={145} />
         <FloatButton
           label="Your creator profile"

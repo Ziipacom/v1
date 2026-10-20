@@ -52,6 +52,9 @@ function Consent({
     <Pressable
       accessibilityRole="checkbox"
       accessibilityState={{ checked, disabled }}
+      accessibilityLabel={text}
+      aria-checked={checked}
+      aria-disabled={disabled}
       disabled={disabled}
       onPress={onPress}
       style={[styles.row, { gap: 12, paddingVertical: 10 }]}

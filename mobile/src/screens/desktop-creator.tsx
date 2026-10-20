@@ -40,7 +40,7 @@ import {
 import { Cover, Notice, allCategories } from "../components/ui";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { useZiipa } from "../provider";
-import { color, font } from "../theme";
+import { themedStyles, themeValue, color, font } from "../theme";
 import type { Category, RootStack } from "../lib/types";
 import {
   creatorConnectionLabel,
@@ -91,11 +91,11 @@ function Button({
       {Icon && (
         <Icon
           size={17}
-          color={lime ? "#182009" : color.text}
+          color={lime ? color.onLime : primary ? color.onAccent : color.text}
           strokeWidth={1.7}
         />
       )}
-      <Text style={[s.buttonText, lime && { color: "#182009" }]}>{title}</Text>
+      <Text style={[s.buttonText, primary && { color: color.onAccent }, lime && { color: color.onLime }]}>{title}</Text>
     </Pressable>
   );
 }
@@ -148,7 +148,7 @@ function Status({
           },
         ]}
       />
-      <Text style={[s.statusText, published && !guest && { color: "#D2EEA5" }]}>
+      <Text style={[s.statusText, published && !guest && { color: themeValue("#D2EEA5", color.muted) }]}>
         {label}
       </Text>
     </View>
@@ -475,7 +475,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
               borderRadius: 12,
               borderWidth: 1,
               borderColor: color.border,
-              backgroundColor: "#1A1525",
+              backgroundColor: themeValue("#1A1525", color.panel),
               gap: 16,
             }}
           >
@@ -686,8 +686,8 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                         style={[
                           s.networkMark,
                           connection.status === "connected" && {
-                            borderColor: "#637A3B",
-                            backgroundColor: "#26301C",
+                            borderColor: themeValue("#637A3B", color.border),
+                            backgroundColor: themeValue("#26301C", color.panel),
                           },
                         ]}
                       >
@@ -704,7 +704,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                           style={[
                             s.networkState,
                             connection.status === "connected" && {
-                              color: "#C4D8A2",
+                              color: themeValue("#C4D8A2", color.muted),
                             },
                           ]}
                         >
@@ -913,7 +913,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                 <Text
                   style={[
                     s.filterText,
-                    status === value.id && { color: "#D6BCF6" },
+                    status === value.id && { color: themeValue("#D6BCF6", color.text) },
                   ]}
                 >
                   {value.title}
@@ -945,7 +945,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                   <Text
                     style={[
                       s.categoryText,
-                      category === id && { color: "#D9C9EE" },
+                      category === id && { color: themeValue("#D9C9EE", color.text) },
                     ]}
                   >
                     {title}
@@ -1050,7 +1050,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.bg },
   page: {
     width: "100%",
@@ -1062,7 +1062,7 @@ const s = StyleSheet.create({
   },
   row: { flexDirection: "row", alignItems: "center", gap: 10 },
   eyebrow: {
-    color: "#B09AC7",
+    color: themeValue("#B09AC7", color.muted),
     fontFamily: font.medium,
     fontSize: 10,
     letterSpacing: 1.8,
@@ -1075,7 +1075,7 @@ const s = StyleSheet.create({
     letterSpacing: -0.8,
   },
   description: {
-    color: "#AB9AB9",
+    color: themeValue("#AB9AB9", color.muted),
     fontFamily: font.regular,
     fontSize: 13,
     lineHeight: 20,
@@ -1094,9 +1094,9 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 11,
-    backgroundColor: "#291E38",
+    backgroundColor: themeValue("#291E38", color.accentSoft),
     borderWidth: 1,
-    borderColor: "#51405F",
+    borderColor: themeValue("#51405F", color.border),
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1124,22 +1124,22 @@ const s = StyleSheet.create({
     paddingTop: 7,
   },
   activeTab: { borderBottomColor: "#A477DF" },
-  tabText: { color: "#9786A9", fontFamily: font.medium, fontSize: 14 },
+  tabText: { color: themeValue("#9786A9", color.muted), fontFamily: font.medium, fontSize: 14 },
   tabCount: {
     minWidth: 21,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 5,
-    backgroundColor: "#2D213C",
+    backgroundColor: themeValue("#2D213C", color.accentSoft),
     alignItems: "center",
   },
-  tabCountText: { fontFamily: font.medium, fontSize: 10, color: "#BEA4DC" },
-  snapshotLabel: { fontFamily: font.regular, color: "#887697", fontSize: 11 },
+  tabCountText: { fontFamily: font.medium, fontSize: 10, color: themeValue("#BEA4DC", color.muted) },
+  snapshotLabel: { fontFamily: font.regular, color: themeValue("#887697", color.muted), fontSize: 11 },
   hero: {
     padding: 32,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#593A78",
+    borderColor: themeValue("#593A78", color.border),
     gap: 25,
     overflow: "hidden",
   },
@@ -1163,18 +1163,18 @@ const s = StyleSheet.create({
   },
   heroTitle: {
     fontFamily: font.semibold,
-    color: "#F8F3FF",
+    color: themeValue("#F8F3FF", color.text),
     letterSpacing: -1.6,
   },
   heroDescription: {
     fontFamily: font.regular,
-    color: "#C2B1D3",
+    color: themeValue("#C2B1D3", color.muted),
     fontSize: 15,
     lineHeight: 23,
     maxWidth: 460,
   },
   heroFootnote: {
-    color: "#9D88B6",
+    color: themeValue("#9D88B6", color.muted),
     fontFamily: font.regular,
     fontSize: 10,
     lineHeight: 16,
@@ -1205,7 +1205,7 @@ const s = StyleSheet.create({
     borderRadius: 17,
     borderWidth: 1,
     borderColor: "#8C65AF66",
-    backgroundColor: "#2B1A42",
+    backgroundColor: themeValue("#2B1A42", color.accentSoft),
     boxShadow: "0 16px 30px #07020B40",
     gap: 9,
   },
@@ -1217,7 +1217,7 @@ const s = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 2,
   },
-  artCardTitle: { fontFamily: font.medium, fontSize: 12, color: "#E9DCF8" },
+  artCardTitle: { fontFamily: font.medium, fontSize: 12, color: themeValue("#E9DCF8", color.text) },
   artLine: {
     width: "75%",
     height: 4,
@@ -1234,7 +1234,7 @@ const s = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
-  artFooterText: { color: "#BCA8D3", fontFamily: font.regular, fontSize: 11 },
+  artFooterText: { color: themeValue("#BCA8D3", color.muted), fontFamily: font.regular, fontSize: 11 },
   stats: { flexDirection: "row", flexWrap: "wrap", gap: 14 },
   stat: {
     flexGrow: 1,
@@ -1242,19 +1242,19 @@ const s = StyleSheet.create({
     minWidth: 155,
     borderRadius: 15,
     borderWidth: 1,
-    borderColor: "#372943",
-    backgroundColor: "#1B1426",
+    borderColor: themeValue("#372943", color.border),
+    backgroundColor: themeValue("#1B1426", color.panel),
     padding: 19,
     gap: 9,
   },
   statTitle: {
-    color: "#BBADC9",
+    color: themeValue("#BBADC9", color.muted),
     fontFamily: font.medium,
     fontSize: 12,
     flex: 1,
   },
   statValue: {
-    color: "#F4EDFC",
+    color: themeValue("#F4EDFC", color.text),
     fontFamily: font.semibold,
     fontSize: 32,
     lineHeight: 36,
@@ -1262,7 +1262,7 @@ const s = StyleSheet.create({
   statHint: {
     fontFamily: font.regular,
     fontSize: 10,
-    color: "#8E7B9F",
+    color: themeValue("#8E7B9F", color.muted),
     lineHeight: 15,
   },
   sectionTitle: {
@@ -1278,7 +1278,7 @@ const s = StyleSheet.create({
     minHeight: 35,
     gap: 5,
   },
-  linkText: { fontFamily: font.medium, color: "#C2A5F1", fontSize: 12 },
+  linkText: { fontFamily: font.medium, color: themeValue("#C2A5F1", color.muted), fontSize: 12 },
   mediaGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1287,12 +1287,12 @@ const s = StyleSheet.create({
   },
   mediaCard: {
     borderRadius: 16,
-    borderColor: "#3A2A49",
+    borderColor: themeValue("#3A2A49", color.border),
     borderWidth: 1,
-    backgroundColor: "#1C1427",
+    backgroundColor: themeValue("#1C1427", color.panel),
     overflow: "hidden",
   },
-  mediaImage: { height: 162, width: "100%", backgroundColor: "#2B203A" },
+  mediaImage: { height: 162, width: "100%", backgroundColor: themeValue("#2B203A", color.accentSoft) },
   imageStatus: { position: "absolute", top: 11, left: 11 },
   mediaPlay: {
     position: "absolute",
@@ -1308,21 +1308,21 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   mediaDetails: { padding: 15, gap: 10, minWidth: 0 },
-  mediaTitle: { fontFamily: font.semibold, fontSize: 15, color: "#F2EAFB" },
+  mediaTitle: { fontFamily: font.semibold, fontSize: 15, color: themeValue("#F2EAFB", color.text) },
   mediaMeta: {
     fontFamily: font.regular,
-    color: "#A18BAC",
+    color: themeValue("#A18BAC", color.muted),
     fontSize: 11,
     lineHeight: 17,
   },
-  ownership: { fontFamily: font.regular, fontSize: 10, color: "#877397" },
+  ownership: { fontFamily: font.regular, fontSize: 10, color: themeValue("#877397", color.muted) },
   inlineAction: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
     minHeight: 30,
   },
-  inlineText: { fontFamily: font.medium, fontSize: 11, color: "#C6B1E7" },
+  inlineText: { fontFamily: font.medium, fontSize: 11, color: themeValue("#C6B1E7", color.muted) },
   status: {
     alignSelf: "flex-start",
     paddingHorizontal: 8,
@@ -1346,7 +1346,7 @@ const s = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "#59406D",
+    borderColor: themeValue("#59406D", color.border),
     backgroundColor: "#21152E5C",
     padding: 28,
     alignItems: "center",
@@ -1357,7 +1357,7 @@ const s = StyleSheet.create({
     width: 73,
     height: 73,
     borderRadius: 23,
-    backgroundColor: "#34204B",
+    backgroundColor: themeValue("#34204B", color.accentSoft),
     borderWidth: 1,
     borderColor: "#7B4AA14D",
     alignItems: "center",
@@ -1372,7 +1372,7 @@ const s = StyleSheet.create({
     width: 23,
     borderRadius: 12,
     borderWidth: 3,
-    borderColor: "#20152C",
+    borderColor: themeValue("#20152C", color.border),
     backgroundColor: color.lime,
     justifyContent: "center",
     alignItems: "center",
@@ -1380,19 +1380,19 @@ const s = StyleSheet.create({
   emptyTitle: {
     fontFamily: font.semibold,
     fontSize: 21,
-    color: "#EBE0F7",
+    color: themeValue("#EBE0F7", color.text),
     textAlign: "center",
     letterSpacing: -0.3,
   },
   emptyText: {
     fontFamily: font.regular,
-    color: "#A992BC",
+    color: themeValue("#A992BC", color.muted),
     fontSize: 13,
     lineHeight: 21,
     maxWidth: 410,
     textAlign: "center",
   },
-  privacyHint: { fontFamily: font.regular, fontSize: 10, color: "#A693BB" },
+  privacyHint: { fontFamily: font.regular, fontSize: 10, color: themeValue("#A693BB", color.muted) },
   planCard: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1400,22 +1400,22 @@ const s = StyleSheet.create({
     gap: 16,
     padding: 21,
     borderRadius: 17,
-    backgroundColor: "#1E162A",
+    backgroundColor: themeValue("#1E162A", color.panel),
     borderWidth: 1,
-    borderColor: "#3E2C50",
+    borderColor: themeValue("#3E2C50", color.border),
   },
   planIcon: {
     width: 47,
     height: 47,
-    backgroundColor: "#38224F",
+    backgroundColor: themeValue("#38224F", color.accentSoft),
     borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
   networkPanel: {
-    backgroundColor: "#1B1425",
+    backgroundColor: themeValue("#1B1425", color.panel),
     borderWidth: 1,
-    borderColor: "#3A2A48",
+    borderColor: themeValue("#3A2A48", color.border),
     borderRadius: 18,
     padding: 20,
     gap: 12,
@@ -1433,29 +1433,29 @@ const s = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 11,
-    backgroundColor: "#2B2038",
+    backgroundColor: themeValue("#2B2038", color.panel),
     borderWidth: 1,
-    borderColor: "#4A355B",
+    borderColor: themeValue("#4A355B", color.border),
     alignItems: "center",
     justifyContent: "center",
   },
-  networkLetter: { color: "#CEB6EC", fontSize: 16, fontFamily: font.semibold },
-  networkName: { fontFamily: font.medium, fontSize: 12, color: "#E1D5ED" },
+  networkLetter: { color: themeValue("#CEB6EC", color.muted), fontSize: 16, fontFamily: font.semibold },
+  networkName: { fontFamily: font.medium, fontSize: 12, color: themeValue("#E1D5ED", color.text) },
   networkState: {
     fontFamily: font.regular,
     fontSize: 10,
     lineHeight: 14,
-    color: "#9B84AC",
+    color: themeValue("#9B84AC", color.muted),
   },
   panelFootnote: {
     fontFamily: font.regular,
     fontSize: 10,
-    color: "#927D9F",
+    color: themeValue("#927D9F", color.muted),
     lineHeight: 16,
   },
   assistantCard: {
     borderWidth: 1,
-    borderColor: "#63467D",
+    borderColor: themeValue("#63467D", color.border),
     borderRadius: 18,
     padding: 20,
     gap: 14,
@@ -1471,7 +1471,7 @@ const s = StyleSheet.create({
     backgroundColor: "#32251961",
   },
   attentionTitle: {
-    color: "#E6D3B3",
+    color: themeValue("#E6D3B3", color.muted),
     fontFamily: font.medium,
     fontSize: 14,
     marginBottom: 4,
@@ -1485,13 +1485,13 @@ const s = StyleSheet.create({
     padding: 21,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#392A48",
-    backgroundColor: "#1C1427",
+    borderColor: themeValue("#392A48", color.border),
+    backgroundColor: themeValue("#1C1427", color.panel),
   },
-  toolTitle: { fontFamily: font.semibold, color: "#DAD0E6", fontSize: 15 },
+  toolTitle: { fontFamily: font.semibold, color: themeValue("#DAD0E6", color.text), fontSize: 15 },
   toolBody: {
     fontFamily: font.regular,
-    color: "#9680A8",
+    color: themeValue("#9680A8", color.muted),
     fontSize: 12,
     lineHeight: 19,
   },
@@ -1512,9 +1512,9 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     gap: 11,
     borderRadius: 12,
-    backgroundColor: "#20172C",
+    backgroundColor: themeValue("#20172C", color.panel),
     borderWidth: 1,
-    borderColor: "#433050",
+    borderColor: themeValue("#433050", color.border),
   },
   searchInput: {
     flex: 1,
@@ -1524,14 +1524,14 @@ const s = StyleSheet.create({
     fontSize: 13,
     color: color.text,
   },
-  sortLabel: { fontFamily: font.regular, color: "#9482A7", fontSize: 11 },
+  sortLabel: { fontFamily: font.regular, color: themeValue("#9482A7", color.muted), fontSize: 11 },
   viewModes: {
     flexDirection: "row",
     borderRadius: 9,
     padding: 3,
-    backgroundColor: "#21172C",
+    backgroundColor: themeValue("#21172C", color.panel),
     borderWidth: 1,
-    borderColor: "#3C2B4A",
+    borderColor: themeValue("#3C2B4A", color.border),
   },
   modeButton: {
     width: 34,
@@ -1540,7 +1540,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  activeMode: { backgroundColor: "#4A2B68" },
+  activeMode: { backgroundColor: themeValue("#4A2B68", color.accentSoft) },
   filters: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1561,22 +1561,22 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "transparent",
   },
-  activeFilter: { backgroundColor: "#342046", borderColor: "#684285" },
-  filterText: { fontFamily: font.medium, color: "#9C88AE", fontSize: 12 },
-  filterCount: { fontFamily: font.regular, color: "#9D85B2", fontSize: 10 },
+  activeFilter: { backgroundColor: themeValue("#342046", color.accentSoft), borderColor: themeValue("#684285", color.border) },
+  filterText: { fontFamily: font.medium, color: themeValue("#9C88AE", color.muted), fontSize: 12 },
+  filterCount: { fontFamily: font.regular, color: themeValue("#9D85B2", color.muted), fontSize: 10 },
   categoryFilter: {
     minHeight: 30,
     paddingHorizontal: 11,
     paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#35263E",
-    backgroundColor: "#19121F",
+    borderColor: themeValue("#35263E", color.border),
+    backgroundColor: themeValue("#19121F", color.panel),
   },
-  activeCategory: { backgroundColor: "#3C2B4E", borderColor: "#685178" },
-  categoryText: { fontFamily: font.regular, color: "#927D9F", fontSize: 10 },
+  activeCategory: { backgroundColor: themeValue("#3C2B4E", color.accentSoft), borderColor: themeValue("#685178", color.border) },
+  categoryText: { fontFamily: font.regular, color: themeValue("#927D9F", color.muted), fontSize: 10 },
   results: {
-    color: "#8B789B",
+    color: themeValue("#8B789B", color.muted),
     fontFamily: font.regular,
     fontSize: 11,
     paddingVertical: 7,
@@ -1589,7 +1589,7 @@ const s = StyleSheet.create({
     padding: 35,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#382947",
+    borderColor: themeValue("#382947", color.border),
     backgroundColor: "#1B132569",
   },
   libraryFooter: {
@@ -1598,4 +1598,4 @@ const s = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
   },
-});
+}));

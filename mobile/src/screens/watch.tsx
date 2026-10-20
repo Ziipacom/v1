@@ -4,7 +4,6 @@ import {
   Pressable,
   ScrollView,
   Share,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -35,16 +34,23 @@ import { CategoryDock, FloatButton, Sheet } from "../components/floating";
 import { Action, Cover, Field, Notice } from "../components/ui";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { ReelMedia } from "../components/reel-media";
+import { useDevicePreferences } from "../components/device-preferences";
 import { inCreativeWorld, pageAtOffset } from "../lib/domain";
 import { useZiipa } from "../provider";
 import type { Category, Comment, Item, RootStack } from "../lib/types";
-import { color, font, styles } from "../theme";
+import { color, font, styles, themedStyles } from "../theme";
 
 export function WatchScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStack, "Watch">) {
   const { data, guest, session, api, toggle } = useZiipa();
+  const {
+    preferences: devicePreferences,
+    ready: deviceReady,
+    reducedMotion,
+  } = useDevicePreferences();
+  const autoplay = deviceReady && devicePreferences.autoplay && !reducedMotion;
   const { desktop } = useDesktopLayout();
   const insets = useSafeAreaInsets();
   const [category, setCategory] = useState<Category>(
@@ -62,8 +68,13 @@ export function WatchScreen({
   const [index, setIndex] = useState(start);
   const [height, setHeight] = useState(0);
   const list = useRef<FlatList<Item>>(null);
-  const [paused, setPaused] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const [paused, setPaused] = useState(!autoplay);
+  const [muted, setMuted] = useState(devicePreferences.startMuted);
+  useEffect(() => setPaused(!autoplay), [autoplay]);
+  useEffect(
+    () => setMuted(devicePreferences.startMuted),
+    [devicePreferences.startMuted],
+  );
   const [panel, setPanel] = useState<"comments" | "more" | null>(null);
   const [body, setBody] = useState("");
   const [comments, setComments] = useState<Comment[]>([]);
@@ -75,10 +86,18 @@ export function WatchScreen({
   const item = items[index];
   useEffect(() => {
     setIndex(start);
-    setPaused(false);
+    setPaused(!autoplay);
+    setMuted(devicePreferences.startMuted);
     if (height)
       list.current?.scrollToOffset({ offset: start * height, animated: false });
-  }, [height, category, route.params?.itemId, start]);
+  }, [
+    height,
+    category,
+    route.params?.itemId,
+    start,
+    autoplay,
+    devicePreferences.startMuted,
+  ]);
   useEffect(() => {
     if (panel !== "comments" || !item) return;
     setError("");
@@ -147,7 +166,7 @@ export function WatchScreen({
   }
   const viewer = (
     <View
-      style={styles.screen}
+      style={[styles.screen, { backgroundColor: "#000000" }]}
       onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
     >
       {height > 0 && (
@@ -179,7 +198,8 @@ export function WatchScreen({
             );
             if (next !== index) {
               setIndex(next);
-              setPaused(false);
+              setPaused(!autoplay);
+              setMuted(devicePreferences.startMuted);
               setError("");
             }
           }}
@@ -322,6 +342,7 @@ export function WatchScreen({
         }}
       >
         <FloatButton
+          media
           label="Back to discovery"
           icon={ArrowLeft}
           plain
@@ -336,6 +357,7 @@ export function WatchScreen({
           <View style={{ width: 25, height: 2, backgroundColor: "white" }} />
         </View>
         <FloatButton
+          media
           label="Open Studio"
           icon={Menu}
           plain
@@ -353,6 +375,7 @@ export function WatchScreen({
           }}
         >
           <FloatButton
+            media
             label="Your creator profile"
             icon={UserRound}
             onPress={() => navigation.navigate("Profile")}
@@ -423,12 +446,14 @@ export function WatchScreen({
             </Text>
           </Pressable>
           <FloatButton
+            media
             label="More actions"
             icon={MoreHorizontal}
             plain
             onPress={() => setPanel("more")}
           />
           <FloatButton
+            media
             label="Create a remix"
             icon={Plus}
             active
@@ -447,12 +472,14 @@ export function WatchScreen({
         {item?.media_url && (
           <>
             <FloatButton
+              media
               label={muted ? "Unmute video" : "Mute video"}
               icon={muted ? VolumeX : Volume2}
               plain
               onPress={() => setMuted(!muted)}
             />
             <FloatButton
+              media
               label={paused ? "Play video" : "Pause video"}
               icon={paused ? Play : Pause}
               plain
@@ -462,6 +489,7 @@ export function WatchScreen({
         )}
         {index > 0 && (
           <FloatButton
+            media
             label="Previous video"
             icon={ChevronUp}
             plain
@@ -470,6 +498,7 @@ export function WatchScreen({
         )}
         {index < items.length - 1 && (
           <FloatButton
+            media
             label="Next video"
             icon={ChevronDown}
             plain
@@ -756,7 +785,7 @@ function DesktopWatchLayout({
     </View>
   );
 }
-const desktopWatch = StyleSheet.create({
+const desktopWatch = themedStyles(() => ({
   page: { flexGrow: 1, alignItems: "center", padding: 24 },
   row: {
     flexDirection: "row",
@@ -807,7 +836,7 @@ const desktopWatch = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
   },
-});
+}));
 const w = {
   rail: {
     alignItems: "center" as const,

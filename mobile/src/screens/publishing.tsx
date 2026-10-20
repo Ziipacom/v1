@@ -22,7 +22,7 @@ import { Action, Field, Notice } from "../components/ui";
 import { MediaPlayer } from "../components/player";
 import { useZiipa } from "../provider";
 import type { Item, RootStack, SocialProvider } from "../lib/types";
-import { color, font, styles } from "../theme";
+import { themedStyles, themeValue, color, font, styles } from "../theme";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { socialProvider } from "../lib/social";
 import { readyRender, type RenderJob } from "../lib/render-types";
@@ -1421,7 +1421,7 @@ function ScopedPublishingScreen({
   );
 }
 
-const dp = StyleSheet.create({
+const dp = themedStyles(() => StyleSheet.create({
   page: { padding: 28, paddingBottom: 48, alignItems: "center" },
   workspace: { width: "100%", maxWidth: 1380, gap: 22 },
   header: {
@@ -1457,10 +1457,10 @@ const dp = StyleSheet.create({
     minWidth: 152,
     borderWidth: 1,
     borderColor: color.border,
-    backgroundColor: "#191323",
+    backgroundColor: themeValue("#191323", color.panel),
     borderRadius: 9,
   },
-  providerActive: { borderColor: "#A984E7", backgroundColor: "#302040" },
+  providerActive: { borderColor: "#A984E7", backgroundColor: themeValue("#302040", color.accentSoft) },
   providerMark: {
     width: 30,
     height: 30,
@@ -1485,9 +1485,9 @@ const dp = StyleSheet.create({
   },
   railTitle: { color: color.text, fontFamily: font.semibold, fontSize: 14 },
   workflow: { flex: 1, minWidth: 0, gap: 16 },
-  card: { borderRadius: 11, padding: 18, gap: 12, backgroundColor: "#191421" },
+  card: { borderRadius: 11, padding: 18, gap: 12, backgroundColor: themeValue("#191421", color.panel) },
   sectionTitle: { fontSize: 17, letterSpacing: -0.2, lineHeight: 23 },
-  choice: { borderRadius: 8, backgroundColor: "#211A2C", gap: 0 },
+  choice: { borderRadius: 8, backgroundColor: themeValue("#211A2C", color.panel), gap: 0 },
   footnote: {
     color: color.faint,
     fontFamily: font.regular,
@@ -1509,5 +1509,5 @@ const dp = StyleSheet.create({
     gap: 14,
     flexWrap: "wrap",
   },
-  receipt: { padding: 15, borderRadius: 9, gap: 8, backgroundColor: "#191421" },
-});
+  receipt: { padding: 15, borderRadius: 9, gap: 8, backgroundColor: themeValue("#191421", color.panel) },
+}));

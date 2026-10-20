@@ -374,7 +374,7 @@ export function AgentTasks({
             backgroundColor: ready ? color.purple : color.bg,
           }}
         >
-          <Text style={[styles.small, { color: color.text }]}>{title}</Text>
+          <Text style={[styles.small, { color: ready ? color.onAccent : color.text }]}>{title}</Text>
         </View>
       ))}
     </View>
@@ -502,7 +502,7 @@ export function AgentTasks({
                 }}
               >
                 {tools.includes(tool.id) ? (
-                  <Check size={17} color={color.text} />
+                  <Check size={17} color={color.onAccent} />
                 ) : null}
               </View>
               <View style={{ flex: 1, gap: 3 }}>

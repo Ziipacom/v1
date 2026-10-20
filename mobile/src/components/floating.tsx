@@ -18,7 +18,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react-native";
-import { color, font, styles } from "../theme";
+import { color, font, styles, themedStyles, useTheme } from "../theme";
 import { conceptsEnabled } from "../lib/config";
 import type { Category } from "../lib/types";
 import { useDesktopLayout } from "./desktop-layout";
@@ -44,10 +44,16 @@ export const worlds: {
 export function WorldGlyph({
   id,
   size = 24,
+  media = false,
+  active = false,
 }: {
   id: Category | "inbox";
   size?: number;
+  media?: boolean;
+  active?: boolean;
 }) {
+  useTheme();
+  const foreground = media ? color.onMedia : active ? color.onAccent : color.text;
   if (id === "nft")
     return (
       <View
@@ -58,11 +64,11 @@ export function WorldGlyph({
           justifyContent: "center",
         }}
       >
-        <Hexagon size={size + 6} fill={color.text} color={color.text} />
+        <Hexagon size={size + 6} fill={foreground} color={foreground} />
         <Text
           style={{
             position: "absolute",
-            color: color.bg,
+            color: media || active ? "#120D1F" : color.bg,
             fontFamily: font.bold,
             fontSize: 9,
           }}
@@ -74,10 +80,10 @@ export function WorldGlyph({
   if (id === "live")
     return (
       <View style={{ alignItems: "center" }}>
-        <Video size={size - 3} color={color.text} fill={color.text} />
+        <Video size={size - 3} color={foreground} fill={foreground} />
         <Text
           style={{
-            color: color.text,
+            color: foreground,
             fontFamily: font.bold,
             fontSize: 8,
             lineHeight: 9,
@@ -92,8 +98,8 @@ export function WorldGlyph({
   return (
     <Icon
       size={size}
-      color={color.text}
-      fill={id === "music" ? color.text : "none"}
+      color={foreground}
+      fill={id === "music" ? foreground : "none"}
       strokeWidth={1.6}
     />
   );
@@ -107,6 +113,7 @@ export function FloatButton({
   children,
   size = 44,
   plain = false,
+  media = false,
 }: PropsWithChildren<{
   label: string;
   icon?: LucideIcon;
@@ -114,7 +121,9 @@ export function FloatButton({
   active?: boolean;
   size?: number;
   plain?: boolean;
+  media?: boolean;
 }>) {
+  useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -126,19 +135,19 @@ export function FloatButton({
         height: size,
         borderRadius: size / 2,
         borderWidth: plain ? 0 : 1,
-        borderColor: active ? color.purple : "#AAA3B5",
+        borderColor: active ? color.purple : media ? "#AAA3B5" : color.border,
         backgroundColor: active
           ? color.purple
           : plain
             ? "transparent"
-            : "#0B0814B8",
+            : media ? "#0B0814B8" : color.panel,
         alignItems: "center",
         justifyContent: "center",
         opacity: pressed ? 0.65 : 1,
       })}
     >
       {Icon ? (
-        <Icon size={24} color={color.text} strokeWidth={1.65} />
+        <Icon size={24} color={media ? color.onMedia : active ? color.onAccent : color.text} strokeWidth={1.65} />
       ) : (
         children
       )}
@@ -172,7 +181,7 @@ export function CategoryDock({
           }
           onPress={() => onSelect(w.id)}
         >
-          <WorldGlyph id={w.id} />
+          <WorldGlyph id={w.id} active={selected === w.id || (selected === "video" && w.id === "music")} />
         </FloatButton>
       ))}
       <FloatButton label="Inbox" onPress={onInbox}>
@@ -251,7 +260,7 @@ export function Sheet({
   );
 }
 
-export const floating = StyleSheet.create({
+export const floating = themedStyles(() => ({
   dock: {
     position: "absolute",
     left: 14,
@@ -261,10 +270,10 @@ export const floating = StyleSheet.create({
     justifyContent: "space-around",
     paddingVertical: 9,
     paddingHorizontal: 6,
-    backgroundColor: "#09060EF2",
+    backgroundColor: color.dock,
     borderRadius: 45,
     borderWidth: 1,
-    borderColor: "#3C3348",
+    borderColor: color.border,
     elevation: 12,
     boxShadow: "0 8px 22px #0006",
   },
@@ -275,5 +284,5 @@ export const floating = StyleSheet.create({
     paddingHorizontal: 22,
     height: 76,
   },
-  small: { color: "#D2CADC", fontFamily: font.regular, fontSize: 13 },
-});
+  small: { color: color.muted, fontFamily: font.regular, fontSize: 13 },
+}));

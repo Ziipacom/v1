@@ -4,14 +4,29 @@ Updated 2026-10-20. This describes source behavior to investigate, not completed
 
 Editor music additions: AI composition sends only the explicitly consented
 musical description/settings to the configured private model or Cloudflare
-Workers AI. It does not send uploaded audio/video, SoundCloud tracks, the media
+Workers AI. It does not send uploaded audio/video, the media
 library or account history. Bounded note scores are synthesized to WAV on the
-device and remain local until the user attaches/saves the draft. SoundCloud OAuth
-tokens are encrypted on the server; the optional official SoundCloud widget
-contacts SoundCloud after separate playback consent and follows that provider's
-privacy/cookie behavior. Ziipa does not copy SoundCloud audio into its storage,
-exports or model inputs. Recheck all deployed providers, permissions and policies
+device and remain local until the user attaches/saves the draft. Music in this
+release is uploaded by the user or created in Ziipa. SoundCloud connection,
+discovery, OAuth and embedded playback are not included. Minting and sharing
+require separate user actions; composition alone does not mint or publish.
+Recheck all deployed providers, permissions and policies
 before answering store disclosures; these notes do not constitute legal review.
+
+Auto captions are separately consented: the private engine processes original
+speech within Ziipa's configured local runtime, while the optional Cloudflare
+provider receives only decoded bounded audio, never a public/signed media URL.
+The current provider is shown before each request; refreshing it clears consent.
+Temporary owner-scoped proposals expire after 15 minutes and can disappear on an
+API restart. Nothing changes until the user applies the proposal and saves.
+Raw source cues are private owner-editing data and excluded from public feeds;
+only the accepted mapped caption track accompanies a published edit.
+
+Appearance and playback choices are device-local, persisted in AsyncStorage.
+Notification categories and privacy controls use the account API; OS push
+permission/device registration remain separate user actions. Promotion briefs
+are private Media OS projects. Email sends and paid-ad delivery are not enabled
+by linking a social profile; no advertising or email marketing adapter is active.
 
 | Data                                                                                                                 | Purpose and possible recipient                                        | Storage/control to verify                                                                                                                                                                                                                                              |
 | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

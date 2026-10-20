@@ -30,10 +30,12 @@ import {
   Scissors,
   Share2,
   SlidersHorizontal,
+  Sparkles,
   Upload,
   Volume2,
   VolumeX,
   SkipBack,
+  Wallet,
 } from "lucide-react-native";
 import { Action, Cover, Field, Notice, Pill } from "../components/ui";
 import { FloatButton, worlds } from "../components/floating";
@@ -44,6 +46,7 @@ import {
 } from "../components/editor-preview";
 import { EditorTimeline } from "../components/editor-timeline";
 import { EditorOverlays } from "../components/editor-overlays";
+import { EditorAutoCaptions } from "../components/editor-auto-captions";
 import { EditorCanvasLayers } from "../components/editor-canvas-layers";
 import { MusicWorkspace } from "../components/music-workspace";
 import {
@@ -58,7 +61,7 @@ import {
 } from "../lib/editor-timeline";
 import { Recorder } from "../components/recorder";
 import { useDesktopLayout } from "../components/desktop-layout";
-import { color, font, styles } from "../theme";
+import { color, font, styles, themedStyles } from "../theme";
 import { useZiipa } from "../provider";
 import {
   creatorMimeType,
@@ -67,6 +70,8 @@ import {
   type UploadFile,
 } from "../lib/api";
 import { editorCaptions } from "../lib/editor-captions";
+import { sourceCaptionsForEdit, validateCaptionCues } from "../lib/auto-captions";
+import { audioCreationSource, sourceMintItem } from "../lib/editor-source";
 import { inCreativeWorld, parseEditing, parsePrice } from "../lib/domain";
 import {
   rememberLocalMedia,
@@ -81,6 +86,7 @@ import {
 } from "../lib/social";
 import type {
   Category,
+  Caption,
   Distribution,
   Item,
   ItemInput,
@@ -128,12 +134,30 @@ export function ComposerScreen({
     existing?.trim_end ? String(existing.trim_end) : "",
   );
   const [caption, setCaption] = useState(existing?.captions?.[0]?.text || "");
+  // Auto recognition is source-relative; it remains separate from legacy
+  // sequence-relative cues until a reviewed proposal is explicitly accepted.
+  const [sourceCaptionTrack, setSourceCaptionTrack] = useState<Caption[] | null>(existing?.caption_source_cues || null);
   const [price, setPrice] = useState(
     existing?.price_cents != null
       ? (existing.price_cents / 100).toFixed(2)
       : "",
   );
   const [file, setFile] = useState<UploadFile | null>(null);
+  const generatedSource = useRef<{
+    uri: string;
+    release: () => Promise<void>;
+  } | null>(null);
+  const [musicPurpose, setMusicPurpose] = useState<"soundtrack" | "creation">(
+    "soundtrack",
+  );
+  useEffect(
+    () => () => {
+      const held = generatedSource.current;
+      if (held && !isRetainedDraftMedia(held.uri))
+        void held.release().catch(() => {});
+    },
+    [],
+  );
   const [recorderMode, setRecorderMode] = useState<"record" | "live" | null>(
     null,
   );
@@ -232,6 +256,7 @@ export function ComposerScreen({
     overlays: Overlay[];
     visualEffect: VisualEffect;
     caption: string;
+    sourceCaptionTrack: Caption[] | null;
   };
   const [history, setHistory] = useState<{
     past: EditState[];
@@ -243,6 +268,7 @@ export function ComposerScreen({
     overlays,
     visualEffect,
     caption,
+    sourceCaptionTrack,
   };
   function applyEdit(patch: Partial<EditState>) {
     if (busy) return;
@@ -259,6 +285,7 @@ export function ComposerScreen({
     setOverlays(state.overlays);
     setVisualEffect(state.visualEffect);
     setCaption(state.caption);
+    setSourceCaptionTrack(state.sourceCaptionTrack);
   }
   function undoEdit(redo = false) {
     const stack = redo ? history.future : history.past;
@@ -301,10 +328,16 @@ export function ComposerScreen({
     [start, end],
   );
   function resetSource() {
+    const held = generatedSource.current;
+    generatedSource.current = null;
+    if (held && !isRetainedDraftMedia(held.uri))
+      void held.release().catch(() => {});
     setDuration(0);
     setFrames([]);
     setClips([]);
     setTimelineEdited(false);
+    setSourceCaptionTrack(null);
+    setCaption("");
     setHistory({ past: [], future: [] });
     setStart("0");
     setEnd("");
@@ -366,6 +399,7 @@ export function ComposerScreen({
     start,
     end,
     caption,
+    sourceCaptionTrack,
     price,
     mediaId,
     file: file
@@ -402,6 +436,11 @@ export function ComposerScreen({
     !existing && (originalUpload || remix) ? "" : fingerprint,
   );
   const unsaved = fingerprint !== cleanFingerprint;
+  const mintSource = sourceMintItem(
+    saved || existing,
+    session?.user.id,
+    unsaved,
+  );
   usePreventRemove(busy, () =>
     Alert.alert(
       "Saving your creation",
@@ -466,8 +505,11 @@ export function ComposerScreen({
     ...editing,
     content_type: file?.mimeType || base.content_type,
     title: title || base.title,
-    captions: editorCaptions(
-      existing,
+    captions: sourceCaptionTrack !== null ? (() => {
+      try { return sourceCaptionsForEdit(sourceCaptionTrack, timelineEdited ? clips : undefined); }
+      catch { return []; } // Invalid text is reported on save, never rendered.
+    })() : editorCaptions(
+      file ? undefined : existing,
       caption,
       clips,
       timelineEdited,
@@ -496,12 +538,11 @@ export function ComposerScreen({
       size: asset.size || 0,
     } satisfies UploadFile;
   }
-  async function pick(kind: "media" | "soundtrack" = "media") {
+  async function pick(kind: "media" | "soundtrack" | "audioSource" = "media") {
     setError("");
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type:
-          kind === "soundtrack" ? "audio/*" : ["image/*", "video/*", "audio/*"],
+        type: kind === "media" ? ["image/*", "video/*", "audio/*"] : "audio/*",
         copyToCacheDirectory: true,
         multiple: false,
       });
@@ -514,6 +555,8 @@ export function ComposerScreen({
       if (!size || size > uploadLimit)
         throw new Error("Choose a non-empty file no larger than 100 MB.");
       const selected = fileFromAsset({ ...asset, size });
+      if (kind !== "media" && !selected.mimeType.startsWith("audio/"))
+        throw new Error("Choose an audio file.");
       if (kind === "soundtrack") {
         if (!selected.mimeType.startsWith("audio/"))
           throw new Error("Choose an audio file for the soundtrack.");
@@ -587,10 +630,15 @@ export function ComposerScreen({
           captions: editorCaptions(existing, caption, clips, true, []),
         };
       } else if (
+        !file &&
         caption === (existing?.captions?.[0]?.text || "") &&
         existing?.captions?.length
       )
         parsed.captions = existing.captions;
+      if (sourceCaptionTrack !== null) {
+        validateCaptionCues(sourceCaptionTrack);
+        parsed.captions = sourceCaptionsForEdit(sourceCaptionTrack, timelineEdited ? clips : undefined);
+      }
       price_cents = category === "store" ? parsePrice(price) : null;
       if (!guest && visibility === "published" && !mediaId && !file)
         throw new Error(
@@ -612,6 +660,7 @@ export function ComposerScreen({
         const draft: Item = {
           ...base,
           ...parsed,
+          caption_source_cues: sourceCaptionTrack,
           id: persistedId.current || `preview-draft-${Date.now()}`,
           title: title.trim(),
           description,
@@ -657,7 +706,17 @@ export function ComposerScreen({
               ? "Local draft"
               : "Sample draft",
         };
-        if (file) retainedCaptureUris.current.add(file.uri);
+        if (file) {
+          retainedCaptureUris.current.add(file.uri);
+          if (generatedSource.current?.uri === file.uri) {
+            retainDraftMedia(
+              `${draft.id}:source`,
+              file.uri,
+              generatedSource.current.release,
+            );
+            generatedSource.current = null;
+          }
+        }
         if (soundtrackFile) {
           retainDraftMedia(
             `${draft.id}:soundtrack`,
@@ -701,6 +760,7 @@ export function ComposerScreen({
           media_id: selectedId,
           visibility,
           ...parsed,
+          caption_source_cues: sourceCaptionTrack,
           price_cents,
           remix_of: remix?.id || existing?.remix_of || null,
           overlays: canvas.overlays || [],
@@ -866,6 +926,7 @@ export function ComposerScreen({
           accessibilityState={{ selected: tab === name }}
           onPress={() => {
             setPaused(true);
+            if (name === "Music") setMusicPurpose("soundtrack");
             setTab(name);
           }}
           style={{ flex: 1, alignItems: "center", gap: 5 }}
@@ -926,6 +987,7 @@ export function ComposerScreen({
       onCaption={() => setTab("Overlay")}
       onMusic={() => {
         setPaused(true);
+        setMusicPurpose("soundtrack");
         setTab("Music");
       }}
       disabled={busy}
@@ -1118,6 +1180,22 @@ export function ComposerScreen({
                 />
               </View>
             </View>
+            <Action
+              title="AI Creation"
+              icon={Sparkles}
+              secondary
+              disabled={busy}
+              onPress={() => {
+                setPaused(true);
+                setMusicPurpose("creation");
+                setTab("Music");
+              }}
+            />
+            <Text style={styles.small}>
+              Create instrumental audio from a description, with no upload.
+              Review and choose the generated file before saving. This does not
+              generate video or vocals.
+            </Text>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Set up a live broadcast"
@@ -1198,19 +1276,34 @@ export function ComposerScreen({
           onChange={(value) => applyEdit({ overlays: value })}
           onSelect={setSelectedOverlay}
           onEffect={(value) => applyEdit({ visualEffect: value })}
-          onCaption={(value) => applyEdit({ caption: value })}
+          onCaption={(value) => applyEdit({ caption: value, sourceCaptionTrack: null })}
+          captionTools={<EditorAutoCaptions
+            itemId={mediaId ? (saved?.media_id === mediaId ? saved.id : existing?.media_id === mediaId ? existing.id : undefined) : undefined}
+            mediaId={mediaId}
+            sourceKey={file?.uri || mediaId || "no-source"}
+            accepted={sourceCaptionTrack}
+            disabled={busy}
+            onApply={(cues) => applyEdit({ sourceCaptionTrack: cues, ...(cues !== null ? { caption: "" } : {}) })}
+            onSaveSource={() => void save("draft")}
+            onRights={() => navigation.navigate("MediaOS", { tab: "Library" })}
+          />}
         />
       )}
       {tab === "Music" && (
         <MusicWorkspace
+          purpose={musicPurpose}
           busy={busy}
           onAuditionStart={() => setPaused(true)}
-          selectedName={soundtrackName}
-          selectedFile={soundtrackFile}
-          selectedMediaId={soundtrackId}
-          volume={Number(soundtrackVolume)}
+          selectedName={musicPurpose === "creation" ? title : soundtrackName}
+          selectedFile={musicPurpose === "creation" ? (file?.mimeType.startsWith("audio/") ? file : null) : soundtrackFile}
+          selectedMediaId={musicPurpose === "creation" ? ((file?.mimeType || canvas.content_type)?.startsWith("audio/") ? mediaId : null) : soundtrackId}
+          volume={musicPurpose === "creation" ? 100 : Number(soundtrackVolume)}
           onVolumeChange={(value) => setSoundtrackVolume(String(value))}
-          onUpload={() => void pick("soundtrack")}
+          onUpload={() =>
+            void pick(
+              musicPurpose === "creation" ? "audioSource" : "soundtrack",
+            )
+          }
           onUseOwned={(audio) => {
             releaseSoundtrack();
             setSoundtrackFile(null);
@@ -1218,12 +1311,27 @@ export function ComposerScreen({
             setSoundtrackName(audio.name);
             setSaved(null);
           }}
-          onUseGenerated={(generated, release) => {
+          onUseGenerated={(generated, release, musicTitle) => {
+            if (musicPurpose === "creation") {
+              const source = audioCreationSource(generated, musicTitle);
+              resetSource();
+              generatedSource.current = { uri: source.file.uri, release };
+              selectedUris.current.add(source.file.uri);
+              setSample(undefined);
+              setFile(source.file);
+              setMediaId(null);
+              setCategory("music");
+              setTitle((current) => current || source.title);
+              setSaved(null);
+              setError("");
+              setTab("Edit");
+              return;
+            }
             releaseSoundtrack();
             generatedRelease.current = release;
             setSoundtrackFile(generated);
             setSoundtrackId(null);
-            setSoundtrackName(generated.name.replace(/\.[^.]+$/, ""));
+            setSoundtrackName(musicTitle);
             setSaved(null);
           }}
         />
@@ -1287,6 +1395,55 @@ export function ComposerScreen({
               editable={!busy}
             />
           )}
+          <View style={[styles.panel, { gap: 10 }]}>
+            <View style={styles.row}>
+              <Wallet size={20} color={color.lime} />
+              <Text style={styles.label}>Optional source minting</Text>
+            </View>
+            <Text style={styles.small}>
+              Sharing does not require minting. Wallet reviews the saved source
+              file, not your rendered edits or an attached soundtrack. Export
+              your edited version first if you want that version. Uploading or
+              generating audio does not establish rights or copyright
+              exclusivity; review permissions before sharing or minting.
+            </Text>
+            {guest ? (
+              <Text style={styles.small}>
+                Sign in and save your own media to review source minting.
+                Samples cannot be minted.
+              </Text>
+            ) : mintSource ? (
+              <Action
+                title="Mint source media"
+                icon={Wallet}
+                secondary
+                disabled={busy}
+                onPress={() =>
+                  navigation.navigate("Utility", {
+                    kind: "wallet",
+                    item: mintSource,
+                  })
+                }
+              />
+            ) : (
+              <Action
+                title="Save private draft for source mint review"
+                icon={Save}
+                secondary
+                busy={busy}
+                disabled={
+                  busy ||
+                  (!file && !mediaId) ||
+                  existing?.visibility === "hidden"
+                }
+                onPress={() => void save("draft")}
+              />
+            )}
+            <Text style={[styles.small, { fontSize: 11 }]}>
+              No mint occurs here. IPFS storage, public metadata and wallet
+              signatures require separate review in Wallet.
+            </Text>
+          </View>
           <View style={styles.separator} />
           <View style={styles.between}>
             <View style={{ flex: 1, gap: 3 }}>
@@ -1491,17 +1648,6 @@ export function ComposerScreen({
                 error={job.status === "failed"}
               />
             ))}
-          {!guest && saved.media_id && (
-            <Action
-              title="Mint this media"
-              onPress={() =>
-                navigation.navigate("Utility", {
-                  kind: "wallet",
-                  item: saved,
-                })
-              }
-            />
-          )}
         </>
       )}
       {tab === "Share" ? (
@@ -1545,6 +1691,8 @@ export function ComposerScreen({
           icon={ChevronRight}
           onPress={() => {
             const index = steps.findIndex((step) => step.name === tab);
+            if (steps[index + 1]?.name === "Music")
+              setMusicPurpose("soundtrack");
             setTab(steps[Math.min(steps.length - 1, index + 1)].name);
           }}
         />
@@ -1664,7 +1812,7 @@ export function ComposerScreen({
     </KeyboardAvoidingView>
   );
 }
-const eStyle = {
+const eStyle = themedStyles(() => ({
   badge: {
     color: "white",
     backgroundColor: "#110D1C99",
@@ -1745,7 +1893,7 @@ const eStyle = {
     alignItems: "center" as const,
     justifyContent: "center" as const,
   },
-};
+}));
 
 async function disposePickedAudio(uri: string) {
   forgetLocalMedia(uri);

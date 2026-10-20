@@ -30,7 +30,7 @@ import { Action, Cover, Notice, categories } from "../components/ui";
 import { inCreativeWorld, searchItems } from "../lib/domain";
 import type { Category, Item, RootStack } from "../lib/types";
 import { useZiipa } from "../provider";
-import { color, font, styles } from "../theme";
+import { themedStyles, themeValue, color, font, styles } from "../theme";
 
 type Props = NativeStackScreenProps<RootStack, "Main">;
 
@@ -453,7 +453,7 @@ function Filter({
         { opacity: pressed ? 0.75 : 1 },
       ]}
     >
-      <Text style={[s.filterText, selected && { color: color.text }]}>
+      <Text style={[s.filterText, selected && { color: color.onAccent }]}>
         {title}
       </Text>
     </Pressable>
@@ -485,7 +485,7 @@ function Step({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => StyleSheet.create({
   page: { padding: 24, paddingBottom: 40, flexGrow: 1 },
   content: { width: "100%", maxWidth: 1440, alignSelf: "center", gap: 20 },
   headingRow: {
@@ -552,7 +552,7 @@ const s = StyleSheet.create({
   welcome: {
     borderRadius: 26,
     borderWidth: 1,
-    borderColor: "#563677",
+    borderColor: themeValue("#563677", color.border),
     padding: 36,
     flexDirection: "row",
     alignItems: "flex-start",
@@ -616,7 +616,7 @@ const s = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
   },
-  cardCategoryText: { fontFamily: font.medium, fontSize: 11, color: "#E6DBF3" },
+  cardCategoryText: { fontFamily: font.medium, fontSize: 11, color: themeValue("#E6DBF3", color.text) },
   play: {
     position: "absolute",
     bottom: 16,
@@ -659,4 +659,4 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.border,
   },
-});
+}));

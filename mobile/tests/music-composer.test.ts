@@ -8,7 +8,6 @@ import {
   musicMaxBytes,
   ownedAudioTracks,
   planMusicPrompt,
-  soundCloudSearch,
   validateMusicWave,
   type MusicSettings,
 } from "../src/lib/music-composer.ts";
@@ -160,21 +159,4 @@ test("owned audio picker excludes hidden sources, demos, remote identifiers and 
   assert.equal(tracks[1].name, `Audio ${ids[2].slice(0, 8)}`);
   assert.ok(!JSON.stringify(tracks).includes("Another owner's"));
   assert.ok(!tracks.some((entry) => entry.media_id === ids[1]));
-});
-
-test("SoundCloud discovery is a fixed official search URL with bounded encoded query, never a download", () => {
-  const url = new URL(
-    soundCloudSearch("https://evil.test/?a=1&next=#fragment"),
-  );
-  assert.equal(url.origin, "https://soundcloud.com");
-  assert.equal(url.pathname, "/search/sounds");
-  assert.equal(url.hash, "");
-  assert.equal(
-    url.searchParams.get("q"),
-    "https://evil.test/?a=1&next=#fragment",
-  );
-  assert.equal(
-    new URL(soundCloudSearch("x".repeat(500))).searchParams.get("q")?.length,
-    140,
-  );
 });

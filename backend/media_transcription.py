@@ -102,6 +102,14 @@ def _runtime():
     return str(executable.resolve()), str(model.resolve()), ffmpeg, ffprobe
 
 
+def audio_runtime():
+    """A hosted recognizer still decodes owned media locally, never by URL."""
+    ffmpeg, ffprobe = shutil.which(config.ffmpeg), shutil.which(config.ffprobe)
+    if not ffmpeg or not ffprobe:
+        raise RuntimeError('Local audio extraction is not configured.')
+    return ffmpeg, ffprobe
+
+
 @contextmanager
 def _slot(root):
     """One speech process per work directory, shared by API/worker processes.
@@ -236,15 +244,18 @@ def normalize_segments(payload, duration):
     return result
 
 
-def transcribe_media(session, owner_id: int, item_id: str) -> dict:
+def transcribe_media(session, owner_id: int, item_id: str, *, recognize=None, before_recognize=None) -> dict:
     descriptor = _owned_source(session, owner_id, item_id)
-    if not config.enabled:
+    if not config.enabled and recognize is None:
         return _result('unavailable', 'Local transcription is disabled. Add a manual transcript or timed captions.')
     if (descriptor['content_type'] not in SPEECH_FORMATS or not 0 < descriptor['size'] <= MAX_INPUT_BYTES):
         return _result('unavailable', 'Choose owned audio or video up to 100 MiB and 90 seconds, or add a manual transcript.')
     deadline = time.monotonic() + config.timeout_seconds
     try:
-        executable, model, ffmpeg, ffprobe = _runtime()
+        if recognize is None:
+            executable, model, ffmpeg, ffprobe = _runtime()
+        else:
+            ffmpeg, ffprobe = audio_runtime()
         root = Path(config.work_dir).expanduser().resolve()
         with _slot(root), tempfile.TemporaryDirectory(prefix='speech-', dir=root) as directory:
             work = Path(directory)
@@ -256,16 +267,23 @@ def transcribe_media(session, owner_id: int, item_id: str) -> dict:
             if duration is None:
                 result = _result('no_speech', 'No audio track or only digital silence was found. Add a manual transcript if needed.')
             else:
-                output = work / 'transcript.json'
-                _run([executable, '-m', model, '-f', 'speech.wav', '-of', 'transcript', '-oj',
-                    '-t', '2', '-p', '1', '-ng', '-l', 'auto', '-ml', '120', '-sow', '-sns', '-np'],
-                    work, deadline, (output, MAX_JSON_BYTES))
-                if output.is_symlink() or not output.is_file() or output.stat().st_size > MAX_JSON_BYTES:
-                    raise ValueError('Missing or oversized transcript.')
-                segments = normalize_segments(json.loads(output.read_text(encoding='utf-8')), duration)
+                if before_recognize is not None:
+                    before_recognize()
+                if recognize is None:
+                    output = work / 'transcript.json'
+                    _run([executable, '-m', model, '-f', 'speech.wav', '-of', 'transcript', '-oj',
+                        '-t', '2', '-p', '1', '-ng', '-l', 'auto', '-ml', '120', '-sow', '-sns', '-np'],
+                        work, deadline, (output, MAX_JSON_BYTES))
+                    if output.is_symlink() or not output.is_file() or output.stat().st_size > MAX_JSON_BYTES:
+                        raise ValueError('Missing or oversized transcript.')
+                    segments = normalize_segments(json.loads(output.read_text(encoding='utf-8')), duration)
+                else:
+                    # Only a trusted backend callback; clients never supply a
+                    # destination or model. No runtime fallback is attempted.
+                    segments = recognize(work / 'speech.wav', duration, deadline)
                 result = _result('ready' if segments else 'no_speech',
-                    'Local machine transcript. Review the words and timing before applying captions.' if segments
-                    else 'The local engine returned no speech. Add a manual transcript if needed.', segments)
+                    'Machine transcript. Review the words and timing before applying captions.' if segments
+                    else 'The recognition engine returned no speech. Add a manual transcript if needed.', segments)
         if _owned_source(session, owner_id, item_id) != descriptor:
             return _result('unavailable', 'The saved source changed during transcription. Retry with the current creation.')
         return result

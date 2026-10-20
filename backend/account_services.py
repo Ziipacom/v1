@@ -214,7 +214,6 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
     from media_rewards import export_rewards_data
     from rewards_redemption import export_settlement_data
     from admin_services import export_admin_account_data
-    from soundcloud import export_soundcloud_data
     state = state_for(session, user)
     return {
         'exported_at': datetime.now(timezone.utc).isoformat(),
@@ -241,6 +240,5 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
         'media_rewards': export_rewards_data(session, user.id),
         'reward_distributions': export_settlement_data(session, user.id),
         'administration': export_admin_account_data(session, user.id),
-        'soundcloud': export_soundcloud_data(session, user.id),
         'comments': [{'id': r.id, 'item_id': r.item_id, 'body': r.body, 'created_at': r.created_at.isoformat()} for r in session.scalars(select(CreatorComment).where(CreatorComment.owner_id == user.id))],
     }

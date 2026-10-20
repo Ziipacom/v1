@@ -219,13 +219,11 @@ def current_user(request: Request, session: Session = Depends(db)):
     live_cleanup = (request.method == 'POST' and path_parts[:3] == ['api', 'live', 'streams']
         and ((len(path_parts) == 5 and path_parts[4] == 'end')
              or (len(path_parts) == 6 and path_parts[4:] == ['destinations', 'twitch'])))
-    soundcloud_cleanup = request.method == 'DELETE' and request.url.path == '/api/music/soundcloud/connection'
     # Privacy, sign-out, consent revocation and reporting remain available
     # during maintenance. Twitch enablement has its own fresh route-level guard;
     # detaching or stopping a stream must remain possible during maintenance.
     if (request.method not in {'GET', 'HEAD', 'OPTIONS'}
             and not live_cleanup
-            and not soundcloud_cleanup
             and not request.url.path.startswith(('/api/account/', '/api/auth/',
                 '/api/mobile/auth/', '/api/notifications/', '/api/safety/'))):
         require_mutations_open(session, user)
@@ -402,8 +400,8 @@ from assistant_api import router as assistant_router
 app.include_router(assistant_router)
 from music_api import router as music_router
 app.include_router(music_router)
-from soundcloud import router as soundcloud_router
-app.include_router(soundcloud_router)
+from caption_api import router as caption_router
+app.include_router(caption_router)
 from agent_api import router as agent_router
 app.include_router(agent_router)
 from creation_campaigns import router as campaign_router

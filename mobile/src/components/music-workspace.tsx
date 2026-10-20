@@ -23,7 +23,6 @@ import {
 } from "lucide-react-native";
 import { Action, Field, Notice, Pill } from "./ui";
 import { useDesktopLayout } from "./desktop-layout";
-import { MusicSoundCloud } from "./music-soundcloud";
 import { useZiipa } from "../provider";
 import { useOperationScope } from "../lib/use-operation-scope";
 import { usePlaybackSource } from "../lib/media-playback";
@@ -45,9 +44,11 @@ import {
 import { synthesizeAiMusic, type AiMusicConfig } from "../lib/ai-music";
 import type { UploadFile } from "../lib/api";
 import type { Library } from "../lib/media-os-types";
-import { color, styles } from "../theme";
+import { color, font, styles } from "../theme";
 
 export type MusicWorkspaceProps = {
+  /** Creation makes the generated WAV the source; soundtrack keeps existing media. */
+  purpose?: "soundtrack" | "creation";
   busy?: boolean;
   selectedName?: string;
   selectedFile?: UploadFile | null;
@@ -60,7 +61,11 @@ export type MusicWorkspaceProps = {
   onAuditionStart?: () => void;
   onUseOwned: (audio: { media_id: string; name: string }) => void;
   /** Parent owns this lease after attachment, until replacement/unmount. */
-  onUseGenerated: (file: UploadFile, release: () => Promise<void>) => void;
+  onUseGenerated: (
+    file: UploadFile,
+    release: () => Promise<void>,
+    title: string,
+  ) => void;
 };
 
 type Audition = { name: string; path?: string; uri?: string };
@@ -93,11 +98,15 @@ const initialSettings: MusicSettings = {
 export function MusicWorkspace(props: MusicWorkspaceProps) {
   const { session } = useZiipa();
   return (
-    <ScopedMusicWorkspace key={session?.access_token || "guest"} {...props} />
+    <ScopedMusicWorkspace
+      key={`${session?.access_token || "guest"}:${props.purpose || "soundtrack"}`}
+      {...props}
+    />
   );
 }
 
 function ScopedMusicWorkspace({
+  purpose = "soundtrack",
   busy = false,
   selectedName,
   selectedFile,
@@ -113,7 +122,9 @@ function ScopedMusicWorkspace({
   const { desktop } = useDesktopLayout();
   const focused = useIsFocused();
   const capture = useOperationScope(session?.access_token || "guest", focused);
-  const [tab, setTab] = useState<"library" | "discover" | "create">("library");
+  const [tab, setTab] = useState<"library" | "create">(
+    purpose === "creation" ? "create" : "library",
+  );
   const [library, setLibrary] = useState<Library>(emptyLibrary);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
@@ -323,11 +334,13 @@ function ScopedMusicWorkspace({
     const held = generatedRef.current;
     if (!held || held.transferred || disabled || !focused) return;
     try {
-      onUseGenerated(held.file, held.release);
+      onUseGenerated(held.file, held.release, generatedName(held.plan));
       held.transferred = true;
       setAttached(true);
       setNotice(
-        "Generated music attached to this edit. Save the draft to upload it; publishing still requires its separate review.",
+        purpose === "creation"
+          ? "Generated audio selected as your creation. Nothing is uploaded, saved or published until you review and save it."
+          : "Generated music attached to this edit. Save the draft to upload it; publishing still requires its separate review.",
       );
     } catch (cause) {
       setError(
@@ -356,11 +369,11 @@ function ScopedMusicWorkspace({
       <View style={[styles.between, { gap: 12, flexWrap: "wrap" }]}>
         <View style={{ gap: 5, flex: 1, minWidth: 180 }}>
           <Text style={[styles.heading, desktop && { fontSize: 19 }]}>
-            Music workspace
+            {purpose === "creation" ? "AI audio creation" : "Music workspace"}
           </Text>
           <Text style={styles.small}>
-            Upload your own audio, find inspiration, or compose an original
-            instrumental.
+            Upload audio you have rights to use, or create an instrumental with
+            Ziipa.
           </Text>
         </View>
         <Action
@@ -372,25 +385,47 @@ function ScopedMusicWorkspace({
         />
       </View>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        <Pill
-          title="Your audio"
-          active={tab === "library"}
-          onPress={() => setTab("library")}
-        />
-        <Pill
-          title="SoundCloud discovery"
-          active={tab === "discover"}
-          onPress={() => setTab("discover")}
-        />
-        <Pill
-          title="Create music"
-          active={tab === "create"}
-          onPress={() => setTab("create")}
-        />
+        {purpose !== "creation" && (
+          <Pill
+            title="Your audio"
+            active={tab === "library"}
+            onPress={() => setTab("library")}
+          />
+        )}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="AI Creation"
+          accessibilityHint="Create instrumental music from a description. No audio upload is needed."
+          accessibilityState={{ selected: tab === "create" }}
+          onPress={() => {
+            setCreateMode("ai");
+            setTab("create");
+          }}
+          style={{
+            minHeight: desktop ? 34 : 42,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            paddingHorizontal: desktop ? 12 : 15,
+            paddingVertical: desktop ? 8 : 10,
+            borderRadius: desktop ? 7 : 22,
+            borderWidth: 1,
+            borderColor: tab === "create" ? color.purple : color.border,
+            backgroundColor: tab === "create" ? color.purple : color.panel,
+          }}
+        >
+          <Sparkles size={16} color={color.lime} />
+          <Text
+            style={{ fontFamily: font.medium, color: color.text, fontSize: 13 }}
+          >
+            AI Creation
+          </Text>
+        </Pressable>
       </View>
       {!!error && <Notice error text={error} />}
       {!!notice && <Notice text={notice} />}
-      {selected && tab !== "discover" && (
+      {selected && (
         <View style={[styles.panel, { gap: 12, padding: desktop ? 16 : 20 }]}>
           <Text style={styles.label}>Audition · {selected.name}</Text>
           <MusicAudition
@@ -399,28 +434,32 @@ function ScopedMusicWorkspace({
             volume={safeVolume}
             onAuditionStart={onAuditionStart}
           />
-          <Field
-            label="Soundtrack mix level (%)"
-            value={String(Math.round(safeVolume))}
-            keyboardType="number-pad"
-            maxLength={3}
-            editable={!disabled}
-            onChangeText={(text) => {
-              if (/^\d{1,3}$/.test(text) && Number(text) <= 100)
-                onVolumeChange(Number(text));
-            }}
-          />
-          <Text style={styles.small}>
-            Preview volume uses the mix level. The final mix is applied when the
-            saved edit is rendered.
-          </Text>
+          {purpose !== "creation" && (
+            <Field
+              label="Soundtrack mix level (%)"
+              value={String(Math.round(safeVolume))}
+              keyboardType="number-pad"
+              maxLength={3}
+              editable={!disabled}
+              onChangeText={(text) => {
+                if (/^\d{1,3}$/.test(text) && Number(text) <= 100)
+                  onVolumeChange(Number(text));
+              }}
+            />
+          )}
+          {purpose !== "creation" && (
+            <Text style={styles.small}>
+              Preview volume uses the mix level. The final mix is applied when
+              the saved edit is rendered.
+            </Text>
+          )}
         </View>
       )}
       {tab === "library" && (
         <View style={{ gap: 14 }}>
           <View style={[styles.between, { gap: 10 }]}>
             <Text style={[styles.heading, { fontSize: 18 }]}>
-              Owned audio library
+              Your uploaded audio
             </Text>
             <Action
               secondary
@@ -474,8 +513,8 @@ function ScopedMusicWorkspace({
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={styles.label}>{track.name}</Text>
                       <Text style={styles.small}>
-                        {(track.size / 1024 / 1024).toFixed(1)} MB · owned
-                        upload
+                        {(track.size / 1024 / 1024).toFixed(1)} MB · uploaded
+                        file
                         {track.rightsExpired
                           ? " · recorded rights expired"
                           : ""}
@@ -523,15 +562,12 @@ function ScopedMusicWorkspace({
           </Text>
         </View>
       )}
-      {tab === "discover" && (
-        <MusicSoundCloud disabled={disabled} onListen={onAuditionStart} />
-      )}
       {tab === "create" && (
         <View style={[styles.panel, { gap: 14 }]}>
           <View style={styles.row}>
             <Sparkles size={22} color={color.lime} />
             <Text style={[styles.heading, { fontSize: 18 }]}>
-              Create original music
+              Create music with AI
             </Text>
           </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -553,7 +589,7 @@ function ScopedMusicWorkspace({
           {createMode === "ai" ? (
             <View style={{ gap: 10 }}>
               <Notice
-                text={`A language model composes the actual melody, harmony, rhythm and instrument events; Ziipa renders the score to WAV locally. ${aiConfig?.provider === "cloudflare" ? "Your description and controls are sent to Cloudflare Workers AI, a third-party inference service subject to its policies." : aiConfig?.provider === "private" ? "Your description and controls are sent to Ziipa's private configured inference service." : "Refresh status to identify the configured inference provider before consenting."} No uploaded audio, library context or SoundCloud tracks are sent. This is instrumental score synthesis, not a vocals or studio-audio model.`}
+                text={`A language model composes the actual melody, harmony, rhythm and instrument events; Ziipa renders the score to WAV locally. ${aiConfig?.provider === "cloudflare" ? "Your description and controls are sent to Cloudflare Workers AI, a third-party inference service subject to its policies." : aiConfig?.provider === "private" ? "Your description and controls are sent to Ziipa's private configured inference service." : "Refresh status to identify the configured inference provider before consenting."} No uploaded audio or library context is sent. This is instrumental score synthesis, not a vocals or studio-audio model.`}
               />
               <Text style={styles.small}>
                 {!session
@@ -735,9 +771,10 @@ function ScopedMusicWorkspace({
                 {generated.plan.engine === "ziipa-llm-composer-v1"
                   ? "AI-composed. "
                   : "Offline procedural. "}
-                {(generated.file.size / 1024 / 1024).toFixed(1)} MB · original
-                synthesized sound, no third-party samples. No claim of copyright
-                exclusivity.
+                {(generated.file.size / 1024 / 1024).toFixed(1)} MB ·
+                synthesized audio. Review the source and musical rights before
+                sharing or minting. AI generation does not establish ownership
+                or copyright exclusivity.
               </Text>
               <Action
                 secondary
@@ -753,7 +790,13 @@ function ScopedMusicWorkspace({
               />
               <Action
                 title={
-                  attached ? "Attached to this edit" : "Attach generated music"
+                  purpose === "creation"
+                    ? attached
+                      ? "Selected as audio creation"
+                      : "Use as audio creation"
+                    : attached
+                      ? "Attached to this edit"
+                      : "Attach generated music"
                 }
                 icon={Check}
                 disabled={disabled || attached}
@@ -782,6 +825,9 @@ function Consent({
     <Pressable
       accessibilityRole="checkbox"
       accessibilityState={{ checked, disabled }}
+      accessibilityLabel={label}
+      aria-checked={checked}
+      aria-disabled={disabled}
       disabled={disabled}
       onPress={onChange}
       style={[styles.row, { gap: 10, paddingVertical: 8 }]}
