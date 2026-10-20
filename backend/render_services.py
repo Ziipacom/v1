@@ -502,7 +502,15 @@ def render_files(snapshot: dict, work: Path):
         command += ['-an']
     command += ['-c:v', 'libx264', '-threads', '2', '-preset', 'veryfast', '-crf', '23', '-maxrate', '1800k', '-bufsize', '3600k',
                 '-t', f'{length:.6f}', '-fs', str(MAX_OUTPUT_BYTES), '-map_metadata', '-1', '-map_chapters', '-1',
-                '-movflags', '+faststart', '-f', 'mp4', 'output.mp4']
+                '-movflags', '+faststart', '-f', 'mp4']
+    if timeline:
+        # Twelve independently sought regions keep decoder contexts alive.
+        # Fixed low-buffer encoding stays within the existing 1GiB address-space
+        # guard; no larger process/container limit or extra scratch is granted.
+        # CRF/rate limits remain unchanged, at some compression-efficiency cost.
+        command += ['-tune', 'zerolatency', '-x264-params',
+                    'rc-lookahead=0:sync-lookahead=0:mbtree=0:ref=1:threads=1']
+    command += ['output.mp4']
     _run(command, work, min(max(config.timeout_seconds, 10), 240))
     output = work / 'output.mp4'
     output_duration, output_streams = _probe(output, 'video/mp4')
