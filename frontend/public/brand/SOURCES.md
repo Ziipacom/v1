@@ -3,6 +3,7 @@
 Extracted from the current rendered https://ziipa.com/ website on 2026-08-31 at the owner's request.
 
 - `ziipa-logo.png`: https://ziipa.com/wp-content/uploads/2022/04/cropped-image_2022_04_13T15_54_13_541Z-1.png (original file, unchanged).
+- `ziipa-logo-light.png`: matching copy of the native light-mode variant, derived on 2026-10-20 by converting only the original wordmark RGB to black at x>=4050. Original symbol pixels, alpha and 9446 x 3104 dimensions are unchanged. The shared Studio uses this treatment in light mode; fixed-dark website surfaces continue using the original white-wordmark asset.
 - `ziipa-background.png`: https://ziipa.com/wp-content/uploads/2022/04/Background-1-1.8gb.png (original file, unchanged).
 - `barlow-400.ttf` through `barlow-800.ttf`: Google Fonts Barlow, the font family used by the live site. Exact download URLs are preserved in `barlow-source.css`.
 

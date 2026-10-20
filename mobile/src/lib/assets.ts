@@ -4,6 +4,7 @@ import { apiOrigin, canonicalApiOrigin, authorizationHeaders } from "./config";
 import { localPlaybackSource } from "./local-media";
 
 export const logo = require("../../assets/brand/ziipa-logo.png");
+export const logoLight = require("../../assets/brand/ziipa-logo-light.png");
 export const background = require("../../assets/brand/ziipa-background.png");
 export const localImages: Record<string, ImageSourcePropType> = {
   "/media/dj.jpg": require("../../assets/media/dj.jpg"),

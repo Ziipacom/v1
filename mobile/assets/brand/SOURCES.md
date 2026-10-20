@@ -1,6 +1,7 @@
 # Ziipa native brand assets
 
-- `ziipa-logo.png`: unmodified original from the website project. Source: https://ziipa.com/wp-content/uploads/2022/04/cropped-image_2022_04_13T15_54_13_541Z-1.png . Used in all in-app branding and splash.
+- `ziipa-logo.png`: unmodified original from the website project. Source: https://ziipa.com/wp-content/uploads/2022/04/cropped-image_2022_04_13T15_54_13_541Z-1.png . Original white-wordmark version, retained for dark-mode branding.
+- `ziipa-logo-light.png`: owner-requested light-mode variant made on 2026-10-20 by converting only the original wordmark RGB to black. The split is at x=4050 inside the original transparent gap; every alpha value and every symbol pixel is preserved. Dimensions remain 9446 x 3104. No symbol inversion, redrawing, background or font substitution. Shared Studio selects it only when its resolved theme is light; dark mode retains the unmodified original.
 - `ziipa-background.png`: original brand gradient from the website project. Source: https://ziipa.com/wp-content/uploads/2022/04/Background-1-1.8gb.png .
 - Barlow font files in `../fonts/`: copied from the website's locally hosted Google Fonts assets; original source URLs are in `frontend/public/brand/barlow-source.css`.
 - `app-icon.png`: separate launcher treatment generated with the built-in image tool on 2026-08-31 using the original logo as the edit target. Opaque RGB, square 1254×1254 source; Expo generates required native sizes. It is not a pixel-identical extraction and needs final brand approval before store release. It does not replace the original in-app logo.

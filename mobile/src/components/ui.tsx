@@ -21,16 +21,17 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import { color, font, styles, useTheme } from "../theme";
-import { logo, coverSource } from "../lib/assets";
+import { logo, logoLight, coverSource } from "../lib/assets";
 import { conceptsEnabled } from "../lib/config";
 import type { Category, Item } from "../lib/types";
 import { useZiipa } from "../provider";
 import { useDesktopLayout } from "./desktop-layout";
 
 export function Logo({ width = 116 }: { width?: number }) {
+  const { resolvedMode } = useTheme();
   return (
     <RNImage
-      source={logo}
+      source={resolvedMode === "light" ? logoLight : logo}
       style={{
         width,
         height: (width * 3104) / 9446,
