@@ -38,6 +38,7 @@ import { Action, Cover, Field, Notice, Pill } from "../components/ui";
 import { FloatButton, worlds } from "../components/floating";
 import { ReelMedia } from "../components/reel-media";
 import { Recorder } from "../components/recorder";
+import { useDesktopLayout } from "../components/desktop-layout";
 import { color, font, styles } from "../theme";
 import { useZiipa } from "../provider";
 import {
@@ -176,12 +177,85 @@ export function ComposerScreen({
   const [error, setError] = useState("");
   const [saved, setSaved] = useState<Item | null>(null);
   const { height } = useWindowDimensions();
+  const { desktop, contentWidth } = useDesktopLayout();
+  // Preserve the desktop warning for this editing session after narrowing the
+  // portal. The compact/native layout itself remains unchanged.
+  const [desktopEditingSession, setDesktopEditingSession] = useState(desktop);
+  useEffect(() => {
+    if (desktop) setDesktopEditingSession(true);
+  }, [desktop]);
+  const formSnapshot = {
+    category,
+    title,
+    description,
+    tags,
+    city,
+    start,
+    end,
+    caption,
+    price,
+    mediaId,
+    file: file
+      ? {
+          uri: file.uri,
+          name: file.name,
+          size: file.size,
+          mimeType: file.mimeType,
+        }
+      : null,
+    soundtrackId,
+    soundtrackFile: soundtrackFile
+      ? {
+          uri: soundtrackFile.uri,
+          name: soundtrackFile.name,
+          size: soundtrackFile.size,
+          mimeType: soundtrackFile.mimeType,
+        }
+      : null,
+    soundtrackName,
+    soundtrackVolume,
+    overlayText,
+    overlayPosition,
+    overlayTheme,
+    targets: [...targets].sort(),
+    sampleId: sample?.id || null,
+    remixId: remix?.id || null,
+  };
+  const fingerprint = JSON.stringify(formSnapshot);
+  const [cleanFingerprint, setCleanFingerprint] = useState(() =>
+    !existing && (originalUpload || remix) ? "" : fingerprint,
+  );
+  const unsaved = fingerprint !== cleanFingerprint;
   usePreventRemove(busy, () =>
     Alert.alert(
       "Saving your creation",
       "Please wait for the upload or save to finish.",
     ),
   );
+  usePreventRemove(
+    (desktop || desktopEditingSession) && unsaved && !busy,
+    ({ data: action }) => {
+      if (
+        Platform.OS === "web" &&
+        window.confirm("Leave this creation? Unsaved changes will be lost.")
+      )
+        navigation.dispatch(action.action);
+    },
+  );
+  useEffect(() => {
+    if (
+      !(desktop || desktopEditingSession) ||
+      Platform.OS !== "web" ||
+      (!unsaved && !busy)
+    )
+      return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [desktop, desktopEditingSession, unsaved, busy]);
   const base: Item = (guest ? sample : existing) || {
     id: "new",
     title: "Your next creation",
@@ -383,6 +457,7 @@ export function ComposerScreen({
         if (file) retainedCaptureUris.current.add(file.uri);
         savePreviewDraft(draft);
         setSaved(draft);
+        setCleanFingerprint(fingerprint);
       } else {
         let selectedId = mediaId;
         if (file && !selectedId) {
@@ -430,6 +505,15 @@ export function ComposerScreen({
           existing ? `/api/creator/items/${existing.id}` : "/api/creator/items",
           payload,
         );
+        // Only the submitted snapshot is clean. If a control changed while
+        // saving, its current fingerprint still differs and remains unsaved.
+        setCleanFingerprint(
+          JSON.stringify({
+            ...formSnapshot,
+            mediaId: selectedId,
+            soundtrackId: selectedSoundtrackId,
+          }),
+        );
         await refresh();
         setSaved(result);
         if (visibility === "published" && targets.length) {
@@ -447,742 +531,814 @@ export function ComposerScreen({
       setBusy(false);
     }
   }
+  const previewColumnWidth = Math.min(420, Math.max(250, contentWidth * 0.4));
+  const desktopPreviewHeight = Math.min(
+    640,
+    Math.max(300, height - 250),
+    (previewColumnWidth * 16) / 9,
+  );
+  const preview = (
+    <View
+      style={{
+        height: desktop ? desktopPreviewHeight : Math.min(340, height * 0.43),
+        width: desktop ? (desktopPreviewHeight * 9) / 16 : undefined,
+        alignSelf: desktop ? "center" : undefined,
+        margin: desktop ? 0 : 14,
+        marginBottom: 0,
+        borderRadius: 22,
+        overflow: "hidden",
+        borderWidth: 1,
+        borderColor: "#574366",
+      }}
+    >
+      {file?.mimeType.startsWith("image/") ? (
+        <>
+          <Image
+            source={{ uri: file.uri }}
+            style={{ flex: 1 }}
+            contentFit="cover"
+          />
+          {!!caption && <Text style={eStyle.caption}>{caption}</Text>}
+        </>
+      ) : (
+        <ReelMedia
+          item={canvas}
+          active
+          paused={paused}
+          muted
+          localUri={file?.uri}
+        />
+      )}
+      {!!overlayText.trim() && (
+        <Text
+          style={[
+            eStyle.overlay,
+            overlayPosition === "top"
+              ? { top: 62 }
+              : overlayPosition === "bottom"
+                ? { bottom: 64 }
+                : { top: "44%" },
+            overlayTheme === "light"
+              ? { color: "#160F20", backgroundColor: "#FFFFFFE8" }
+              : overlayTheme === "lime"
+                ? { color: "#132000", backgroundColor: "#A6E21BE8" }
+                : overlayTheme === "purple"
+                  ? { backgroundColor: "#5420ABE8" }
+                  : { backgroundColor: "#09060EDB" },
+          ]}
+        >
+          {overlayText.trim()}
+        </Text>
+      )}
+      <View
+        style={{
+          position: "absolute",
+          left: 13,
+          right: 13,
+          top: 10,
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <Text style={eStyle.badge}>
+          {guest ? "SAMPLE EDITOR" : "YOUR CREATION"}
+        </Text>
+        <FloatButton
+          label={paused ? "Play editing preview" : "Pause editing preview"}
+          icon={paused ? Play : Pause}
+          size={37}
+          onPress={() => setPaused(!paused)}
+        />
+      </View>
+      <View style={{ position: "absolute", bottom: 12, left: 15, right: 15 }}>
+        <Text
+          numberOfLines={1}
+          style={{
+            color: "white",
+            fontFamily: font.semibold,
+            fontSize: 19,
+            textShadowColor: "#000",
+            textShadowRadius: 4,
+          }}
+        >
+          {title || "Your next creation"}
+        </Text>
+      </View>
+    </View>
+  );
+  const stepTabs = (
+    <View
+      style={{
+        flexDirection: "row",
+        paddingHorizontal: 13,
+        borderBottomWidth: 1,
+        borderColor: color.border,
+        paddingVertical: 12,
+      }}
+    >
+      {steps.map(({ name, Icon }, index) => (
+        <Pressable
+          key={name}
+          accessibilityRole="button"
+          accessibilityLabel={`${index + 1}. ${name}`}
+          accessibilityState={{ selected: tab === name }}
+          onPress={() => setTab(name)}
+          style={{ flex: 1, alignItems: "center", gap: 5 }}
+        >
+          <View
+            style={{
+              padding: 8,
+              borderRadius: 25,
+              backgroundColor: tab === name ? color.purple : "transparent",
+            }}
+          >
+            <Icon size={20} color="white" strokeWidth={1.5} />
+          </View>
+          <Text
+            style={{
+              fontFamily: font.regular,
+              fontSize: 10,
+              color: tab === name ? "white" : color.faint,
+            }}
+          >
+            {name}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+  const inspector = (
+    <View style={{ padding: 20, gap: 16 }}>
+      <View style={styles.between}>
+        <Text style={styles.eyebrow}>
+          STEP {steps.findIndex((step) => step.name === tab) + 1} OF{" "}
+          {steps.length}
+        </Text>
+        <Text style={[styles.small, { color: color.text }]}>{tab}</Text>
+      </View>
+      {tab === "Media" && (
+        <>
+          {guest && (
+            <>
+              <Text style={styles.small}>
+                Start with a sample or choose media from this device. Sample
+                files stay inside this preview.
+              </Text>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 9 }}
+              >
+                {samples.map((i) => (
+                  <Pressable
+                    key={i.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Use sample ${i.title}`}
+                    onPress={() => {
+                      setFile(null);
+                      setMediaId(null);
+                      setSample(i);
+                      if (!title) setTitle(i.title);
+                      setSaved(null);
+                    }}
+                    style={{
+                      borderWidth: 2,
+                      borderColor:
+                        sample?.id === i.id ? color.lime : "transparent",
+                      borderRadius: 15,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <Cover item={i} style={{ height: 78, width: 98 }} />
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </>
+          )}
+          <View style={styles.panel}>
+            <View style={styles.row}>
+              <View style={eStyle.uploadIcon}>
+                <ImagePlus size={24} color={color.lime} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.heading, { fontSize: 19 }]}>
+                  Add your media
+                </Text>
+                <Text style={styles.small}>
+                  Images, video, audio, GIF, HEIC, MOV and more · up to 100 MB
+                </Text>
+              </View>
+            </View>
+            {!!file && (
+              <Text style={[styles.small, { color: color.text }]}>
+                {file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB
+              </Text>
+            )}
+            {!file && !!mediaId && (
+              <Text style={styles.small}>Using your uploaded media</Text>
+            )}
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Action
+                  title="Upload file"
+                  icon={Upload}
+                  secondary
+                  disabled={busy}
+                  onPress={() => void pick()}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Action
+                  title="Record"
+                  icon={Camera}
+                  secondary
+                  disabled={busy}
+                  onPress={() => {
+                    setPaused(true);
+                    setRecorderMode("record");
+                  }}
+                />
+              </View>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Set up a live broadcast"
+              disabled={busy}
+              onPress={() => {
+                setPaused(true);
+                navigation.navigate("Live", { tab: "broadcast" });
+              }}
+              style={[styles.row, { justifyContent: "center", padding: 8 }]}
+            >
+              <Radio size={18} color="#FF707D" />
+              <Text style={[styles.small, { color: color.text }]}>
+                Create a live broadcast
+              </Text>
+            </Pressable>
+          </View>
+          <Field
+            label="Creation title"
+            value={title}
+            onChangeText={setTitle}
+            maxLength={140}
+            editable={!busy}
+            placeholder="Give it a name"
+          />
+        </>
+      )}
+      {tab === "Edit" && (
+        <>
+          <View style={styles.row}>
+            <Scissors size={20} color={color.lime} />
+            <Text style={[styles.heading, { fontSize: 19 }]}>
+              Trim & captions
+            </Text>
+          </View>
+          <Text style={styles.small}>
+            Set the playback range in seconds. The source file stays unchanged.
+          </Text>
+          <View style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <Field
+                label="Start (seconds)"
+                value={start}
+                onChangeText={setStart}
+                keyboardType="decimal-pad"
+                maxLength={10}
+                editable={!busy}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Field
+                label="End (optional)"
+                value={end}
+                onChangeText={setEnd}
+                keyboardType="decimal-pad"
+                maxLength={10}
+                editable={!busy}
+              />
+            </View>
+          </View>
+          <Text
+            style={{
+              color: color.lime,
+              fontFamily: font.medium,
+              fontSize: 12,
+            }}
+          >
+            {start || "0"}s → {end ? `${end}s` : "end of media"}
+          </Text>
+          <View style={styles.separator} />
+          <View style={styles.row}>
+            <Captions size={20} color={color.lime} />
+            <Text style={[styles.heading, { fontSize: 19 }]}>
+              On-screen captions
+            </Text>
+          </View>
+          <Field
+            label="Caption"
+            value={caption}
+            onChangeText={setCaption}
+            maxLength={250}
+            multiline
+            editable={!busy}
+            placeholder="Put your story into words…"
+          />
+          <Text style={styles.small}>
+            This caption is timed to the trim range and stays editable. Auto
+            captions can be connected to a transcription worker later.
+          </Text>
+        </>
+      )}
+      {tab === "Overlay" && (
+        <>
+          <View style={styles.row}>
+            <Sparkles size={20} color={color.lime} />
+            <Text style={[styles.heading, { fontSize: 19 }]}>
+              Add an overlay
+            </Text>
+          </View>
+          <Field
+            label="Overlay text"
+            value={overlayText}
+            onChangeText={setOverlayText}
+            placeholder="New episode · Watch now"
+            maxLength={120}
+            editable={!busy}
+          />
+          <Text style={styles.label}>Position</Text>
+          <View style={[styles.row, { flexWrap: "wrap" }]}>
+            {(["top", "center", "bottom"] as const).map((position) => (
+              <Pill
+                key={position}
+                title={position[0].toUpperCase() + position.slice(1)}
+                active={overlayPosition === position}
+                onPress={() => setOverlayPosition(position)}
+              />
+            ))}
+          </View>
+          <Text style={styles.label}>Style</Text>
+          <View style={[styles.row, { flexWrap: "wrap" }]}>
+            {(["purple", "dark", "light", "lime"] as const).map((theme) => (
+              <Pill
+                key={theme}
+                title={theme[0].toUpperCase() + theme.slice(1)}
+                active={overlayTheme === theme}
+                onPress={() => setOverlayTheme(theme)}
+              />
+            ))}
+          </View>
+          <Notice text="Overlay placement is saved non-destructively with the Ziipa creation. External delivery requires the render worker to burn it into exported media." />
+        </>
+      )}
+      {tab === "Music" && (
+        <>
+          <View style={styles.row}>
+            <Music2 size={20} color={color.lime} />
+            <Text style={[styles.heading, { fontSize: 19 }]}>Soundtrack</Text>
+          </View>
+          <Text style={styles.small}>
+            Add music you own or are licensed to use. Ziipa keeps the source and
+            mix settings together with this creation.
+          </Text>
+          <Action
+            title={soundtrackFile ? "Replace audio" : "Choose audio"}
+            icon={Music2}
+            secondary
+            onPress={() => void pick("soundtrack")}
+          />
+          {!!soundtrackFile && (
+            <Notice
+              text={`${soundtrackFile.name} · ${(soundtrackFile.size / 1024 / 1024).toFixed(1)} MB`}
+            />
+          )}
+          <Field
+            label="Track title"
+            value={soundtrackName}
+            onChangeText={setSoundtrackName}
+            maxLength={180}
+            placeholder="Original audio"
+            editable={!busy}
+          />
+          <Field
+            label="Mix volume · 0–100%"
+            value={soundtrackVolume}
+            onChangeText={setSoundtrackVolume}
+            keyboardType="number-pad"
+            maxLength={3}
+            editable={!busy}
+          />
+          <Notice text="Commercial music catalogues require track-by-track licensing. This uploader accepts creator-owned or licensed audio." />
+        </>
+      )}
+      {tab === "Share" && (
+        <>
+          <View style={styles.row}>
+            <Share2 size={20} color={color.lime} />
+            <Text style={[styles.heading, { fontSize: 19 }]}>
+              Details & destinations
+            </Text>
+          </View>
+          <Field
+            label="Creation title"
+            value={title}
+            onChangeText={setTitle}
+            maxLength={140}
+            editable={!busy}
+          />
+          <View style={[styles.row, { flexWrap: "wrap" }]}>
+            {worlds.map((w) => (
+              <Pill
+                key={w.id}
+                title={w.title}
+                active={inCreativeWorld({ ...base, category }, w.id)}
+                onPress={() => {
+                  if (!busy) setCategory(w.id);
+                }}
+              />
+            ))}
+          </View>
+          <Field
+            label="Description"
+            value={description}
+            onChangeText={setDescription}
+            maxLength={3000}
+            multiline
+            editable={!busy}
+          />
+          <Field
+            label="Tags · separated by commas"
+            value={tags}
+            onChangeText={setTags}
+            maxLength={490}
+            editable={!busy}
+          />
+          <Field
+            label="City (optional)"
+            value={city}
+            onChangeText={setCity}
+            maxLength={80}
+            editable={!busy}
+          />
+          {category === "store" && (
+            <Field
+              label="Listing price (USD) · no checkout"
+              value={price}
+              onChangeText={setPrice}
+              keyboardType="decimal-pad"
+              maxLength={12}
+              editable={!busy}
+            />
+          )}
+          <View style={styles.separator} />
+          <View style={styles.between}>
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={[styles.heading, { fontSize: 20 }]}>Publish to</Text>
+              <Text style={styles.small}>
+                Save the source in Ziipa and choose destinations. External
+                delivery requires each provider’s approved integration.
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Manage connected networks"
+              onPress={() => navigation.navigate("Connections")}
+              style={eStyle.connectButton}
+            >
+              <Link2 size={19} color="white" />
+            </Pressable>
+          </View>
+          <View style={eStyle.networkCard}>
+            <View style={styles.row}>
+              <View
+                style={[eStyle.networkIcon, { backgroundColor: color.purple }]}
+              >
+                <Text style={eStyle.networkInitial}>Z</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Ziipa</Text>
+                <Text style={styles.small}>
+                  Creator profile · discovery · wallet metadata
+                </Text>
+              </View>
+              <Check size={20} color={color.lime} />
+            </View>
+          </View>
+          {socialProviders.map((provider) => {
+            const connection = data.connections.find(
+              (item) => item.provider === provider.id,
+            );
+            const compatible = providerSupports(
+              provider.id,
+              category,
+              file?.mimeType || canvas.content_type,
+            );
+            const connected = connection?.status === "connected";
+            const selected = targets.includes(provider.id);
+            return (
+              <Pressable
+                key={provider.id}
+                accessibilityRole="checkbox"
+                accessibilityState={{
+                  checked: selected,
+                  disabled: !compatible,
+                }}
+                accessibilityLabel={`Share to ${connection?.name || provider.id}`}
+                onPress={() => {
+                  if (!compatible) return;
+                  setTargets((current) =>
+                    current.includes(provider.id)
+                      ? current.filter((item) => item !== provider.id)
+                      : [...current, provider.id],
+                  );
+                }}
+                style={[
+                  eStyle.networkCard,
+                  selected && {
+                    borderColor: color.purple,
+                    backgroundColor: "#281540",
+                  },
+                  !compatible && { opacity: 0.48 },
+                ]}
+              >
+                <View style={styles.row}>
+                  <View
+                    style={[
+                      eStyle.networkIcon,
+                      { backgroundColor: provider.color },
+                    ]}
+                  >
+                    <Text style={eStyle.networkInitial}>{provider.short}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>
+                      {connection?.name || provider.id}
+                    </Text>
+                    <Text style={styles.small}>
+                      {!compatible
+                        ? "Not available for this media type"
+                        : connected
+                          ? connection.handle || provider.formats
+                          : connection?.status === "linked"
+                            ? "Profile linked · posting not authorized"
+                            : "Select destination · setup required"}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      eStyle.check,
+                      selected && {
+                        backgroundColor: color.purple,
+                        borderColor: "#8B59D2",
+                      },
+                    ]}
+                  >
+                    {selected && <Check size={15} color="white" />}
+                  </View>
+                </View>
+              </Pressable>
+            );
+          })}
+          {!!targets.length && (
+            <Notice
+              text={`${targets.length} external ${targets.length === 1 ? "destination" : "destinations"} selected. Ziipa will keep a status record for each one.`}
+            />
+          )}
+        </>
+      )}
+      {remix && (
+        <Notice
+          text={`Remix attribution: ${remix.title} by ${remix.creator}. ${guest ? "Sample media only." : "Bring your own licensed media; the source is not copied."}`}
+        />
+      )}
+      {(category === "nft" || category === "live") && (
+        <Text style={styles.small}>
+          {category === "nft"
+            ? "Save your own media as a private draft, then mint it through Wallet. Sample artwork cannot be minted."
+            : "Save the broadcast setup as a draft, then connect a live provider in Connected networks."}
+        </Text>
+      )}
+      {!!error && <Notice text={error} error />}
+      {busy && (
+        <Text accessibilityLiveRegion="polite" style={styles.small}>
+          {file && !mediaId
+            ? `Uploading… ${progress}%`
+            : "Saving your creation…"}
+        </Text>
+      )}
+      {saved && (
+        <>
+          <Notice
+            text={
+              guest
+                ? `${saved.label === "Local draft" ? "Local" : "Sample"} draft saved for this session. Restarting clears it; nothing is uploaded or published.`
+                : saved.visibility === "draft"
+                  ? "Private draft saved to your account."
+                  : "Creation published to this Ziipa server."
+            }
+          />
+          <Action
+            title="View creation"
+            icon={Check}
+            secondary
+            onPress={() =>
+              navigation.navigate("Watch", {
+                itemId: saved.id,
+                category: saved.category,
+              })
+            }
+          />
+          <Action
+            title="Share media & manage destinations"
+            icon={Share2}
+            secondary
+            onPress={() =>
+              navigation.navigate("Connections", { tab: "outbox" })
+            }
+          />
+          {!guest && saved.media_id && (
+            <Action
+              title="Render & export saved edit"
+              icon={Share2}
+              onPress={() =>
+                navigation.navigate("Exports", { itemId: saved.id })
+              }
+            />
+          )}
+          {!guest &&
+            saved.media_id &&
+            saved.content_type?.startsWith("video/") && (
+              <Action
+                title="Prepare a reviewed release campaign"
+                icon={Share2}
+                secondary
+                onPress={() =>
+                  navigation.navigate("Campaigns", { itemId: saved.id })
+                }
+              />
+            )}
+          {!guest && saved.visibility === "published" && saved.media_id && (
+            <Action
+              title="Publish directly to authorized networks"
+              icon={Share2}
+              onPress={() =>
+                navigation.navigate("Publishing", { itemId: saved.id })
+              }
+            />
+          )}
+          {!!saved.distribution?.length &&
+            saved.distribution.map((job) => (
+              <Notice
+                key={job.id}
+                text={`${socialProvider(job.provider).short} · ${job.detail || job.status}`}
+                error={job.status === "failed"}
+              />
+            ))}
+          {!guest && saved.media_id && (
+            <Action
+              title="Mint this media"
+              onPress={() =>
+                navigation.navigate("Utility", {
+                  kind: "wallet",
+                  item: saved,
+                })
+              }
+            />
+          )}
+        </>
+      )}
+      {tab === "Share" ? (
+        <>
+          <Action
+            title={
+              guest
+                ? targets.length
+                  ? "Save & preview distribution"
+                  : file || base.label === "Local draft"
+                    ? "Save local draft"
+                    : "Save sample draft"
+                : "Save private draft"
+            }
+            icon={Save}
+            onPress={() => void save("draft")}
+            busy={busy}
+          />
+          {!guest && (
+            <Action
+              title={
+                targets.length
+                  ? `Publish to Ziipa + ${targets.length}`
+                  : "Publish to Ziipa"
+              }
+              secondary
+              icon={Upload}
+              onPress={() => void save("published")}
+              busy={busy}
+              disabled={
+                category === "live" ||
+                category === "nft" ||
+                existing?.visibility === "hidden"
+              }
+            />
+          )}
+        </>
+      ) : (
+        <Action
+          title={`Continue to ${steps[steps.findIndex((step) => step.name === tab) + 1]?.name}`}
+          icon={ChevronRight}
+          onPress={() => {
+            const index = steps.findIndex((step) => step.name === tab);
+            setTab(steps[Math.min(steps.length - 1, index + 1)].name);
+          }}
+        />
+      )}
+      <Text style={[styles.small, { textAlign: "center", fontSize: 11 }]}>
+        {guest
+          ? "Sample edits stay on this device until restart."
+          : "Only share media you own or have permission to use."}
+      </Text>
+    </View>
+  );
   return (
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 35 }}
-      >
+      {desktop ? (
         <View
           style={{
-            height: Math.min(340, height * 0.43),
-            margin: 14,
-            marginBottom: 0,
-            borderRadius: 22,
-            overflow: "hidden",
-            borderWidth: 1,
-            borderColor: "#574366",
+            flex: 1,
+            minHeight: 0,
+            flexDirection: "row",
+            gap: 24,
+            paddingHorizontal: 24,
+            width: "100%",
+            maxWidth: 1400,
+            alignSelf: "center",
           }}
         >
-          {file?.mimeType.startsWith("image/") ? (
-            <>
-              <Image
-                source={{ uri: file.uri }}
-                style={{ flex: 1 }}
-                contentFit="cover"
-              />
-              {!!caption && <Text style={eStyle.caption}>{caption}</Text>}
-            </>
-          ) : (
-            <ReelMedia
-              item={canvas}
-              active
-              paused={paused}
-              muted
-              localUri={file?.uri}
-            />
-          )}
-          {!!overlayText.trim() && (
+          <ScrollView
+            style={{ width: previewColumnWidth, flexGrow: 0, minHeight: 0 }}
+            contentContainerStyle={{ paddingVertical: 24, gap: 16 }}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.eyebrow}>YOUR CREATIVE CANVAS</Text>
+            <Text style={styles.heading}>Preview your creation</Text>
+            {preview}
             <Text
               style={[
-                eStyle.overlay,
-                overlayPosition === "top"
-                  ? { top: 62 }
-                  : overlayPosition === "bottom"
-                    ? { bottom: 64 }
-                    : { top: "44%" },
-                overlayTheme === "light"
-                  ? { color: "#160F20", backgroundColor: "#FFFFFFE8" }
-                  : overlayTheme === "lime"
-                    ? { color: "#132000", backgroundColor: "#A6E21BE8" }
-                    : overlayTheme === "purple"
-                      ? { backgroundColor: "#5420ABE8" }
-                      : { backgroundColor: "#09060EDB" },
+                styles.label,
+                { color: unsaved ? color.lime : color.muted },
               ]}
             >
-              {overlayText.trim()}
+              {busy
+                ? "Saving your creation…"
+                : unsaved
+                  ? "Unsaved changes"
+                  : "No unsaved changes"}
             </Text>
-          )}
+            <Text style={styles.small}>
+              Source preview · your edits stay non-destructive. Render the saved
+              edit to review its exported captions, overlays and soundtrack.
+            </Text>
+            <Notice text="Save a private draft before opening its export or reviewed release campaign. Nothing is saved automatically." />
+          </ScrollView>
           <View
             style={{
-              position: "absolute",
-              left: 13,
-              right: 13,
-              top: 10,
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
+              flex: 1,
+              minWidth: 0,
+              minHeight: 0,
+              marginVertical: 24,
+              borderWidth: 1,
+              borderColor: color.border,
+              borderRadius: 22,
+              overflow: "hidden",
+              backgroundColor: color.bg,
             }}
           >
-            <Text style={eStyle.badge}>
-              {guest ? "SAMPLE EDITOR" : "YOUR CREATION"}
-            </Text>
-            <FloatButton
-              label={paused ? "Play editing preview" : "Pause editing preview"}
-              icon={paused ? Play : Pause}
-              size={37}
-              onPress={() => setPaused(!paused)}
-            />
-          </View>
-          <View
-            style={{ position: "absolute", bottom: 12, left: 15, right: 15 }}
-          >
-            <Text
-              numberOfLines={1}
-              style={{
-                color: "white",
-                fontFamily: font.semibold,
-                fontSize: 19,
-                textShadowColor: "#000",
-                textShadowRadius: 4,
-              }}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 35 }}
             >
-              {title || "Your next creation"}
-            </Text>
+              {stepTabs}
+              {inspector}
+            </ScrollView>
           </View>
         </View>
-        <View
-          style={{
-            flexDirection: "row",
-            paddingHorizontal: 13,
-            borderBottomWidth: 1,
-            borderColor: color.border,
-            paddingVertical: 12,
-          }}
+      ) : (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 35 }}
         >
-          {steps.map(({ name, Icon }, index) => (
-            <Pressable
-              key={name}
-              accessibilityRole="button"
-              accessibilityLabel={`${index + 1}. ${name}`}
-              accessibilityState={{ selected: tab === name }}
-              onPress={() => setTab(name)}
-              style={{ flex: 1, alignItems: "center", gap: 5 }}
-            >
-              <View
-                style={{
-                  padding: 8,
-                  borderRadius: 25,
-                  backgroundColor: tab === name ? color.purple : "transparent",
-                }}
-              >
-                <Icon size={20} color="white" strokeWidth={1.5} />
-              </View>
-              <Text
-                style={{
-                  fontFamily: font.regular,
-                  fontSize: 10,
-                  color: tab === name ? "white" : color.faint,
-                }}
-              >
-                {name}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <View style={{ padding: 20, gap: 16 }}>
-          <View style={styles.between}>
-            <Text style={styles.eyebrow}>
-              STEP {steps.findIndex((step) => step.name === tab) + 1} OF{" "}
-              {steps.length}
-            </Text>
-            <Text style={[styles.small, { color: color.text }]}>{tab}</Text>
-          </View>
-          {tab === "Media" && (
-            <>
-              {guest && (
-                <>
-                  <Text style={styles.small}>
-                    Start with a sample or choose media from this device. Sample
-                    files stay inside this preview.
-                  </Text>
-                  <ScrollView
-                    showsVerticalScrollIndicator={false}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: 9 }}
-                  >
-                    {samples.map((i) => (
-                      <Pressable
-                        key={i.id}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Use sample ${i.title}`}
-                        onPress={() => {
-                          setFile(null);
-                          setMediaId(null);
-                          setSample(i);
-                          if (!title) setTitle(i.title);
-                          setSaved(null);
-                        }}
-                        style={{
-                          borderWidth: 2,
-                          borderColor:
-                            sample?.id === i.id ? color.lime : "transparent",
-                          borderRadius: 15,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <Cover item={i} style={{ height: 78, width: 98 }} />
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                </>
-              )}
-              <View style={styles.panel}>
-                <View style={styles.row}>
-                  <View style={eStyle.uploadIcon}>
-                    <ImagePlus size={24} color={color.lime} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.heading, { fontSize: 19 }]}>
-                      Add your media
-                    </Text>
-                    <Text style={styles.small}>
-                      Images, video, audio, GIF, HEIC, MOV and more · up to 100
-                      MB
-                    </Text>
-                  </View>
-                </View>
-                {!!file && (
-                  <Text style={[styles.small, { color: color.text }]}>
-                    {file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB
-                  </Text>
-                )}
-                {!file && !!mediaId && (
-                  <Text style={styles.small}>Using your uploaded media</Text>
-                )}
-                <View style={styles.row}>
-                  <View style={{ flex: 1 }}>
-                    <Action
-                      title="Upload file"
-                      icon={Upload}
-                      secondary
-                      disabled={busy}
-                      onPress={() => void pick()}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Action
-                      title="Record"
-                      icon={Camera}
-                      secondary
-                      disabled={busy}
-                      onPress={() => {
-                        setPaused(true);
-                        setRecorderMode("record");
-                      }}
-                    />
-                  </View>
-                </View>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Set up a live broadcast"
-                  disabled={busy}
-                  onPress={() => {
-                    setPaused(true);
-                    navigation.navigate("Live", { tab: "broadcast" });
-                  }}
-                  style={[styles.row, { justifyContent: "center", padding: 8 }]}
-                >
-                  <Radio size={18} color="#FF707D" />
-                  <Text style={[styles.small, { color: color.text }]}>
-                    Create a live broadcast
-                  </Text>
-                </Pressable>
-              </View>
-              <Field
-                label="Creation title"
-                value={title}
-                onChangeText={setTitle}
-                maxLength={140}
-                editable={!busy}
-                placeholder="Give it a name"
-              />
-            </>
-          )}
-          {tab === "Edit" && (
-            <>
-              <View style={styles.row}>
-                <Scissors size={20} color={color.lime} />
-                <Text style={[styles.heading, { fontSize: 19 }]}>
-                  Trim & captions
-                </Text>
-              </View>
-              <Text style={styles.small}>
-                Set the playback range in seconds. The source file stays
-                unchanged.
-              </Text>
-              <View style={styles.row}>
-                <View style={{ flex: 1 }}>
-                  <Field
-                    label="Start (seconds)"
-                    value={start}
-                    onChangeText={setStart}
-                    keyboardType="decimal-pad"
-                    maxLength={10}
-                    editable={!busy}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Field
-                    label="End (optional)"
-                    value={end}
-                    onChangeText={setEnd}
-                    keyboardType="decimal-pad"
-                    maxLength={10}
-                    editable={!busy}
-                  />
-                </View>
-              </View>
-              <Text
-                style={{
-                  color: color.lime,
-                  fontFamily: font.medium,
-                  fontSize: 12,
-                }}
-              >
-                {start || "0"}s → {end ? `${end}s` : "end of media"}
-              </Text>
-              <View style={styles.separator} />
-              <View style={styles.row}>
-                <Captions size={20} color={color.lime} />
-                <Text style={[styles.heading, { fontSize: 19 }]}>
-                  On-screen captions
-                </Text>
-              </View>
-              <Field
-                label="Caption"
-                value={caption}
-                onChangeText={setCaption}
-                maxLength={250}
-                multiline
-                editable={!busy}
-                placeholder="Put your story into words…"
-              />
-              <Text style={styles.small}>
-                This caption is timed to the trim range and stays editable. Auto
-                captions can be connected to a transcription worker later.
-              </Text>
-            </>
-          )}
-          {tab === "Overlay" && (
-            <>
-              <View style={styles.row}>
-                <Sparkles size={20} color={color.lime} />
-                <Text style={[styles.heading, { fontSize: 19 }]}>
-                  Add an overlay
-                </Text>
-              </View>
-              <Field
-                label="Overlay text"
-                value={overlayText}
-                onChangeText={setOverlayText}
-                placeholder="New episode · Watch now"
-                maxLength={120}
-                editable={!busy}
-              />
-              <Text style={styles.label}>Position</Text>
-              <View style={[styles.row, { flexWrap: "wrap" }]}>
-                {(["top", "center", "bottom"] as const).map((position) => (
-                  <Pill
-                    key={position}
-                    title={position[0].toUpperCase() + position.slice(1)}
-                    active={overlayPosition === position}
-                    onPress={() => setOverlayPosition(position)}
-                  />
-                ))}
-              </View>
-              <Text style={styles.label}>Style</Text>
-              <View style={[styles.row, { flexWrap: "wrap" }]}>
-                {(["purple", "dark", "light", "lime"] as const).map((theme) => (
-                  <Pill
-                    key={theme}
-                    title={theme[0].toUpperCase() + theme.slice(1)}
-                    active={overlayTheme === theme}
-                    onPress={() => setOverlayTheme(theme)}
-                  />
-                ))}
-              </View>
-              <Notice text="Overlay placement is saved non-destructively with the Ziipa creation. External delivery requires the render worker to burn it into exported media." />
-            </>
-          )}
-          {tab === "Music" && (
-            <>
-              <View style={styles.row}>
-                <Music2 size={20} color={color.lime} />
-                <Text style={[styles.heading, { fontSize: 19 }]}>
-                  Soundtrack
-                </Text>
-              </View>
-              <Text style={styles.small}>
-                Add music you own or are licensed to use. Ziipa keeps the source
-                and mix settings together with this creation.
-              </Text>
-              <Action
-                title={soundtrackFile ? "Replace audio" : "Choose audio"}
-                icon={Music2}
-                secondary
-                onPress={() => void pick("soundtrack")}
-              />
-              {!!soundtrackFile && (
-                <Notice
-                  text={`${soundtrackFile.name} · ${(soundtrackFile.size / 1024 / 1024).toFixed(1)} MB`}
-                />
-              )}
-              <Field
-                label="Track title"
-                value={soundtrackName}
-                onChangeText={setSoundtrackName}
-                maxLength={180}
-                placeholder="Original audio"
-                editable={!busy}
-              />
-              <Field
-                label="Mix volume · 0–100%"
-                value={soundtrackVolume}
-                onChangeText={setSoundtrackVolume}
-                keyboardType="number-pad"
-                maxLength={3}
-                editable={!busy}
-              />
-              <Notice text="Commercial music catalogues require track-by-track licensing. This uploader accepts creator-owned or licensed audio." />
-            </>
-          )}
-          {tab === "Share" && (
-            <>
-              <View style={styles.row}>
-                <Share2 size={20} color={color.lime} />
-                <Text style={[styles.heading, { fontSize: 19 }]}>
-                  Details & destinations
-                </Text>
-              </View>
-              <Field
-                label="Creation title"
-                value={title}
-                onChangeText={setTitle}
-                maxLength={140}
-                editable={!busy}
-              />
-              <View style={[styles.row, { flexWrap: "wrap" }]}>
-                {worlds.map((w) => (
-                  <Pill
-                    key={w.id}
-                    title={w.title}
-                    active={inCreativeWorld({ ...base, category }, w.id)}
-                    onPress={() => {
-                      if (!busy) setCategory(w.id);
-                    }}
-                  />
-                ))}
-              </View>
-              <Field
-                label="Description"
-                value={description}
-                onChangeText={setDescription}
-                maxLength={3000}
-                multiline
-                editable={!busy}
-              />
-              <Field
-                label="Tags · separated by commas"
-                value={tags}
-                onChangeText={setTags}
-                maxLength={490}
-                editable={!busy}
-              />
-              <Field
-                label="City (optional)"
-                value={city}
-                onChangeText={setCity}
-                maxLength={80}
-                editable={!busy}
-              />
-              {category === "store" && (
-                <Field
-                  label="Listing price (USD) · no checkout"
-                  value={price}
-                  onChangeText={setPrice}
-                  keyboardType="decimal-pad"
-                  maxLength={12}
-                  editable={!busy}
-                />
-              )}
-              <View style={styles.separator} />
-              <View style={styles.between}>
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={[styles.heading, { fontSize: 20 }]}>
-                    Publish to
-                  </Text>
-                  <Text style={styles.small}>
-                    Save the source in Ziipa and choose destinations. External
-                    delivery requires each provider’s approved integration.
-                  </Text>
-                </View>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Manage connected networks"
-                  onPress={() => navigation.navigate("Connections")}
-                  style={eStyle.connectButton}
-                >
-                  <Link2 size={19} color="white" />
-                </Pressable>
-              </View>
-              <View style={eStyle.networkCard}>
-                <View style={styles.row}>
-                  <View
-                    style={[
-                      eStyle.networkIcon,
-                      { backgroundColor: color.purple },
-                    ]}
-                  >
-                    <Text style={eStyle.networkInitial}>Z</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>Ziipa</Text>
-                    <Text style={styles.small}>
-                      Creator profile · discovery · wallet metadata
-                    </Text>
-                  </View>
-                  <Check size={20} color={color.lime} />
-                </View>
-              </View>
-              {socialProviders.map((provider) => {
-                const connection = data.connections.find(
-                  (item) => item.provider === provider.id,
-                );
-                const compatible = providerSupports(
-                  provider.id,
-                  category,
-                  file?.mimeType || canvas.content_type,
-                );
-                const connected = connection?.status === "connected";
-                const selected = targets.includes(provider.id);
-                return (
-                  <Pressable
-                    key={provider.id}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{
-                      checked: selected,
-                      disabled: !compatible,
-                    }}
-                    accessibilityLabel={`Share to ${connection?.name || provider.id}`}
-                    onPress={() => {
-                      if (!compatible) return;
-                      setTargets((current) =>
-                        current.includes(provider.id)
-                          ? current.filter((item) => item !== provider.id)
-                          : [...current, provider.id],
-                      );
-                    }}
-                    style={[
-                      eStyle.networkCard,
-                      selected && {
-                        borderColor: color.purple,
-                        backgroundColor: "#281540",
-                      },
-                      !compatible && { opacity: 0.48 },
-                    ]}
-                  >
-                    <View style={styles.row}>
-                      <View
-                        style={[
-                          eStyle.networkIcon,
-                          { backgroundColor: provider.color },
-                        ]}
-                      >
-                        <Text style={eStyle.networkInitial}>
-                          {provider.short}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.label}>
-                          {connection?.name || provider.id}
-                        </Text>
-                        <Text style={styles.small}>
-                          {!compatible
-                            ? "Not available for this media type"
-                            : connected
-                              ? connection.handle || provider.formats
-                              : connection?.status === "linked"
-                                ? "Profile linked · posting not authorized"
-                                : "Select destination · setup required"}
-                        </Text>
-                      </View>
-                      <View
-                        style={[
-                          eStyle.check,
-                          selected && {
-                            backgroundColor: color.purple,
-                            borderColor: "#8B59D2",
-                          },
-                        ]}
-                      >
-                        {selected && <Check size={15} color="white" />}
-                      </View>
-                    </View>
-                  </Pressable>
-                );
-              })}
-              {!!targets.length && (
-                <Notice
-                  text={`${targets.length} external ${targets.length === 1 ? "destination" : "destinations"} selected. Ziipa will keep a status record for each one.`}
-                />
-              )}
-            </>
-          )}
-          {remix && (
-            <Notice
-              text={`Remix attribution: ${remix.title} by ${remix.creator}. ${guest ? "Sample media only." : "Bring your own licensed media; the source is not copied."}`}
-            />
-          )}
-          {(category === "nft" || category === "live") && (
-            <Text style={styles.small}>
-              {category === "nft"
-                ? "Save your own media as a private draft, then mint it through Wallet. Sample artwork cannot be minted."
-                : "Save the broadcast setup as a draft, then connect a live provider in Connected networks."}
-            </Text>
-          )}
-          {!!error && <Notice text={error} error />}
-          {busy && (
-            <Text accessibilityLiveRegion="polite" style={styles.small}>
-              {file && !mediaId
-                ? `Uploading… ${progress}%`
-                : "Saving your creation…"}
-            </Text>
-          )}
-          {saved && (
-            <>
-              <Notice
-                text={
-                  guest
-                    ? `${saved.label === "Local draft" ? "Local" : "Sample"} draft saved for this session. Restarting clears it; nothing is uploaded or published.`
-                    : saved.visibility === "draft"
-                      ? "Private draft saved to your account."
-                      : "Creation published to this Ziipa server."
-                }
-              />
-              <Action
-                title="View creation"
-                icon={Check}
-                secondary
-                onPress={() =>
-                  navigation.navigate("Watch", {
-                    itemId: saved.id,
-                    category: saved.category,
-                  })
-                }
-              />
-              <Action
-                title="Share media & manage destinations"
-                icon={Share2}
-                secondary
-                onPress={() =>
-                  navigation.navigate("Connections", { tab: "outbox" })
-                }
-              />
-              {!guest && saved.media_id && (
-                <Action
-                  title="Render & export saved edit"
-                  icon={Share2}
-                  onPress={() =>
-                    navigation.navigate("Exports", { itemId: saved.id })
-                  }
-                />
-              )}
-              {!guest && saved.media_id && saved.content_type?.startsWith("video/") && (
-                <Action
-                  title="Prepare a reviewed release campaign"
-                  icon={Share2}
-                  secondary
-                  onPress={() => navigation.navigate("Campaigns", { itemId: saved.id })}
-                />
-              )}
-              {!guest && saved.visibility === "published" && saved.media_id && (
-                <Action
-                  title="Publish directly to authorized networks"
-                  icon={Share2}
-                  onPress={() =>
-                    navigation.navigate("Publishing", { itemId: saved.id })
-                  }
-                />
-              )}
-              {!!saved.distribution?.length &&
-                saved.distribution.map((job) => (
-                  <Notice
-                    key={job.id}
-                    text={`${socialProvider(job.provider).short} · ${job.detail || job.status}`}
-                    error={job.status === "failed"}
-                  />
-                ))}
-              {!guest && saved.media_id && (
-                <Action
-                  title="Mint this media"
-                  onPress={() =>
-                    navigation.navigate("Utility", {
-                      kind: "wallet",
-                      item: saved,
-                    })
-                  }
-                />
-              )}
-            </>
-          )}
-          {tab === "Share" ? (
-            <>
-              <Action
-                title={
-                  guest
-                    ? targets.length
-                      ? "Save & preview distribution"
-                      : file || base.label === "Local draft"
-                        ? "Save local draft"
-                        : "Save sample draft"
-                    : "Save private draft"
-                }
-                icon={Save}
-                onPress={() => void save("draft")}
-                busy={busy}
-              />
-              {!guest && (
-                <Action
-                  title={
-                    targets.length
-                      ? `Publish to Ziipa + ${targets.length}`
-                      : "Publish to Ziipa"
-                  }
-                  secondary
-                  icon={Upload}
-                  onPress={() => void save("published")}
-                  busy={busy}
-                  disabled={
-                    category === "live" ||
-                    category === "nft" ||
-                    existing?.visibility === "hidden"
-                  }
-                />
-              )}
-            </>
-          ) : (
-            <Action
-              title={`Continue to ${steps[steps.findIndex((step) => step.name === tab) + 1]?.name}`}
-              icon={ChevronRight}
-              onPress={() => {
-                const index = steps.findIndex((step) => step.name === tab);
-                setTab(steps[Math.min(steps.length - 1, index + 1)].name);
-              }}
-            />
-          )}
-          <Text style={[styles.small, { textAlign: "center", fontSize: 11 }]}>
-            {guest
-              ? "Sample edits stay on this device until restart."
-              : "Only share media you own or have permission to use."}
-          </Text>
-        </View>
-      </ScrollView>
+          {preview}
+          {stepTabs}
+          {inspector}
+        </ScrollView>
+      )}
       {recorderMode && focused && (
         <Recorder
           mode={recorderMode}

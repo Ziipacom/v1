@@ -21,6 +21,7 @@ import {
 import { color, font, styles } from "../theme";
 import { conceptsEnabled } from "../lib/config";
 import type { Category } from "../lib/types";
+import { useDesktopLayout } from "./desktop-layout";
 
 export const worlds: {
   id: Category;
@@ -155,6 +156,8 @@ export function CategoryDock({
   onInbox: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { desktop } = useDesktopLayout();
+  if (desktop) return null;
   return (
     <View
       style={[floating.dock, { bottom: Math.max(insets.bottom, 14) }]}

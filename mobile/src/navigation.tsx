@@ -1,6 +1,14 @@
+import { useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Text } from "react-native";
-import { NavigationContainer, DarkTheme } from "@react-navigation/native";
+import {
+  NavigationContainer,
+  DarkTheme,
+  CommonActions,
+  useNavigationContainerRef,
+  type LinkingOptions,
+} from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useZiipa } from "./provider";
 import { color, font, styles } from "./theme";
@@ -28,6 +36,16 @@ import { AdministrationScreen } from "./screens/admin";
 import { NotificationBridge } from "./components/notification-bridge";
 import { PostScreen } from "./screens/post";
 import {
+  DesktopLayoutProvider,
+  useDesktopLayout,
+} from "./components/desktop-layout";
+import { DesktopShell, type DesktopRoute } from "./components/desktop-shell";
+import { CreatorStudioScreen } from "./screens/desktop-creator";
+import {
+  destinationFromSearch,
+  destinationSearch,
+} from "./lib/desktop-navigation";
+import {
   LegalScreen,
   ModerationScreen,
   SettingsScreen,
@@ -35,7 +53,91 @@ import {
 
 const Stack = createNativeStackNavigator<RootStack>();
 export function Navigation() {
-  const { loading, session, guest, error, restore, forgetSession } = useZiipa();
+  return (
+    <DesktopLayoutProvider>
+      <NavigationContent />
+    </DesktopLayoutProvider>
+  );
+}
+
+function StudioRoute(props: NativeStackScreenProps<RootStack, "Studio">) {
+  const { desktop } = useDesktopLayout();
+  if (!desktop) return <StudioScreen {...props} />;
+  return (
+    <CreatorStudioScreen
+      navigation={
+        props.navigation as NativeStackScreenProps<
+          RootStack,
+          "CreatorStudio"
+        >["navigation"]
+      }
+      route={{
+        ...props.route,
+        name: "CreatorStudio",
+        params: {
+          tab: props.route.params?.edit ? "library" : "overview",
+          category: props.route.params?.category,
+        },
+      }}
+    />
+  );
+}
+
+function NavigationContent() {
+  const { loading, session, guest, error, restore, forgetSession, data } =
+    useZiipa();
+  const { desktop } = useDesktopLayout();
+  const navigation = useNavigationContainerRef<RootStack>();
+  const [activeRoute, setActiveRoute] = useState<DesktopRoute>({
+    name: "Main",
+  });
+  const currentData = useRef(data);
+  currentData.current = data;
+  // React Navigation owns browser history, including rollback of prevented Back
+  // actions. Only explicitly allowed IDs and filters are ever put in a URL.
+  const linking = useMemo<LinkingOptions<RootStack> | undefined>(() => {
+    if (!desktop || typeof window === "undefined") return undefined;
+    const base = portalMode ? "/studio/" : window.location.pathname;
+    return {
+      prefixes: [],
+      getStateFromPath(path) {
+        const destination = destinationFromSearch(
+          path.includes("?") ? path.slice(path.indexOf("?")) : "",
+        ) || { screen: "Main", params: undefined };
+        let name = destination.screen;
+        let params = destination.params ? { ...destination.params } : undefined;
+        if (name === "Composer" && typeof params?.draftId === "string") {
+          const item = currentData.current.drafts.find(
+            (row) => row.id === params?.draftId,
+          );
+          if (item && item.visibility !== "hidden") params = { item };
+          else {
+            name = "CreatorStudio";
+            params = { tab: "library" };
+          }
+        }
+        return { routes: [{ name, params }] };
+      },
+      getPathFromState(state) {
+        const route = state.routes[state.index ?? state.routes.length - 1];
+        return (
+          base +
+          (destinationSearch(
+            route.name,
+            route.params as Record<string, unknown> | undefined,
+          ) || "?view=studio")
+        );
+      },
+    };
+  }, [desktop]);
+  const observeRoute = () => {
+    const route = navigation.getCurrentRoute();
+    if (route)
+      setActiveRoute({
+        name: route.name,
+        params: route.params as Record<string, unknown> | undefined,
+      });
+  };
   if (loading)
     return (
       <SafeAreaView
@@ -92,6 +194,10 @@ export function Navigation() {
     );
   return (
     <NavigationContainer
+      ref={navigation}
+      linking={linking}
+      onReady={observeRoute}
+      onStateChange={observeRoute}
       key={
         session ? `member-${session.user.id}` : guest ? "guest" : "signed-out"
       }
@@ -109,155 +215,180 @@ export function Navigation() {
       }}
     >
       {session && <NotificationBridge />}
-      <Stack.Navigator
-        initialRouteName={
-          portalMode
-            ? typeof window !== "undefined" &&
-              new URLSearchParams(window.location.search).get("view") ===
-                "admin"
-              ? "Administration"
-              : "Studio"
-            : undefined
-        }
-        screenOptions={{
-          headerStyle: { backgroundColor: color.bg },
-          headerTintColor: color.text,
-          headerTitleStyle: { fontFamily: font.medium, fontSize: 18 },
-          contentStyle: { backgroundColor: color.bg },
-          headerShadowVisible: false,
-          animation: "slide_from_right",
+      <DesktopShell
+        route={activeRoute}
+        enabled={!!(session || guest)}
+        navigate={(name, params) => {
+          if (navigation.isReady())
+            navigation.dispatch(CommonActions.navigate({ name, params }));
         }}
       >
-        {session || guest ? (
-          <>
+        <Stack.Navigator
+          initialRouteName={
+            desktop
+              ? "Main"
+              : portalMode
+                ? typeof window !== "undefined" &&
+                  new URLSearchParams(window.location.search).get("view") ===
+                    "admin"
+                  ? "Administration"
+                  : "Studio"
+                : undefined
+          }
+          screenOptions={{
+            headerStyle: { backgroundColor: color.bg },
+            headerTintColor: color.text,
+            headerTitleStyle: { fontFamily: font.medium, fontSize: 18 },
+            contentStyle: { backgroundColor: color.bg },
+            headerShadowVisible: false,
+            animation: desktop ? "none" : "slide_from_right",
+          }}
+        >
+          {session || guest ? (
+            <>
+              <Stack.Screen
+                name="Main"
+                component={DiscoverScreen}
+                options={{
+                  headerShown: false,
+                  ...(desktop ? { title: "Explore · Ziipa" } : {}),
+                }}
+              />
+              <Stack.Screen
+                name="Watch"
+                component={WatchScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="Studio"
+                component={StudioRoute}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="CreatorStudio"
+                component={CreatorStudioScreen}
+                options={{
+                  headerShown: false,
+                  title: "Creator Studio · Ziipa",
+                }}
+              />
+              <Stack.Screen
+                name="Profile"
+                component={ProfileScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="MediaOS"
+                component={MediaOSScreen}
+                options={{ title: "Your Media OS" }}
+              />
+              <Stack.Screen
+                name="Feeds"
+                component={FeedsScreen}
+                options={{ title: "Your feed rules" }}
+              />
+              <Stack.Screen
+                name="Utility"
+                component={UtilityScreen}
+                options={({ route }) => ({
+                  title: "Ziipa Studio",
+                  headerShown: route.params.kind !== "wallet",
+                })}
+              />
+              <Stack.Screen
+                name="Composer"
+                component={ComposerScreen}
+                options={{
+                  title: "Creator Studio",
+                  presentation: desktop ? "card" : "modal",
+                }}
+              />
+              <Stack.Screen
+                name="Connections"
+                component={ConnectionsScreen}
+                options={{ title: "Your networks" }}
+              />
+              <Stack.Screen
+                name="Exports"
+                component={ExportsScreen}
+                options={{ title: "Rendered exports" }}
+              />
+              <Stack.Screen
+                name="Campaigns"
+                component={CampaignsScreen}
+                options={{ title: "Creator campaigns" }}
+              />
+              <Stack.Screen
+                name="Calendar"
+                component={CalendarScreen}
+                options={{ title: "Creator calendar" }}
+              />
+              <Stack.Screen
+                name="Publishing"
+                component={PublishingScreen}
+                options={{ title: "Publish to your networks" }}
+              />
+              <Stack.Screen
+                name="Live"
+                component={LiveScreen}
+                options={{ title: "Live broadcasts" }}
+              />
+              <Stack.Screen
+                name="Recordings"
+                component={RecordingsScreen}
+                options={{ title: "Private recordings & clips" }}
+              />
+              <Stack.Screen
+                name="Notifications"
+                component={NotificationsScreen}
+                options={{ title: "Private updates" }}
+              />
+            </>
+          ) : (
             <Stack.Screen
-              name="Main"
-              component={DiscoverScreen}
+              name="Welcome"
+              component={WelcomeScreen}
               options={{ headerShown: false }}
             />
+          )}
+          {!session && (
             <Stack.Screen
-              name="Watch"
-              component={WatchScreen}
-              options={{ headerShown: false }}
+              name="Login"
+              component={LoginScreen}
+              options={{ title: "Your Ziipa account" }}
             />
-            <Stack.Screen
-              name="Studio"
-              component={StudioScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="Profile"
-              component={ProfileScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="MediaOS"
-              component={MediaOSScreen}
-              options={{ title: "Your Media OS" }}
-            />
-            <Stack.Screen
-              name="Feeds"
-              component={FeedsScreen}
-              options={{ title: "Your feed rules" }}
-            />
-            <Stack.Screen
-              name="Utility"
-              component={UtilityScreen}
-              options={({ route }) => ({
-                title: "Ziipa Studio",
-                headerShown: route.params.kind !== "wallet",
-              })}
-            />
-            <Stack.Screen
-              name="Composer"
-              component={ComposerScreen}
-              options={{ title: "Creator Studio", presentation: "modal" }}
-            />
-            <Stack.Screen
-              name="Connections"
-              component={ConnectionsScreen}
-              options={{ title: "Your networks" }}
-            />
-            <Stack.Screen
-              name="Exports"
-              component={ExportsScreen}
-              options={{ title: "Rendered exports" }}
-            />
-            <Stack.Screen
-              name="Campaigns"
-              component={CampaignsScreen}
-              options={{ title: "Creator campaigns" }}
-            />
-            <Stack.Screen
-              name="Calendar"
-              component={CalendarScreen}
-              options={{ title: "Creator calendar" }}
-            />
-            <Stack.Screen
-              name="Publishing"
-              component={PublishingScreen}
-              options={{ title: "Publish to your networks" }}
-            />
-            <Stack.Screen
-              name="Live"
-              component={LiveScreen}
-              options={{ title: "Live broadcasts" }}
-            />
-            <Stack.Screen
-              name="Recordings"
-              component={RecordingsScreen}
-              options={{ title: "Private recordings & clips" }}
-            />
-            <Stack.Screen
-              name="Notifications"
-              component={NotificationsScreen}
-              options={{ title: "Private updates" }}
-            />
-          </>
-        ) : (
+          )}
           <Stack.Screen
-            name="Welcome"
-            component={WelcomeScreen}
-            options={{ headerShown: false }}
+            name="Post"
+            component={PostScreen}
+            options={{ title: "Creation details" }}
           />
-        )}
-        {!session && (
+          {session && (
+            <>
+              <Stack.Screen
+                name="Settings"
+                component={SettingsScreen}
+                options={{ title: "Your account" }}
+              />
+              <Stack.Screen
+                name="Moderation"
+                component={ModerationScreen}
+                options={{ title: "Safety operations" }}
+              />
+              <Stack.Screen
+                name="Administration"
+                component={AdministrationScreen}
+                options={{ title: "Ziipa administration" }}
+              />
+            </>
+          )}
           <Stack.Screen
-            name="Login"
-            component={LoginScreen}
-            options={{ title: "Your Ziipa account" }}
+            name="Legal"
+            component={LegalScreen}
+            options={{ title: "Trust & community" }}
           />
-        )}
-        <Stack.Screen
-          name="Post"
-          component={PostScreen}
-          options={{ title: "Creation details" }}
-        />
-        {session && (
-          <>
-            <Stack.Screen
-              name="Settings"
-              component={SettingsScreen}
-              options={{ title: "Your account" }}
-            />
-            <Stack.Screen
-              name="Moderation"
-              component={ModerationScreen}
-              options={{ title: "Safety operations" }}
-            />
-            <Stack.Screen
-              name="Administration"
-              component={AdministrationScreen}
-              options={{ title: "Ziipa administration" }}
-            />
-          </>
-        )}
-        <Stack.Screen
-          name="Legal"
-          component={LegalScreen}
-          options={{ title: "Trust & community" }}
-        />
-      </Stack.Navigator>
+        </Stack.Navigator>
+      </DesktopShell>
     </NavigationContainer>
   );
 }

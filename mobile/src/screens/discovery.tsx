@@ -30,12 +30,25 @@ import {
   worlds,
 } from "../components/floating";
 import { Cover, Logo } from "../components/ui";
+import { useDesktopLayout } from "../components/desktop-layout";
+import { DesktopExplore } from "./desktop-explore";
 import { inCreativeWorld, searchItems } from "../lib/domain";
 import type { Category, RootStack } from "../lib/types";
 import { useZiipa } from "../provider";
 import { color, font, styles } from "../theme";
 
-export function DiscoverScreen({
+export function DiscoverScreen(
+  props: NativeStackScreenProps<RootStack, "Main">,
+) {
+  const { desktop } = useDesktopLayout();
+  return desktop ? (
+    <DesktopExplore {...props} />
+  ) : (
+    <MobileDiscoverScreen {...props} />
+  );
+}
+
+function MobileDiscoverScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStack, "Main">) {

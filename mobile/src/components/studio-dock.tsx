@@ -11,9 +11,12 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStack } from "../lib/types";
 import { font } from "../theme";
+import { useDesktopLayout } from "./desktop-layout";
 export function StudioDock() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStack>>();
+  const { desktop } = useDesktopLayout();
+  if (desktop) return null;
   return (
     <View
       style={{

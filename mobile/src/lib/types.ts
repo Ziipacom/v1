@@ -126,9 +126,12 @@ export type Comment = {
 export type RootStack = {
   Welcome: undefined;
   Login: { register?: boolean } | undefined;
-  Main: { category?: Category } | undefined;
+  Main: { category?: Category; query?: string; collection?: "saved" } | undefined;
   Watch: { itemId?: string; category?: Category } | undefined;
   Studio: { category?: Category; edit?: boolean } | undefined;
+  CreatorStudio:
+    | { tab?: "overview" | "library"; query?: string; category?: Category }
+    | undefined;
   Profile: undefined;
   Feeds: undefined;
   MediaOS:
@@ -138,6 +141,7 @@ export type RootStack = {
           | "Library"
           | "Memory"
           | "Assistant"
+          | "Agent"
           | "Workflows"
           | "Insights";
       }

@@ -257,6 +257,14 @@ Restart the backend after this update. New API tables are added without replacin
 
 ## Creator web app
 
+The desktop portal now has a collapsible sidebar, Explore and Creator Studio
+workspaces, an owned/saved media library and a two-column editor. It is built
+from the same Expo source and APIs as mobile. Desktop layout is gated to the web
+portal at 1024px and wider; native and compact layouts retain the Figma design.
+See [mobile/DESKTOP-PORTAL.md](mobile/DESKTOP-PORTAL.md) for routing, privacy,
+workflow parity and verification details. Existing provider and release limits
+continue to apply.
+
 The portal now opens a responsive creator workspace based on the supplied Ziipa Figma design. It includes media discovery, a studio, local uploads/publication, manual caption and trim previews, comments, bookmarks, custom feed rules with local sharing, and personal content filters. Demo content is explicitly labeled; only the sample film and uploaded audio/video are playable. Store listings are local concepts with no checkout; live streams and NFT collections remain drafts until providers are integrated.
 
 Local media is stored in `backend/uploads/` (ignored by Git). Hosted creator media uses a private R2 bucket through short-lived signed upload and authorized download URLs, while PostgreSQL keeps ownership metadata. The API limits uploads to 100 MB each and 1 GB per account; the desktop portal keeps its more conservative 50 MB picker limit. Publishing makes media visible only when the creator's profile and post privacy allow it.

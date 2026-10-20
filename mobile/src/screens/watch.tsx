@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Pressable, Share, Text, View } from "react-native";
+import {
+  FlatList,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import type { ReactNode } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -23,18 +32,20 @@ import {
   VolumeX,
 } from "lucide-react-native";
 import { CategoryDock, FloatButton, Sheet } from "../components/floating";
-import { Action, Field, Notice } from "../components/ui";
+import { Action, Cover, Field, Notice } from "../components/ui";
+import { useDesktopLayout } from "../components/desktop-layout";
 import { ReelMedia } from "../components/reel-media";
 import { inCreativeWorld, pageAtOffset } from "../lib/domain";
 import { useZiipa } from "../provider";
 import type { Category, Comment, Item, RootStack } from "../lib/types";
-import { font, styles } from "../theme";
+import { color, font, styles } from "../theme";
 
 export function WatchScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStack, "Watch">) {
   const { data, guest, session, api, toggle } = useZiipa();
+  const { desktop } = useDesktopLayout();
   const insets = useSafeAreaInsets();
   const [category, setCategory] = useState<Category>(
     route.params?.category || "music",
@@ -134,7 +145,7 @@ export function WatchScreen({
     const next = Math.max(0, Math.min(items.length - 1, index + direction));
     list.current?.scrollToOffset({ offset: next * height, animated: true });
   }
-  return (
+  const viewer = (
     <View
       style={styles.screen}
       onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
@@ -173,7 +184,14 @@ export function WatchScreen({
             }
           }}
           renderItem={({ item: post, index: i }) => (
-          <View style={{ height, overflow: "hidden" }} accessibilityElementsHidden={i !== index} importantForAccessibility={i === index ? "auto" : "no-hide-descendants"} aria-hidden={i !== index}>
+            <View
+              style={{ height, overflow: "hidden" }}
+              accessibilityElementsHidden={i !== index}
+              importantForAccessibility={
+                i === index ? "auto" : "no-hide-descendants"
+              }
+              aria-hidden={i !== index}
+            >
               <ReelMedia
                 item={post}
                 active={i === index}
@@ -191,8 +209,8 @@ export function WatchScreen({
                 accessibilityLabel={
                   post.media_url
                     ? paused
-                    ? "Play media"
-                    : "Pause media"
+                      ? "Play media"
+                      : "Pause media"
                     : "View collection details"
                 }
                 onPress={() =>
@@ -201,7 +219,7 @@ export function WatchScreen({
                 style={{
                   position: "absolute",
                   top: 92,
-                  bottom: 240 + insets.bottom,
+                  bottom: (desktop ? 160 : 240) + insets.bottom,
                   left: 0,
                   right: 72,
                   alignItems: "center",
@@ -223,7 +241,7 @@ export function WatchScreen({
                   position: "absolute",
                   left: 22,
                   right: 82,
-                  bottom: 117 + insets.bottom,
+                  bottom: (desktop ? 28 : 117) + insets.bottom,
                   gap: 9,
                 }}
               >
@@ -329,7 +347,7 @@ export function WatchScreen({
           style={{
             position: "absolute",
             right: 12,
-            bottom: 133 + insets.bottom,
+            bottom: (desktop ? 48 : 133) + insets.bottom,
             alignItems: "center",
             gap: 14,
           }}
@@ -588,7 +606,208 @@ export function WatchScreen({
       )}
     </View>
   );
+  return desktop ? (
+    <DesktopWatchLayout item={item} navigation={navigation}>
+      {viewer}
+    </DesktopWatchLayout>
+  ) : (
+    viewer
+  );
 }
+
+function DesktopWatchLayout({
+  item,
+  navigation,
+  children,
+}: {
+  item?: Item;
+  navigation: NativeStackScreenProps<RootStack, "Watch">["navigation"];
+  children: ReactNode;
+}) {
+  const { contentWidth } = useDesktopLayout();
+  const { data } = useZiipa();
+  const [area, setArea] = useState({ width: contentWidth, height: 660 });
+  const width = area.width || contentWidth;
+  const contextWidth = width >= 1100 ? 360 : 280;
+  const stageWidth = Math.min(
+    430,
+    Math.max(292, ((area.height - 48) * 9) / 16),
+    Math.max(292, width - contextWidth - 76),
+  );
+  const related = item
+    ? data.items
+        .filter(
+          (post) =>
+            post.id !== item.id &&
+            !post.demo &&
+            post.visibility === "published" &&
+            post.category === item.category,
+        )
+        .slice(0, 3)
+    : [];
+  return (
+    <View
+      style={styles.screen}
+      onLayout={(event) => setArea(event.nativeEvent.layout)}
+    >
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={desktopWatch.page}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={desktopWatch.row}>
+          <View
+            style={[
+              desktopWatch.stage,
+              { width: stageWidth, height: (stageWidth * 16) / 9 },
+            ]}
+          >
+            {children}
+          </View>
+          <View style={[desktopWatch.context, { width: contextWidth }]}>
+            <View style={{ gap: 12 }}>
+              <Text style={styles.eyebrow}>
+                {item?.visibility === "draft"
+                  ? "YOUR PRIVATE DRAFT"
+                  : item?.demo
+                    ? "SAMPLE PREVIEW"
+                    : "NOW PLAYING"}
+              </Text>
+              <Text accessibilityRole="header" style={desktopWatch.title}>
+                {item?.title || "Your next inspiration"}
+              </Text>
+              {item && <Text style={desktopWatch.creator}>{item.creator}</Text>}
+              {!!item?.description && (
+                <Text style={styles.body}>{item.description}</Text>
+              )}
+              {!!item?.tags.length && (
+                <View style={desktopWatch.tags}>
+                  {item.tags.map((tag) => (
+                    <Pressable
+                      key={tag}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Explore ${tag}`}
+                      onPress={() =>
+                        navigation.navigate("Main", { query: tag })
+                      }
+                      style={desktopWatch.tag}
+                    >
+                      <Text style={styles.small}>#{tag}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+            <View style={desktopWatch.help}>
+              <Text style={desktopWatch.helpTitle}>Stay in the flow</Text>
+              <Text style={styles.small}>
+                Scroll inside the player or use its arrow controls to move
+                between creations. Like, save and join the conversation without
+                leaving the video.
+              </Text>
+            </View>
+            <Action
+              title="Back to Explore"
+              secondary
+              onPress={() => navigation.navigate("Main")}
+            />
+            {item && (
+              <Action
+                title="Details, reporting & safety"
+                secondary
+                onPress={() => navigation.navigate("Post", { item })}
+              />
+            )}
+            {!!related.length && (
+              <View style={{ gap: 14, marginTop: 8 }}>
+                <Text style={desktopWatch.helpTitle}>More to explore</Text>
+                {related.map((post) => (
+                  <Pressable
+                    key={post.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Watch ${post.title}`}
+                    onPress={() =>
+                      navigation.navigate("Watch", {
+                        itemId: post.id,
+                        category: post.category,
+                      })
+                    }
+                    style={desktopWatch.related}
+                  >
+                    <Cover
+                      item={post}
+                      style={{ width: 62, height: 76, borderRadius: 10 }}
+                    />
+                    <View style={{ flex: 1, gap: 6 }}>
+                      <Text numberOfLines={2} style={desktopWatch.relatedTitle}>
+                        {post.title}
+                      </Text>
+                      <Text numberOfLines={1} style={styles.small}>
+                        {post.creator}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+const desktopWatch = StyleSheet.create({
+  page: { flexGrow: 1, alignItems: "center", padding: 24 },
+  row: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    gap: 28,
+    width: "100%",
+    maxWidth: 1120,
+  },
+  stage: {
+    overflow: "hidden",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: "#090610",
+    flexShrink: 0,
+  },
+  context: { gap: 20, paddingVertical: 10, flexShrink: 0 },
+  title: {
+    color: color.text,
+    fontFamily: font.semibold,
+    fontSize: 27,
+    lineHeight: 33,
+    letterSpacing: -0.5,
+  },
+  creator: { color: color.lime, fontFamily: font.medium, fontSize: 16 },
+  tags: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  tag: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: color.border,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+  },
+  help: {
+    borderRadius: 17,
+    backgroundColor: color.panel,
+    borderWidth: 1,
+    borderColor: color.border,
+    padding: 18,
+    gap: 8,
+  },
+  helpTitle: { color: color.text, fontFamily: font.semibold, fontSize: 16 },
+  related: { flexDirection: "row", alignItems: "center", gap: 12 },
+  relatedTitle: {
+    color: color.text,
+    fontFamily: font.medium,
+    fontSize: 15,
+    lineHeight: 20,
+  },
+});
 const w = {
   rail: {
     alignItems: "center" as const,
