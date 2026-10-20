@@ -903,6 +903,7 @@ export function ComposerScreen({
     </View>
   ) : (
     <EditorTimeline
+      compact={desktop}
       duration={duration}
       currentTime={currentTime}
       sourceTime={sequenceToSource(clips, currentTime)?.sourceTime}
@@ -1411,7 +1412,7 @@ export function ComposerScreen({
             : "Saving your creation…"}
         </Text>
       )}
-      {saved && (
+      {saved && tab === "Share" && (
         <>
           <Notice
             text={

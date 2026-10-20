@@ -46,6 +46,7 @@ export type EditorTimelineProps = {
   thumbnails?: readonly TimelineThumbnail[];
   thumbnailsLabel?: string;
   disabled?: boolean;
+  compact?: boolean;
   onSeek: (sequenceTime: number) => void;
   onSelect: (id: string) => void;
   onTrim: (id: string, trim: { start: number; end: number }) => void;
@@ -109,6 +110,7 @@ export function EditorTimeline(props: EditorTimelineProps) {
     selectedId,
     thumbnails = [],
     disabled = false,
+    compact = false,
   } = props;
   const [viewport, setViewport] = useState(300);
   const [zoomScale, setZoomScale] = useState<number | null>(null);
@@ -214,9 +216,37 @@ export function EditorTimeline(props: EditorTimelineProps) {
     (_, index) => index * tickStep,
   );
 
+  const zoomTools = (
+    <>
+      <Tool
+        compact={compact}
+        title="Zoom out"
+        Icon={ZoomOut}
+        enabled={!disabled && !dragging && scale > 4}
+        onPress={() => setZoomScale(Math.max(4, scale / 1.5))}
+      />
+      <Tool
+        compact={compact}
+        title="Fit"
+        Icon={ScanLine}
+        enabled={!disabled && !dragging}
+        onPress={() => {
+          setZoomScale(null);
+          timelineScroll.current?.scrollTo({ x: 0, animated: false });
+        }}
+      />
+      <Tool
+        compact={compact}
+        title="Zoom in"
+        Icon={ZoomIn}
+        enabled={!disabled && !dragging && scale < 160}
+        onPress={() => setZoomScale(Math.min(160, scale * 1.5))}
+      />
+    </>
+  );
   return (
-    <View style={s.panel}>
-      <View style={s.toolbar}>
+    <View style={[s.panel, compact && { paddingTop: 8, gap: 6 }]}>
+      <View style={[s.toolbar, compact && { paddingHorizontal: 10, gap: 6 }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Film size={16} color={color.lime} />
           <Text style={s.heading}>Timeline</Text>
@@ -224,18 +254,21 @@ export function EditorTimeline(props: EditorTimelineProps) {
         </View>
         <View style={s.tools}>
           <Tool
+            compact={compact}
             title="Undo"
             Icon={Undo2}
             enabled={!disabled && !!props.canUndo}
             onPress={props.onUndo}
           />
           <Tool
+            compact={compact}
             title="Redo"
             Icon={Redo2}
             enabled={!disabled && !!props.canRedo}
             onPress={props.onRedo}
           />
           <Tool
+            compact={compact}
             title="Split"
             Icon={Scissors}
             enabled={
@@ -244,48 +277,36 @@ export function EditorTimeline(props: EditorTimelineProps) {
             onPress={props.onSplit}
           />
           <Tool
+            compact={compact}
             title="Delete"
             Icon={Trash2}
             enabled={!disabled && (props.canDelete ?? !!selected)}
             onPress={props.onDelete}
           />
+          {compact && zoomTools}
         </View>
       </View>
-      <View style={[s.tools, { paddingHorizontal: 14, alignItems: "center" }]}>
-        <Tool
-          title="Zoom out"
-          Icon={ZoomOut}
-          enabled={!disabled && !dragging && scale > 4}
-          onPress={() => setZoomScale(Math.max(4, scale / 1.5))}
-        />
-        <Tool
-          title="Fit"
-          Icon={ScanLine}
-          enabled={!disabled && !dragging}
-          onPress={() => {
-            setZoomScale(null);
-            timelineScroll.current?.scrollTo({ x: 0, animated: false });
-          }}
-        />
-        <Tool
-          title="Zoom in"
-          Icon={ZoomIn}
-          enabled={!disabled && !dragging && scale < 160}
-          onPress={() => setZoomScale(Math.min(160, scale * 1.5))}
-        />
-        <Text style={[s.muted, { paddingHorizontal: 5 }]}>
-          {zoomScale === null ? "Fit to view" : `${Math.round(scale)} px/s`}
-        </Text>
-      </View>
-      <View style={s.timeRow}>
-        <Text style={s.time}>
-          {formatTimelineTime(playhead)}{" "}
-          <Text style={s.muted}>/ {formatTimelineTime(total)}</Text>
-        </Text>
-        {sourceTime !== undefined && (
-          <Text style={s.muted}>Source {formatTimelineTime(sourceTime)}</Text>
-        )}
-      </View>
+      {!compact && (
+        <View
+          style={[s.tools, { paddingHorizontal: 14, alignItems: "center" }]}
+        >
+          {zoomTools}
+          <Text style={[s.muted, { paddingHorizontal: 5 }]}>
+            {zoomScale === null ? "Fit to view" : `${Math.round(scale)} px/s`}
+          </Text>
+        </View>
+      )}
+      {!compact && (
+        <View style={s.timeRow}>
+          <Text style={s.time}>
+            {formatTimelineTime(playhead)}{" "}
+            <Text style={s.muted}>/ {formatTimelineTime(total)}</Text>
+          </Text>
+          {sourceTime !== undefined && (
+            <Text style={s.muted}>Source {formatTimelineTime(sourceTime)}</Text>
+          )}
+        </View>
+      )}
       {!clips.length ? (
         <View style={s.empty}>
           <Film size={25} color={color.faint} />
@@ -299,9 +320,12 @@ export function EditorTimeline(props: EditorTimelineProps) {
             scrollEnabled={!dragging}
             showsHorizontalScrollIndicator={false}
             onLayout={(event) => setViewport(event.nativeEvent.layout.width)}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 12 }}
+            contentContainerStyle={{
+              paddingHorizontal: 16,
+              paddingBottom: compact ? 0 : 12,
+            }}
           >
-            <View style={{ width: trackWidth, height: 128 }}>
+            <View style={{ width: trackWidth, height: compact ? 90 : 128 }}>
               <View
                 {...scrub.panHandlers}
                 accessible
@@ -343,7 +367,7 @@ export function EditorTimeline(props: EditorTimelineProps) {
                     if (!disabled) props.onSeek(key === "Home" ? 0 : total);
                   }
                 })}
-                style={s.ruler}
+                style={[s.ruler, compact && { height: 24 }]}
               >
                 <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                   {ticks.map((time) => (
@@ -353,7 +377,7 @@ export function EditorTimeline(props: EditorTimelineProps) {
                         position: "absolute",
                         left: time * scale,
                         top: 0,
-                        height: 31,
+                        height: compact ? 21 : 31,
                         borderLeftWidth: 1,
                         borderColor: "#675678",
                       }}
@@ -365,7 +389,7 @@ export function EditorTimeline(props: EditorTimelineProps) {
                   ))}
                 </View>
               </View>
-              <View style={s.track}>
+              <View style={[s.track, compact && { top: 28, height: 56 }]}>
                 {positions.map(({ clip, index, offset: start, width }) => {
                   const active = selectedId === clip.id;
                   const cells = Math.max(
@@ -380,7 +404,7 @@ export function EditorTimeline(props: EditorTimelineProps) {
                         left: start * scale,
                         top: 0,
                         width: Math.max(1, width),
-                        height: 74,
+                        height: compact ? 56 : 74,
                         zIndex: active ? 3 : 1,
                       }}
                     >
@@ -439,7 +463,10 @@ export function EditorTimeline(props: EditorTimelineProps) {
                             );
                           })}
                         </View>
-                        <View pointerEvents="none" style={s.clipShade}>
+                        <View
+                          pointerEvents="none"
+                          style={[s.clipShade, compact && { padding: 4 }]}
+                        >
                           <Text numberOfLines={1} style={s.clipLabel}>
                             Clip {index + 1}
                           </Text>
@@ -499,7 +526,7 @@ export function EditorTimeline(props: EditorTimelineProps) {
                 style={{
                   position: "absolute",
                   left: Math.max(0, playhead * scale - 1),
-                  top: 25,
+                  top: compact ? 18 : 25,
                   bottom: 4,
                   width: 2,
                   backgroundColor: "white",
@@ -510,8 +537,17 @@ export function EditorTimeline(props: EditorTimelineProps) {
               </View>
             </View>
           </ScrollView>
-          <View style={s.footer}>
-            <Text style={[s.muted, { flex: 1 }]}>
+          <View
+            style={[s.footer, compact && { paddingHorizontal: 12, gap: 4 }]}
+          >
+            <Text
+              numberOfLines={compact ? 1 : undefined}
+              style={[
+                s.muted,
+                { flex: 1 },
+                compact && { fontSize: 10, lineHeight: 12 },
+              ]}
+            >
               {selected
                 ? `Selected source ${formatTimelineTime(selected.start)}–${formatTimelineTime(selected.end)}`
                 : "Select a clip to trim or delete."}
@@ -523,7 +559,12 @@ export function EditorTimeline(props: EditorTimelineProps) {
             </Text>
           </View>
           {(props.captionLabel || props.musicLabel) && (
-            <View style={{ paddingHorizontal: 16, gap: 7 }}>
+            <View
+              style={{
+                paddingHorizontal: compact ? 12 : 16,
+                gap: compact ? 4 : 7,
+              }}
+            >
               {props.captionLabel && (
                 <Pressable
                   accessibilityRole="button"
@@ -534,7 +575,7 @@ export function EditorTimeline(props: EditorTimelineProps) {
                   disabled={disabled || !props.onCaption}
                   onPress={props.onCaption}
                   style={{
-                    minHeight: 35,
+                    minHeight: compact ? 26 : 35,
                     borderRadius: 7,
                     borderLeftWidth: 3,
                     borderColor: "#B58CE8",
@@ -563,7 +604,7 @@ export function EditorTimeline(props: EditorTimelineProps) {
                   disabled={disabled || !props.onMusic}
                   onPress={props.onMusic}
                   style={{
-                    minHeight: 35,
+                    minHeight: compact ? 26 : 35,
                     borderRadius: 7,
                     borderLeftWidth: 3,
                     borderColor: color.lime,
@@ -586,7 +627,18 @@ export function EditorTimeline(props: EditorTimelineProps) {
               )}
             </View>
           )}
-          <Text style={s.hint}>
+          <Text
+            numberOfLines={compact ? 1 : undefined}
+            style={[
+              s.hint,
+              compact && {
+                fontSize: 9,
+                lineHeight: 12,
+                paddingHorizontal: 12,
+                paddingBottom: 8,
+              },
+            ]}
+          >
             Drag the ruler to seek. Drag the lime handles to trim. Changes stay
             in this draft until you save.
           </Text>
@@ -601,7 +653,9 @@ function Tool({
   Icon,
   enabled,
   onPress,
+  compact = false,
 }: {
+  compact?: boolean;
   title: string;
   Icon: typeof Film;
   enabled: boolean;
@@ -614,10 +668,19 @@ function Tool({
       accessibilityState={{ disabled: !enabled || !onPress }}
       disabled={!enabled || !onPress}
       onPress={onPress}
-      style={[s.tool, (!enabled || !onPress) && { opacity: 0.35 }]}
+      style={[
+        s.tool,
+        compact && {
+          minHeight: 28,
+          minWidth: 28,
+          paddingHorizontal: 6,
+          justifyContent: "center",
+        },
+        (!enabled || !onPress) && { opacity: 0.35 },
+      ]}
     >
       <Icon size={16} color={title === "Delete" ? color.danger : color.text} />
-      <Text style={s.toolLabel}>{title}</Text>
+      {!compact && <Text style={s.toolLabel}>{title}</Text>}
     </Pressable>
   );
 }
