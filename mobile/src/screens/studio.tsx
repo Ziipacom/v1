@@ -83,7 +83,6 @@ export function StudioScreen({
     [data.items],
   );
   const dockHeight = 76 + Math.max(insets.bottom, 10);
-  const edit = () => setEditing((value) => !value);
   const add = () => navigation.navigate("Composer", { category: selected });
   return (
     <SafeAreaView edges={["top"]} style={styles.screen}>
@@ -161,17 +160,6 @@ export function StudioScreen({
               <Text style={s.menuText}>Create</Text>
               <View style={s.circleSlot}>
                 <SquarePlus size={25} color={color.onMedia} strokeWidth={1.5} />
-              </View>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Open media gallery"
-              onPress={() => navigation.navigate("Main")}
-              style={s.menuRow}
-            >
-              <Text style={s.menuText}>Gallery</Text>
-              <View style={[s.circleSlot, s.circle]}>
-                <Images size={25} color={color.onMedia} strokeWidth={1.5} />
               </View>
             </Pressable>
             {menuOrder
@@ -483,7 +471,11 @@ export function StudioScreen({
             active: !editing,
             action: () => navigation.navigate("Profile"),
           },
-          { label: "Edit", Icon: Pencil, active: editing, action: edit },
+          {
+            label: "Gallery",
+            Icon: Images,
+            action: () => navigation.navigate("Main"),
+          },
           { label: "Add", Icon: SquarePlus, action: add },
           {
             label: "Promote",

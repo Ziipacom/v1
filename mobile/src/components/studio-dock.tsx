@@ -1,7 +1,7 @@
 import { Pressable, Text, View } from "react-native";
 import {
   LayoutGrid,
-  Pencil,
+  Images,
   SquarePlus,
   Megaphone,
   Wallet,
@@ -38,9 +38,9 @@ export function StudioDock() {
           action: () => navigation.navigate("Profile"),
         },
         {
-          label: "Edit",
-          Icon: Pencil,
-          action: () => navigation.navigate("Studio", { edit: true }),
+          label: "Gallery",
+          Icon: Images,
+          action: () => navigation.navigate("Main"),
         },
         {
           label: "Add",
