@@ -13,6 +13,7 @@ import { ReelMedia } from "./reel-media";
 import { useDevicePreferences } from "./device-preferences";
 import { Action, categories } from "./ui";
 import { useDesktopLayout } from "./desktop-layout";
+import { featuredGalleryPlayback } from "../lib/featured-gallery-playback";
 import type { Item } from "../lib/types";
 import { color, font, styles, themedStyles } from "../theme";
 
@@ -33,6 +34,7 @@ export function DesktopFeaturedGallery({
   const { contentWidth } = useDesktopLayout();
   const [selectedId, setSelectedId] = useState(items[0]?.id);
   const [userPaused, setUserPaused] = useState(false);
+  const [rotationEnabled, setRotationEnabled] = useState(true);
   const [explicitPlaybackId, setExplicitPlaybackId] = useState<string | null>(
     null,
   );
@@ -51,18 +53,27 @@ export function DesktopFeaturedGallery({
     items.findIndex((item) => item.id === selectedId),
   );
   const current = items[selectedIndex];
-  const requestedPaused =
-    userPaused ||
-    !ready ||
-    (!preferences.autoplay && explicitPlaybackId !== current?.id);
-  const paused =
-    requestedPaused ||
-    hovered ||
-    focusWithin ||
-    reducedMotion ||
-    !focused ||
-    !foreground;
+  const { requestedPaused, playbackPaused, rotationAllowed } =
+    featuredGalleryPlayback({
+      count: items.length,
+      hasCurrent: !!current,
+      ready,
+      autoplay: preferences.autoplay,
+      reducedMotion,
+      focused,
+      foreground,
+      hovered,
+      focusWithin,
+      mediaPaused: userPaused,
+      explicitPlayback: !!current && explicitPlaybackId === current.id,
+      rotationEnabled,
+    });
   const signature = items.map((item) => item.id).join(",");
+
+  useEffect(() => {
+    setUserPaused(false);
+    setExplicitPlaybackId(null);
+  }, [current?.id, ready, preferences.autoplay]);
 
   useEffect(() => {
     let alive = true;
@@ -113,14 +124,14 @@ export function DesktopFeaturedGallery({
   }, []);
 
   useEffect(() => {
-    if (!paused && items.length > 1) {
+    if (rotationAllowed) {
       const timer = setTimeout(
         () => setSelectedId(items[(selectedIndex + 1) % items.length].id),
         7500,
       );
       return () => clearTimeout(timer);
     }
-  }, [paused, selectedIndex, signature, items]);
+  }, [rotationAllowed, selectedIndex, signature, items]);
 
   useEffect(() => {
     if (reducedMotion || !focused || !foreground) {
@@ -156,7 +167,7 @@ export function DesktopFeaturedGallery({
             key={current.id}
             item={current}
             active={focused && foreground}
-            paused={paused}
+            paused={playbackPaused}
             muted={preferences.startMuted}
           />
           <View pointerEvents="none" style={g.featureBadge}>
@@ -189,13 +200,11 @@ export function DesktopFeaturedGallery({
               onPress={() => open(current)}
             />
             <Text style={g.hint}>
-              {reducedMotion
-                ? "Motion paused by your accessibility preference."
-                : hovered || focusWithin
-                  ? "Preview paused while you interact."
-                  : requestedPaused
-                    ? "Gallery paused. Resume when you’re ready."
-                    : `${preferences.startMuted ? "Muted media" : "Media preview"} · next creation every 7.5 seconds.`}
+              {requestedPaused
+                ? "Preview paused. Press Play when you’re ready."
+                : rotationAllowed
+                  ? `${preferences.startMuted ? "Muted media" : "Media preview"} · next creation every 7.5 seconds.`
+                  : "Preview enabled · automatic gallery motion paused."}
             </Text>
           </View>
         </View>
@@ -210,32 +219,43 @@ export function DesktopFeaturedGallery({
             <ChevronLeft size={18} color={color.text} />
           </GalleryButton>
           <GalleryButton
-            label={
-              reducedMotion
-                ? "Gallery motion paused by accessibility preference"
-                : requestedPaused
-                  ? "Resume featured gallery"
-                  : "Pause featured gallery"
-            }
-            disabled={reducedMotion}
+            label={requestedPaused ? "Play featured preview" : "Pause featured preview"}
+            disabled={!ready}
             onPress={() => {
               setExplicitPlaybackId(current.id);
               setUserPaused(!requestedPaused);
             }}
           >
-            {requestedPaused || reducedMotion ? (
+            {requestedPaused ? (
               <Play size={15} color={color.text} />
             ) : (
               <Pause size={15} color={color.text} />
             )}
             <Text style={g.controlText}>
-              {reducedMotion
-                ? "Motion paused"
-                : requestedPaused
-                  ? "Resume"
-                  : "Pause"}
+              {requestedPaused ? "Play" : "Pause"}
             </Text>
           </GalleryButton>
+          {items.length > 1 && (
+            <GalleryButton
+              label={
+                reducedMotion || !preferences.autoplay
+                  ? "Automatic gallery rotation disabled by your preference"
+                  : rotationEnabled
+                    ? "Pause featured gallery rotation"
+                    : "Resume featured gallery rotation"
+              }
+              disabled={!ready || reducedMotion || !preferences.autoplay}
+              onPress={() => setRotationEnabled(!rotationEnabled)}
+            >
+              <Text style={g.controlText}>
+                {reducedMotion || !preferences.autoplay
+                  ? "Rotation off"
+                  : rotationEnabled
+                    ? "Pause rotation"
+                    : "Resume rotation"}
+              </Text>
+            </GalleryButton>
+          )}
           <GalleryButton
             label="Next featured creation"
             disabled={items.length < 2}

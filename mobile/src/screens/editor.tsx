@@ -70,6 +70,7 @@ import {
   type UploadFile,
 } from "../lib/api";
 import { editorCaptions } from "../lib/editor-captions";
+import { savedComposerParams } from "../lib/composer-navigation";
 import { sourceCaptionsForEdit, validateCaptionCues } from "../lib/auto-captions";
 import { audioCreationSource, sourceMintItem } from "../lib/editor-source";
 import { inCreativeWorld, parseEditing, parsePrice } from "../lib/domain";
@@ -728,8 +729,9 @@ export function ComposerScreen({
         }
         persistedId.current = draft.id;
         savePreviewDraft(draft);
+        navigation.replaceParams(savedComposerParams(draft));
         setSaved(draft);
-        setCleanFingerprint(fingerprint);
+        setCleanFingerprint(JSON.stringify({ ...formSnapshot, remixId: null }));
       } else {
         let selectedId = mediaId;
         if (file && !selectedId) {
@@ -783,6 +785,9 @@ export function ComposerScreen({
           payload,
         );
         persistedId.current = result.id;
+        // Update this route's identity, not its key. The live form and removal
+        // guards stay mounted, while Create is free to open a fresh new route.
+        navigation.replaceParams(savedComposerParams(result));
         // Only the submitted snapshot is clean. If a control changed while
         // saving, its current fingerprint still differs and remains unsaved.
         setCleanFingerprint(
@@ -790,6 +795,7 @@ export function ComposerScreen({
             ...formSnapshot,
             mediaId: selectedId,
             soundtrackId: selectedSoundtrackId,
+            remixId: null,
           }),
         );
         await refresh();

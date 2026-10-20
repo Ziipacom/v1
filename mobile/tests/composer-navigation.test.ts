@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { CommonActions, StackRouter } from "@react-navigation/routers";
-import { composerRouteId } from "../src/lib/composer-navigation.ts";
+import {
+  composerRouteId,
+  savedComposerParams,
+} from "../src/lib/composer-navigation.ts";
 import type { Item, RootStack } from "../src/lib/types.ts";
 
 const first: Item = {
@@ -125,4 +128,67 @@ test("different drafts and same-ID upload/remix sources receive distinct real ed
   state = navigate(state, { item: second });
   assert.equal(current(state).key, keys[1]);
   assert.equal(state.routes.length, prior.routes.length);
+});
+
+test("saving new, upload and remix routes canonicalizes the same key before the next Create or reopen", () => {
+  for (const seed of [
+    undefined,
+    { upload: { id: second.id, content_type: "video/mp4" } },
+    { remix: second },
+  ] satisfies RootStack["Composer"][]) {
+    const editing = navigate(router.getInitialState(options), seed);
+    const key = current(editing).key;
+    const canonical = router.getStateForAction(
+      editing,
+      {
+        ...CommonActions.replaceParams(savedComposerParams(first)),
+        source: key,
+      },
+      options,
+    );
+    assert.ok(canonical && canonical.stale === false);
+    assert.equal(
+      current(canonical).key,
+      key,
+      "the mounted form and unsaved-change guard retain their route key",
+    );
+    assert.equal(canonical.index, editing.index);
+    assert.equal(canonical.routes.length, editing.routes.length);
+    assert.deepEqual(
+      current(canonical).params,
+      { item: first },
+      "obsolete upload/remix/category seeds do not survive save",
+    );
+    assert.equal(
+      composerRouteId({
+        params: current(canonical).params as RootStack["Composer"],
+      }),
+      `draft:${first.id}`,
+    );
+
+    const created = navigate(canonical);
+    assert.notEqual(
+      current(created).key,
+      key,
+      "Create after save opens a fresh form",
+    );
+    assert.equal(current(created).params, undefined);
+    assert.deepEqual(
+      created.routes.find((route) => route.key === key),
+      current(canonical),
+    );
+    const reopened = navigate(created, { item: first });
+    assert.equal(
+      current(reopened).key,
+      key,
+      "opening the saved item reuses its original mounted editor",
+    );
+    assert.equal(
+      reopened.routes.filter(
+        (route) =>
+          (route.params as RootStack["Composer"])?.item?.id === first.id,
+      ).length,
+      1,
+    );
+  }
 });
