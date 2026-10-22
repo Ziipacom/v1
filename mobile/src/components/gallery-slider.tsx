@@ -23,13 +23,18 @@ import {
 import { Cover, categories } from "./ui";
 import { ReelMedia } from "./reel-media";
 import { ProfileMediaPreview } from "./profile-media-preview";
+import { GalleryStillPreview } from "./gallery-still-preview";
 import { useDevicePreferences } from "./device-preferences";
 import { isPlayableMedia } from "../lib/domain";
-import { galleryIndex, galleryRotationAllowed } from "../lib/gallery";
+import {
+  galleryIndex,
+  galleryNeighbors,
+  galleryRotationAllowed,
+} from "../lib/gallery";
 import type { Item } from "../lib/types";
 import { color, font, useTheme } from "../theme";
 
-/** The adjacent cards are covers; only the active trusted media player mounts. */
+/** Three slots show real neighboring stills; only the front creation can play. */
 export function GallerySlider({
   items,
   label,
@@ -55,6 +60,7 @@ export function GallerySlider({
     AppState.currentState === "active",
   );
   const [visible, setVisible] = useState(true);
+  const [saveData, setSaveData] = useState(false);
   const [hovering, setHovering] = useState(false);
   const [controlFocused, setControlFocused] = useState(false);
   // Until accessibility settings resolve, do not start motion or video.
@@ -74,6 +80,7 @@ export function GallerySlider({
   const translation = useRef(new Animated.Value(0)).current;
   const current = galleryIndex(index, items.length);
   const item = items[current];
+  const neighbors = galleryNeighbors(items, current);
   const explicitPlayback = !!item && explicitPlaybackId === item.id;
   const muted =
     !item ||
@@ -83,7 +90,8 @@ export function GallerySlider({
       : (startMuted ?? preferences.startMuted));
   const playbackPaused =
     mediaPaused ||
-    ((reducedMotion || !ready || !preferences.autoplay) && !explicitPlayback);
+    ((reducedMotion || saveData || !ready || !preferences.autoplay) &&
+      !explicitPlayback);
   const playable = !!item && isPlayableMedia(item);
   const activeId = useRef(item?.id);
   const currentIndex = useRef(current);
@@ -132,10 +140,22 @@ export function GallerySlider({
       );
     const blur = () => setForeground(false);
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const connection = (
+      navigator as Navigator & {
+        connection?: {
+          saveData?: boolean;
+          addEventListener?: (name: string, fn: () => void) => void;
+          removeEventListener?: (name: string, fn: () => void) => void;
+        };
+      }
+    ).connection;
+    const data = () => setSaveData(connection?.saveData === true);
     const reduce = () => setReducedMotion(preference.matches);
     reduce();
+    data();
     sync();
     preference.addEventListener("change", reduce);
+    connection?.addEventListener?.("change", data);
     document.addEventListener("visibilitychange", sync);
     window.addEventListener("focus", sync);
     window.addEventListener("blur", blur);
@@ -144,6 +164,7 @@ export function GallerySlider({
       motion.remove();
       app.remove();
       preference.removeEventListener("change", reduce);
+      connection?.removeEventListener?.("change", data);
       document.removeEventListener("visibilitychange", sync);
       window.removeEventListener("focus", sync);
       window.removeEventListener("blur", blur);
@@ -203,7 +224,7 @@ export function GallerySlider({
   );
   const rotating = galleryRotationAllowed({
     count: items.length,
-    enabled: ready && preferences.autoplay && rotationEnabled,
+    enabled: ready && preferences.autoplay && !saveData && rotationEnabled,
     focused,
     foreground,
     visible,
@@ -211,7 +232,8 @@ export function GallerySlider({
     controlFocused,
     reducedMotion,
   });
-  const rotationBlocked = reducedMotion || !ready || !preferences.autoplay;
+  const rotationBlocked =
+    reducedMotion || saveData || !ready || !preferences.autoplay;
   useEffect(() => {
     if (!rotating) return;
     const timer = setTimeout(() => advance(1), 7000);
@@ -234,7 +256,13 @@ export function GallerySlider({
     onFocus: () => setControlFocused(true),
     onBlur: () => setControlFocused(false),
   };
-  const mediaActive = playable && focused && foreground && visible;
+  const mediaActive =
+    playable &&
+    focused &&
+    foreground &&
+    visible &&
+    (!saveData || explicitPlayback);
+  const stillsEnabled = ready && focused && foreground && visible && !saveData;
   if (!item) return null;
 
   return (
@@ -259,34 +287,87 @@ export function GallerySlider({
             alignItems: "center",
           }}
         >
-          {items.length > 1 &&
-            [-1, 1].map((offset) => (
+          {([-1, 1] as const).map((offset) => {
+            const neighbor = offset < 0 ? neighbors.left : neighbors.right;
+            const side = offset < 0 ? "left" : "right";
+            const sideStyle = {
+              position: "absolute" as const,
+              width: width * 0.65,
+              height: "85%" as const,
+              left: offset < 0 ? -width * 0.025 : width * 0.375,
+              borderRadius: 25,
+              overflow: "hidden" as const,
+              borderWidth: 1,
+              borderColor: "#82659F",
+              opacity: neighbor ? 0.82 : 0.58,
+              zIndex: 1,
+              transform: [
+                { perspective: 900 },
+                { rotateY: offset < 0 ? "17deg" : "-17deg" },
+                { scale: 0.94 },
+              ],
+            };
+            return neighbor ? (
+              <Pressable
+                key={side}
+                {...interaction}
+                testID={`gallery-neighbor-${side}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Show ${neighbor.title} in gallery`}
+                accessibilityHint="Select this creation. Only the front card plays media."
+                onPress={() => advance(offset, true)}
+                style={sideStyle}
+              >
+                <GalleryStillPreview item={neighbor} enabled={stillsEnabled} />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={["transparent", "#160A29B8"]}
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    padding: 14,
+                    paddingTop: 40,
+                  }}
+                >
+                  <Text
+                    numberOfLines={2}
+                    style={{
+                      color: "white",
+                      fontFamily: font.medium,
+                      fontSize: 14,
+                    }}
+                  >
+                    {neighbor.title}
+                  </Text>
+                </LinearGradient>
+              </Pressable>
+            ) : (
               <View
-                key={offset}
+                key={side}
+                testID={`gallery-neighbor-${side}-empty`}
                 pointerEvents="none"
                 accessibilityElementsHidden
                 importantForAccessibility="no-hide-descendants"
                 aria-hidden
-                style={{
-                  position: "absolute",
-                  width: width * 0.64,
-                  height: "81%",
-                  left: offset < 0 ? -width * 0.07 : width * 0.43,
-                  borderRadius: 25,
-                  overflow: "hidden",
-                  opacity: 0.55,
-                  transform: [{ scale: 0.95 }],
-                }}
+                style={sideStyle}
               >
-                <Cover
-                  item={items[galleryIndex(current + offset, items.length)]}
+                <LinearGradient
+                  colors={
+                    offset < 0
+                      ? ["#6532AE", "#2F305B", "#31523B"]
+                      : ["#31523B", "#3B3467", "#6532AE"]
+                  }
                   style={{ flex: 1 }}
                 />
               </View>
-            ))}
+            );
+          })}
           <Pressable
             {...interaction}
             accessibilityRole="button"
+            testID="gallery-front-creation"
             accessibilityLabel={`Open ${item.title} by ${item.creator}`}
             onPress={() => onOpen(item)}
             style={{
@@ -297,7 +378,11 @@ export function GallerySlider({
               overflow: "hidden",
               borderWidth: 1,
               borderColor: "#765898",
+              // Media can be transparent or still loading. The whole front
+              // silhouette must occlude neighboring cards, including its copy.
+              backgroundColor: "#120D1F",
               boxShadow: "0 18px 28px #0005",
+              zIndex: 2,
             }}
           >
             {item.content_type?.startsWith("image/") ? (

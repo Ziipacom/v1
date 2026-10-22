@@ -587,6 +587,7 @@ test("profile card layout snapshots native event dimensions before a deferred st
     { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
   ).outputText;
   const pending: ((state: unknown) => unknown)[] = [];
+  const layoutIdentity = { current: "all" };
   const handler = new Function(
     "setCardLayouts",
     "layoutIdentity",
@@ -595,7 +596,7 @@ test("profile card layout snapshots native event dimensions before a deferred st
     `${compiled};return handler;`,
   )(
     (callback: (state: unknown) => unknown) => pending.push(callback),
-    { current: "all" },
+    layoutIdentity,
     "all",
     { id: "clip" },
   );
@@ -608,6 +609,19 @@ test("profile card layout snapshots native event dimensions before a deferred st
     key: "all",
     values: { clip: { top: 190, height: 179 } },
   });
+  const current = { key: "games", values: { game: { top: 0, height: 179 } } };
+  layoutIdentity.current = "games";
+  assert.equal(
+    pending[0](current),
+    current,
+    "an already queued old-filter event cannot replace fresh bounds",
+  );
+  handler({ nativeEvent: { layout: { y: 9000, height: 179 } } });
+  assert.equal(
+    pending.length,
+    1,
+    "a late old-filter event is ignored before queuing",
+  );
 });
 
 /** Render the real Profile screen with inert native leaves and persistent hook
@@ -767,22 +781,203 @@ function profileScreenHarness(desktop = false) {
     if (!value || typeof value !== "object" || !("props" in value)) return [];
     return [value, ...nodes(value.props.children)];
   }
+  function render() {
+    cursor = 0;
+    return nodes(
+      exported.ProfileScreen({
+        navigation: {
+          navigate: (...args: unknown[]) => navigations.push(args),
+        },
+      }),
+    );
+  }
+  let mountedCards = new Map<string, { top: number; height: number }>();
+  const layoutEvents: { key: string; top: number; height: number }[] = [];
   return {
     preferences,
+    creations,
     navigations,
+    layoutEvents,
     counts: () => ({ requests, refreshes, preferenceWrites }),
-    render() {
-      cursor = 0;
-      return nodes(
-        exported.ProfileScreen({
-          navigation: {
-            navigate: (...args: unknown[]) => navigations.push(args),
-          },
-        }),
-      );
+    render,
+    /** Native layout events are required for mounts or changed geometry only.
+     * A retained key at unchanged y/height intentionally emits no new event. */
+    renderWithLayout() {
+      const tree = render();
+      const scroll = tree.find((node) => node.type === "ScrollView")!;
+      const feed = tree.find(
+        (node) => node.props.testID === "profile-creations-feed",
+      )!;
+      scroll.props.onLayout({
+        nativeEvent: { layout: { height: desktop ? 500 : 300 } },
+      });
+      feed.props.onLayout({ nativeEvent: { layout: { y: 0 } } });
+      const next = new Map<string, { top: number; height: number }>();
+      let top = 0;
+      for (const card of feed.props.children[0]) {
+        const key = card.key as string;
+        const height = card.props.style.height;
+        const previous = mountedCards.get(key);
+        if (!previous || previous.top !== top || previous.height !== height) {
+          card.props.onLayout({ nativeEvent: { layout: { y: top, height } } });
+          layoutEvents.push({ key, top, height });
+        }
+        next.set(key, { top, height });
+        top += height + feed.props.style.gap;
+      }
+      mountedCards = next;
+      return render();
     },
   };
 }
+
+test("unchanged leading Profile cards remeasure across category and Saved filters without replacing the ScrollView", () => {
+  for (const desktop of [false, true]) {
+    const ui = profileScreenHarness(desktop);
+    let tree = ui.renderWithLayout();
+    const preview = () =>
+      tree.find(
+        (node) =>
+          node.type === "ProfileMediaPreview" && node.props.item.id === "game",
+      )!;
+    const feed = () =>
+      tree.find((node) => node.props.testID === "profile-creations-feed")!;
+    const originalCard = feed().props.children[0][0];
+    const originalBounds = ui.layoutEvents[0];
+    assert.equal(preview().props.visible, true);
+    assert.equal(preview().props.videoActive, true);
+    tree.find((node) => node.type === "CategoryDock")!.props.onSelect("games");
+    tree = ui.renderWithLayout();
+    assert.notEqual(
+      feed().props.children[0][0].key,
+      originalCard.key,
+      "unchanged geometry must not retain an unmeasured card",
+    );
+    assert.ok(
+      ui.layoutEvents.some(
+        (event) =>
+          event.key === feed().props.children[0][0].key &&
+          event.top === originalBounds.top &&
+          event.height === originalBounds.height,
+      ),
+    );
+    assert.equal(preview().props.visible, true);
+    assert.equal(preview().props.videoActive, true);
+    originalCard.props.onLayout({
+      nativeEvent: { layout: { y: 9999, height: originalBounds.height } },
+    });
+    tree = ui.render();
+    assert.equal(
+      preview().props.videoActive,
+      true,
+      "a stale All-view event cannot replace filtered measurements",
+    );
+    tree
+      .find((node) => node.props.accessibilityLabel === "Show saved creations")!
+      .props.onPress();
+    tree = ui.renderWithLayout();
+    assert.equal(preview().props.visible, true);
+    assert.equal(preview().props.videoActive, true);
+    tree
+      .find((node) => node.props.accessibilityLabel === "Show creations")!
+      .props.onPress();
+    tree = ui.renderWithLayout();
+    assert.equal(preview().props.videoActive, true);
+    assert.equal(
+      tree.find((node) => node.type === "ScrollView")!.key,
+      undefined,
+    );
+    assert.equal(
+      tree.filter(
+        (node) => node.type === "ProfileMediaPreview" && node.props.videoActive,
+      ).length,
+      1,
+    );
+    assert.deepEqual(ui.counts(), {
+      requests: 0,
+      refreshes: 0,
+      preferenceWrites: 0,
+    });
+  }
+});
+
+test("Music & Film filters and list changes remeasure an unchanged first video instead of relying on geometry-change events", () => {
+  for (const desktop of [false, true]) {
+    const ui = profileScreenHarness(desktop);
+    ui.creations.splice(0, 1);
+    let tree = ui.renderWithLayout();
+    const active = () =>
+      tree
+        .filter(
+          (node) =>
+            node.type === "ProfileMediaPreview" && node.props.videoActive,
+        )
+        .map((node) => node.props.item.id);
+    assert.deepEqual(active(), ["film"]);
+    tree.find((node) => node.type === "CategoryDock")!.props.onSelect("music");
+    tree = ui.renderWithLayout();
+    assert.deepEqual(active(), ["film"]);
+    tree
+      .find(
+        (node) =>
+          node.props.accessibilityLabel === "Reset Profile to all creations",
+      )!
+      .props.onPress();
+    tree = ui.renderWithLayout();
+    assert.deepEqual(active(), ["film"]);
+    ui.creations.push(item("new-creation", { category: "store" }));
+    tree = ui.renderWithLayout();
+    assert.deepEqual(
+      active(),
+      ["film"],
+      "appending a trailing item cannot disable the retained first video",
+    );
+    ui.creations.pop();
+    tree = ui.renderWithLayout();
+    assert.deepEqual(
+      active(),
+      ["film"],
+      "removing a trailing item also requests fresh measurements",
+    );
+    assert.deepEqual(ui.counts(), {
+      requests: 0,
+      refreshes: 0,
+      preferenceWrites: 0,
+    });
+  }
+});
+
+test("an unchanged first image remains visible after filtering and Saved view changes", () => {
+  const ui = profileScreenHarness();
+  ui.creations[0] = item("game", {
+    category: "games",
+    content_type: "image/jpeg",
+    media_url: null,
+    cover: "/api/creator/media/photo",
+  });
+  let tree = ui.renderWithLayout();
+  const image = () =>
+    tree.find(
+      (node) =>
+        node.type === "ProfileMediaPreview" && node.props.item.id === "game",
+    )!;
+  assert.equal(image().props.visible, true);
+  tree.find((node) => node.type === "CategoryDock")!.props.onSelect("games");
+  tree = ui.renderWithLayout();
+  assert.equal(image().props.visible, true);
+  assert.equal(image().props.videoActive, false);
+  tree
+    .find((node) => node.props.accessibilityLabel === "Show saved creations")!
+    .props.onPress();
+  tree = ui.renderWithLayout();
+  assert.equal(image().props.visible, true);
+  assert.equal(image().props.videoActive, false);
+  assert.deepEqual(ui.counts(), {
+    requests: 0,
+    refreshes: 0,
+    preferenceWrites: 0,
+  });
+});
 
 test("Profile stacks every published creation in one scrollable column and badges use each creation's own world", () => {
   for (const desktop of [false, true]) {

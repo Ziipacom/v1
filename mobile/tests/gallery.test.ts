@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   galleryIndex,
   galleryItems,
+  galleryNeighbors,
   galleryRotationAllowed,
 } from "../src/lib/gallery.ts";
 import type { Item } from "../src/lib/types.ts";
@@ -11,6 +12,7 @@ import ts from "typescript";
 import * as gallery from "../src/lib/gallery.ts";
 import * as domain from "../src/lib/domain.ts";
 import { featuredGalleryPlayback } from "../src/lib/featured-gallery-playback.ts";
+import { palettes } from "../src/lib/appearance.ts";
 
 const creation = (
   id: string,
@@ -71,6 +73,9 @@ function galleryUI(
     desktop?: boolean;
     params?: Record<string, unknown>;
     items?: Item[];
+    runEffects?: boolean;
+    width?: number;
+    appearance?: "dark" | "light";
   } = {},
 ) {
   const source = readFileSync(
@@ -89,6 +94,8 @@ function galleryUI(
   let cursor = 0;
   let refreshes = 0;
   let preferenceWrites = 0;
+  const effects: (() => void)[] = [];
+  const effectSlots: { cleanup?: () => void }[] = [];
   const preferences = { autoplay: true, startMuted: false };
   const navigations: unknown[] = [];
   const exports: Record<string, any> = {};
@@ -109,7 +116,7 @@ function galleryUI(
     setValue(_: unknown) {}
   }
   const theme = {
-    color: {},
+    color: palettes[options.appearance || "dark"],
     font: {},
     styles: {},
     themeValue: (dark: unknown) => dark,
@@ -131,10 +138,30 @@ function galleryUI(
             },
           ];
         },
-        useEffect() {},
+        useEffect(effect: () => void | (() => void), deps: unknown[]) {
+          if (!options.runEffects) return;
+          const slot = cursor++;
+          const previous = states[slot];
+          if (
+            !previous ||
+            deps.some((value, n) => value !== previous.deps[n])
+          ) {
+            const next: { deps: unknown[]; cleanup?: () => void } = { deps };
+            states[slot] = next;
+            effectSlots.push(next);
+            effects.push(() => {
+              previous?.cleanup?.();
+              const cleanup = effect();
+              if (cleanup) next.cleanup = cleanup;
+            });
+          }
+        },
         useMemo: (fn: () => unknown) => fn(),
         useCallback: (fn: unknown) => fn,
-        useRef: (current: unknown) => ({ current }),
+        useRef: (current: unknown) => {
+          const slot = cursor++;
+          return (states[slot] ||= { current });
+        },
       };
     if (name === "react/jsx-runtime")
       return { jsx, jsxs: jsx, Fragment: "Fragment" };
@@ -146,12 +173,22 @@ function galleryUI(
         Pressable: "Pressable",
         ScrollView: "ScrollView",
         ActivityIndicator: "ActivityIndicator",
-        AccessibilityInfo: {},
-        AppState: { currentState: "active" },
+        AccessibilityInfo: {
+          isReduceMotionEnabled: () => Promise.resolve(false),
+          addEventListener: () => ({ remove() {} }),
+        },
+        AppState: {
+          currentState: "active",
+          addEventListener: () => ({ remove() {} }),
+        },
         Platform: { OS: "android" },
-        useWindowDimensions: () => ({ width: 390 }),
+        useWindowDimensions: () => ({ width: options.width || 390 }),
         StyleSheet: { create: (value: unknown) => value },
-        Animated: { Value, View: "AnimatedView" },
+        Animated: {
+          Value,
+          View: "AnimatedView",
+          timing: () => ({ start() {}, stop() {} }),
+        },
         PanResponder: { create: () => ({ panHandlers: {} }) },
       };
     if (name === "react-native-safe-area-context")
@@ -169,7 +206,7 @@ function galleryUI(
       return {
         useDesktopLayout: () => ({
           desktop: options.desktop ?? false,
-          contentWidth: 1200,
+          contentWidth: options.width || 1200,
         }),
       };
     if (name.endsWith("/device-preferences"))
@@ -225,6 +262,8 @@ function galleryUI(
     if (name === "./reel-media") return { ReelMedia: "ReelMedia" };
     if (name === "./profile-media-preview")
       return { ProfileMediaPreview: "ProfileMediaPreview" };
+    if (name === "./gallery-still-preview")
+      return { GalleryStillPreview: "GalleryStillPreview" };
     if (name === "../lib/gallery") return gallery;
     if (name === "../lib/domain") return domain;
     if (name === "../lib/featured-gallery-playback")
@@ -243,6 +282,12 @@ function galleryUI(
     navigations,
     preferences,
     counts: () => ({ refreshes, preferenceWrites }),
+    flushEffects() {
+      while (effects.length) effects.shift()!();
+    },
+    unmount() {
+      effectSlots.reverse().forEach((slot) => slot.cleanup?.());
+    },
     render(name: string, props: Record<string, unknown> = {}) {
       cursor = 0;
       let tree = exports[name]({ route, navigation, ...props });
@@ -493,6 +538,356 @@ test("Gallery wraps manual and timed navigation safely", () => {
   assert.equal(galleryIndex(3, 3), 0);
   assert.equal(galleryIndex(8, 1), 0);
   assert.equal(galleryIndex(4, 0), 0);
+});
+
+test("Three Gallery slots never repeat a creation just to fill empty space", () => {
+  const a = creation("a"),
+    b = creation("b"),
+    c = creation("c"),
+    d = creation("d");
+  assert.deepEqual(galleryNeighbors([], 0), { left: null, right: null });
+  assert.deepEqual(galleryNeighbors([a], 0), { left: null, right: null });
+  assert.deepEqual(galleryNeighbors([a, b], 0), { left: null, right: b });
+  assert.deepEqual(galleryNeighbors([a, b], 1), { left: null, right: a });
+  assert.deepEqual(galleryNeighbors([a, b, c, d], 0), { left: d, right: b });
+  assert.deepEqual(galleryNeighbors([a, b, c, d], 3), { left: c, right: a });
+  assert.deepEqual(galleryNeighbors([a, b, c, d], -1), { left: c, right: a });
+});
+
+test("Gallery keeps three stacked slots while selecting a side card promotes that real asset to the only playing front", () => {
+  const source = [
+    creation("first", "games", {
+      media_url: "/media/sintel-trailer.mp4",
+      content_type: "video/mp4",
+    }),
+    creation("second", "video", {
+      media_url: "/media/sintel-trailer.mp4",
+      content_type: "video/mp4",
+    }),
+    creation("third", "nft", { content_type: "image/jpeg" }),
+  ];
+  for (const count of [1, 2, 3]) {
+    const ui = galleryUI("components/gallery-slider");
+    const props = {
+      items: source.slice(0, count),
+      label: "All creations",
+      onOpen() {},
+    };
+    let nodes = ui.render("GallerySlider", props);
+    assert.equal(
+      nodes.filter((node) => node.props.testID?.startsWith("gallery-neighbor-"))
+        .length,
+      2,
+    );
+    assert.equal(nodes.filter((node) => node.type === "ReelMedia").length, 1);
+    assert.equal(
+      nodes.filter((node) => node.type === "GalleryStillPreview").length,
+      count === 1 ? 0 : count === 2 ? 1 : 2,
+    );
+    if (count < 3)
+      assert.ok(
+        nodes.some(
+          (node) => node.props.testID === "gallery-neighbor-left-empty",
+        ),
+      );
+    if (count === 1)
+      assert.ok(
+        nodes.some(
+          (node) => node.props.testID === "gallery-neighbor-right-empty",
+        ),
+      );
+    if (count > 1) {
+      const next = nodes.find(
+        (node) => node.props.testID === "gallery-neighbor-right",
+      )!;
+      assert.equal(next.props.accessibilityRole, "button");
+      next.props.onPress();
+      nodes = ui.render("GallerySlider", props);
+      assert.equal(
+        nodes.find((node) => node.type === "ReelMedia")!.props.item.id,
+        "second",
+      );
+      assert.equal(nodes.filter((node) => node.type === "ReelMedia").length, 1);
+      assert.ok(
+        nodes
+          .filter((node) => node.type === "GalleryStillPreview")
+          .every((node) => node.props.item.id !== "second"),
+      );
+    }
+  }
+});
+
+test("Wide desktop Gallery keeps the three-slot stack without replacing its hero copy or mounting side playback", () => {
+  const source = [
+    creation("first", "games", {
+      media_url: "/media/sintel-trailer.mp4",
+      content_type: "video/mp4",
+    }),
+    creation("second", "video", {
+      media_url: "/media/sintel-trailer.mp4",
+      content_type: "video/mp4",
+    }),
+    creation("third", "music"),
+  ];
+  for (const count of [1, 2, 3]) {
+    const ui = galleryUI("components/desktop-featured-gallery", {
+      desktop: true,
+    });
+    const props = { items: source.slice(0, count), open() {} };
+    let nodes = ui.render("DesktopFeaturedGallery", props);
+    assert.equal(
+      nodes.filter((node) =>
+        node.props.testID?.startsWith("desktop-gallery-neighbor-"),
+      ).length,
+      2,
+    );
+    assert.equal(
+      nodes.filter((node) => node.type === "GalleryStillPreview").length,
+      count === 1 ? 0 : count === 2 ? 1 : 2,
+    );
+    assert.equal(nodes.filter((node) => node.type === "ReelMedia").length, 1);
+    assert.ok(
+      nodes.some(
+        (node) => node.props.testID === "desktop-gallery-front-creation",
+      ),
+    );
+    assert.ok(
+      nodes.some(
+        (node) =>
+          node.type === "Action" && node.props.title === "Watch creation",
+      ),
+    );
+    if (count < 3)
+      assert.ok(
+        nodes.some(
+          (node) => node.props.testID === "desktop-gallery-neighbor-left-empty",
+        ),
+      );
+    if (count > 1) {
+      nodes
+        .find((node) => node.props.testID === "desktop-gallery-neighbor-right")!
+        .props.onPress();
+      nodes = ui.render("DesktopFeaturedGallery", props);
+      assert.equal(
+        nodes.find((node) => node.type === "ReelMedia")!.props.item.id,
+        "second",
+      );
+      assert.ok(
+        nodes
+          .filter((node) => node.type === "GalleryStillPreview")
+          .every((node) => node.props.item.id !== "second"),
+      );
+    }
+  }
+});
+
+test("Front Gallery silhouettes stay opaque above neighboring images in narrow/wide layouts and both themes", () => {
+  const source = [
+    creation("transparent-front", "nft", { content_type: "image/png" }),
+    creation("real-neighbor", "nft", {
+      content_type: "image/jpeg",
+      cover: "/api/creator/media/photo",
+    }),
+  ];
+  for (const width of [377, 1280])
+    for (const appearance of ["dark", "light"] as const) {
+      for (const [file, name, prefix] of [
+        ["components/gallery-slider", "GallerySlider", "gallery"],
+        [
+          "components/desktop-featured-gallery",
+          "DesktopFeaturedGallery",
+          "desktop-gallery",
+        ],
+      ]) {
+        const ui = galleryUI(file, { width, appearance });
+        const nodes = ui.render(name, {
+          items: source,
+          label: "All creations",
+          onOpen() {},
+          open() {},
+        });
+        const front = nodes.find(
+          (node) => node.props.testID === `${prefix}-front-creation`,
+        )!;
+        const side = nodes.find(
+          (node) => node.props.testID === `${prefix}-neighbor-right`,
+        )!;
+        const surface = Array.isArray(front.props.style)
+          ? Object.assign({}, ...front.props.style)
+          : front.props.style;
+        assert.match(
+          surface.backgroundColor,
+          /^#[\da-f]{6}$/i,
+          "front has an opaque own surface even before its image loads or where image pixels are transparent",
+        );
+        assert.equal(surface.overflow, "hidden");
+        assert.ok(surface.zIndex > side.props.style.zIndex);
+        assert.equal(
+          nodes.filter((node) => node.type === "GalleryStillPreview").length,
+          1,
+        );
+      }
+    }
+});
+
+test("Desktop viewport observer suspends all media and rotation offscreen and cleans up on unmount", async () => {
+  const names = [
+    "window",
+    "document",
+    "navigator",
+    "IntersectionObserver",
+    "setTimeout",
+    "clearTimeout",
+  ];
+  const previous = Object.fromEntries(
+    names.map((name) => [
+      name,
+      Object.getOwnPropertyDescriptor(globalThis, name),
+    ]),
+  );
+  let intersect:
+    | ((
+        entries: { isIntersecting: boolean; intersectionRatio: number }[],
+      ) => void)
+    | undefined;
+  let observed: unknown,
+    disconnected = 0,
+    timerId = 0;
+  const pending = new Set<number>();
+  const element = {
+    getBoundingClientRect: () => ({
+      top: 0,
+      bottom: 400,
+      left: 0,
+      right: 1000,
+      width: 1000,
+      height: 400,
+    }),
+    addEventListener() {},
+    removeEventListener() {},
+    contains() {
+      return false;
+    },
+  };
+  const replace = (name: string, value: unknown) =>
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      writable: true,
+      value,
+    });
+  replace("window", {
+    innerHeight: 800,
+    innerWidth: 1200,
+    addEventListener() {},
+    removeEventListener() {},
+  });
+  replace("document", {
+    visibilityState: "visible",
+    addEventListener() {},
+    removeEventListener() {},
+  });
+  replace("navigator", {});
+  replace(
+    "IntersectionObserver",
+    class {
+      constructor(callback: typeof intersect) {
+        intersect = callback;
+      }
+      observe(node: unknown) {
+        observed = node;
+      }
+      disconnect() {
+        disconnected++;
+      }
+    },
+  );
+  replace("setTimeout", () => {
+    const id = ++timerId;
+    pending.add(id);
+    return id;
+  });
+  replace("clearTimeout", (id: number) => pending.delete(id));
+  try {
+    const ui = galleryUI("components/desktop-featured-gallery", {
+      desktop: true,
+      runEffects: true,
+    });
+    const props = {
+      items: [
+        creation("first", "video", {
+          media_url: "/media/sintel-trailer.mp4",
+          content_type: "video/mp4",
+        }),
+        creation("next", "video", {
+          media_url: "/media/sintel-trailer.mp4",
+          content_type: "video/mp4",
+        }),
+      ],
+      open() {},
+    };
+    let nodes = ui.render("DesktopFeaturedGallery", props);
+    nodes.find(
+      (node) =>
+        node.props.accessibilityLabel === "Featured published media gallery",
+    )!.props.ref.current = element;
+    ui.flushEffects();
+    await Promise.resolve();
+    assert.equal(observed, element);
+    assert.equal(
+      nodes.find((node) => node.type === "ReelMedia")!.props.active,
+      false,
+      "no player is active before viewport measurement",
+    );
+    intersect!([{ isIntersecting: true, intersectionRatio: 0.49 }]);
+    nodes = ui.render("DesktopFeaturedGallery", props);
+    ui.flushEffects();
+    assert.equal(
+      nodes.find((node) => node.type === "GalleryStillPreview")!.props.enabled,
+      false,
+    );
+    assert.equal(pending.size, 0);
+    intersect!([{ isIntersecting: true, intersectionRatio: 0.5 }]);
+    nodes = ui.render("DesktopFeaturedGallery", props);
+    ui.flushEffects();
+    assert.equal(
+      nodes.find((node) => node.type === "GalleryStillPreview")!.props.enabled,
+      true,
+    );
+    assert.equal(
+      nodes.find((node) => node.type === "ReelMedia")!.props.active,
+      true,
+    );
+    assert.equal(
+      nodes.find((node) => node.type === "ReelMedia")!.props.paused,
+      false,
+    );
+    assert.equal(pending.size, 1);
+    intersect!([{ isIntersecting: false, intersectionRatio: 0 }]);
+    nodes = ui.render("DesktopFeaturedGallery", props);
+    ui.flushEffects();
+    assert.equal(
+      nodes.find((node) => node.type === "GalleryStillPreview")!.props.enabled,
+      false,
+    );
+    assert.equal(
+      nodes.find((node) => node.type === "ReelMedia")!.props.active,
+      false,
+    );
+    assert.equal(
+      nodes.find((node) => node.type === "ReelMedia")!.props.paused,
+      true,
+    );
+    assert.equal(pending.size, 0, "the previous rotation timer is cancelled");
+    ui.unmount();
+    assert.equal(disconnected, 1);
+    assert.equal(pending.size, 0);
+  } finally {
+    for (const name of names) {
+      if (previous[name])
+        Object.defineProperty(globalThis, name, previous[name]!);
+      else delete (globalThis as any)[name];
+    }
+  }
 });
 
 test("Gallery rotation pauses for focus, visibility, user interaction and reduced motion", () => {

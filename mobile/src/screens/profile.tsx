@@ -435,15 +435,18 @@ export function ProfileScreen({
                 ? "Music & Film"
                 : world?.title || "Creation";
             const WorldIcon = world?.icon || Sparkles;
+            // Retained cards may keep identical geometry after a filter.
+            // Remount this measured leaf, never the scroll container.
             return (
               <Pressable
-                key={item.id}
+                key={`${layoutKey}:${item.id}`}
                 accessibilityRole="button"
                 accessibilityLabel={`Watch ${item.title} · ${worldTitle}`}
                 onLayout={(event) => {
                   const { y, height } = event.nativeEvent.layout;
                   if (layoutIdentity.current !== layoutKey) return;
                   setCardLayouts((previous) => {
+                    if (layoutIdentity.current !== layoutKey) return previous;
                     const values =
                       previous.key === layoutKey ? previous.values : {};
                     return values[item.id]?.top === y &&

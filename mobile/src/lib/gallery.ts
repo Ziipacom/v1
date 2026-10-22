@@ -19,6 +19,17 @@ export function galleryIndex(index: number, count: number) {
   return count > 0 ? ((index % count) + count) % count : 0;
 }
 
+/** Keep three visual slots without duplicating a creation to fill empty space. */
+export function galleryNeighbors(items: readonly Item[], index: number) {
+  const current = galleryIndex(index, items.length);
+  return {
+    left:
+      items.length > 2 ? items[galleryIndex(current - 1, items.length)] : null,
+    right:
+      items.length > 1 ? items[galleryIndex(current + 1, items.length)] : null,
+  };
+}
+
 export function galleryRotationAllowed(state: {
   count: number;
   enabled: boolean;

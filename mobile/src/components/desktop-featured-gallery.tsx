@@ -8,18 +8,21 @@ import {
   View,
 } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
 import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react-native";
 import { ReelMedia } from "./reel-media";
 import { useDevicePreferences } from "./device-preferences";
 import { Action, Cover, categories } from "./ui";
 import { ProfileMediaPreview } from "./profile-media-preview";
+import { GalleryStillPreview } from "./gallery-still-preview";
 import { useDesktopLayout } from "./desktop-layout";
 import { featuredGalleryPlayback } from "../lib/featured-gallery-playback";
 import { isPlayableMedia } from "../lib/domain";
+import { galleryNeighbors } from "../lib/gallery";
 import type { Item } from "../lib/types";
 import { color, font, styles, themedStyles } from "../theme";
 
-/** Only the selected, published source mounts a player. Never preload a reel wall. */
+/** Only the front creation plays; two neighboring cards remain still. */
 export function DesktopFeaturedGallery({
   items,
   open,
@@ -47,6 +50,8 @@ export function DesktopFeaturedGallery({
   const [foreground, setForeground] = useState(
     AppState.currentState === "active",
   );
+  const [saveData, setSaveData] = useState(false);
+  const [visible, setVisible] = useState(false);
   // Do not start motion until the OS preference has been read successfully.
   const [systemReducedMotion, setReducedMotion] = useState(true);
   const reducedMotion = systemReducedMotion || deviceReducedMotion;
@@ -57,6 +62,7 @@ export function DesktopFeaturedGallery({
     items.findIndex((item) => item.id === selectedId),
   );
   const current = items[selectedIndex];
+  const neighbors = galleryNeighbors(items, selectedIndex);
   const muted = startMuted ?? preferences.startMuted;
   const playable = !!current && isPlayableMedia(current);
   const { requestedPaused, playbackPaused, rotationAllowed } =
@@ -64,9 +70,9 @@ export function DesktopFeaturedGallery({
       count: items.length,
       hasCurrent: !!current,
       ready,
-      autoplay: preferences.autoplay,
+      autoplay: preferences.autoplay && !saveData,
       reducedMotion,
-      focused,
+      focused: focused && visible,
       foreground,
       hovered,
       focusWithin,
@@ -75,6 +81,42 @@ export function DesktopFeaturedGallery({
       rotationEnabled,
     });
   const signature = items.map((item) => item.id).join(",");
+
+  useEffect(() => {
+    const element = region.current as unknown as HTMLElement | null;
+    if (!element?.getBoundingClientRect) return;
+    if (typeof IntersectionObserver !== "undefined") {
+      const observer = new IntersectionObserver(
+        ([entry]) =>
+          setVisible(entry.isIntersecting && entry.intersectionRatio >= 0.5),
+        { threshold: [0, 0.5] },
+      );
+      observer.observe(element);
+      return () => observer.disconnect();
+    }
+    // ScrollView uses its own scroll container. Capture descendant scroll events
+    // for browsers without IntersectionObserver rather than loading offscreen.
+    const measure = () => {
+      const bounds = element.getBoundingClientRect();
+      const height =
+        Math.min(bounds.bottom, window.innerHeight) - Math.max(0, bounds.top);
+      const width =
+        Math.min(bounds.right, window.innerWidth) - Math.max(0, bounds.left);
+      const area =
+        Math.min(bounds.height, window.innerHeight) *
+        Math.min(bounds.width, window.innerWidth);
+      setVisible(
+        area > 0 && (Math.max(0, height) * Math.max(0, width)) / area >= 0.5,
+      );
+    };
+    measure();
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
 
   useEffect(() => {
     setUserPaused(false);
@@ -114,18 +156,31 @@ export function DesktopFeaturedGallery({
       );
     const visibility = () =>
       setForeground(document.visibilityState === "visible");
+    const connection = (
+      navigator as Navigator & {
+        connection?: {
+          saveData?: boolean;
+          addEventListener?: (name: string, fn: () => void) => void;
+          removeEventListener?: (name: string, fn: () => void) => void;
+        };
+      }
+    ).connection;
+    const data = () => setSaveData(connection?.saveData === true);
     element.addEventListener("mouseenter", enter);
     element.addEventListener("mouseleave", leave);
     element.addEventListener("focusin", focus);
     element.addEventListener("focusout", blur);
     document.addEventListener("visibilitychange", visibility);
     visibility();
+    data();
+    connection?.addEventListener?.("change", data);
     return () => {
       element.removeEventListener("mouseenter", enter);
       element.removeEventListener("mouseleave", leave);
       element.removeEventListener("focusin", focus);
       element.removeEventListener("focusout", blur);
       document.removeEventListener("visibilitychange", visibility);
+      connection?.removeEventListener?.("change", data);
     };
   }, []);
 
@@ -140,7 +195,7 @@ export function DesktopFeaturedGallery({
   }, [rotationAllowed, selectedIndex, signature, items]);
 
   useEffect(() => {
-    if (reducedMotion || !focused || !foreground) {
+    if (reducedMotion || !focused || !foreground || !visible) {
       opacity.setValue(1);
       return;
     }
@@ -152,7 +207,7 @@ export function DesktopFeaturedGallery({
     });
     transition.start();
     return () => transition.stop();
-  }, [current?.id, reducedMotion, focused, foreground, opacity]);
+  }, [current?.id, reducedMotion, focused, foreground, visible, opacity]);
 
   if (!current) return null;
   function step(direction: number) {
@@ -167,67 +222,149 @@ export function DesktopFeaturedGallery({
       style={g.gallery}
       accessibilityLabel="Featured published media gallery"
     >
-      <View style={[g.feature, { height: compact ? 280 : 320 }]}>
-        <Animated.View style={[g.media, { opacity }]}>
-          {current.content_type?.startsWith("image/") ? (
-            <ProfileMediaPreview
-              key={current.id}
-              item={current}
-              visible={focused && foreground}
-              videoActive={false}
-              autoplay={!playbackPaused}
-            />
-          ) : playable ? (
-            <ReelMedia
-              key={current.id}
-              item={current}
-              active={focused && foreground}
-              paused={playbackPaused}
-              muted={muted}
-            />
+      <View style={{ height: compact ? 294 : 340, justifyContent: "center" }}>
+        {([-1, 1] as const).map((direction) => {
+          const neighbor = direction < 0 ? neighbors.left : neighbors.right;
+          const side = direction < 0 ? "left" : "right";
+          const sideStyle = {
+            position: "absolute" as const,
+            width: "68%" as const,
+            height: "85%" as const,
+            ...(direction < 0 ? { left: 0 } : { right: 0 }),
+            borderRadius: 12,
+            overflow: "hidden" as const,
+            borderWidth: 1,
+            borderColor: "#82659F",
+            zIndex: 1,
+            opacity: neighbor ? 0.85 : 0.55,
+            transform: [
+              { perspective: 1100 },
+              { rotateY: direction < 0 ? "12deg" : "-12deg" },
+              { scale: 0.97 },
+            ],
+          };
+          return neighbor ? (
+            <Pressable
+              key={side}
+              testID={`desktop-gallery-neighbor-${side}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Show ${neighbor.title} in gallery`}
+              accessibilityHint="Select this creation. Only the front card plays media."
+              onPress={() => {
+                setRotationEnabled(false);
+                step(direction);
+              }}
+              style={sideStyle}
+            >
+              <GalleryStillPreview
+                item={neighbor}
+                enabled={ready && focused && foreground && visible && !saveData}
+              />
+            </Pressable>
           ) : (
-            <Cover item={current} style={{ flex: 1 }} />
-          )}
-          <View pointerEvents="none" style={g.featureBadge}>
-            <Text style={g.badgeText}>
-              FEATURED ·{" "}
-              {playable
-                ? muted
-                  ? "MUTED PREVIEW"
-                  : "MEDIA PREVIEW"
-                : "CREATION PREVIEW"}
+            <View
+              key={side}
+              testID={`desktop-gallery-neighbor-${side}-empty`}
+              pointerEvents="none"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              aria-hidden
+              style={sideStyle}
+            >
+              <LinearGradient
+                colors={
+                  direction < 0
+                    ? ["#6532AE", "#2F305B", "#31523B"]
+                    : ["#31523B", "#3B3467", "#6532AE"]
+                }
+                style={{ flex: 1 }}
+              />
+            </View>
+          );
+        })}
+        <View
+          testID="desktop-gallery-front-creation"
+          style={[
+            g.feature,
+            {
+              height: compact ? 280 : 320,
+              width: "86%",
+              alignSelf: "center",
+              zIndex: 2,
+              borderRadius: 12,
+              overflow: "hidden",
+              borderWidth: 1,
+              borderColor: color.border,
+              backgroundColor: color.panel,
+            },
+          ]}
+        >
+          <Animated.View style={[g.media, { opacity }]}>
+            {current.content_type?.startsWith("image/") ? (
+              <ProfileMediaPreview
+                key={current.id}
+                item={current}
+                visible={focused && foreground && visible}
+                videoActive={false}
+                autoplay={!playbackPaused}
+              />
+            ) : playable ? (
+              <ReelMedia
+                key={current.id}
+                item={current}
+                active={
+                  focused &&
+                  foreground &&
+                  visible &&
+                  (!saveData || explicitPlaybackId === current.id)
+                }
+                paused={playbackPaused}
+                muted={muted}
+              />
+            ) : (
+              <Cover item={current} style={{ flex: 1 }} />
+            )}
+            <View pointerEvents="none" style={g.featureBadge}>
+              <Text style={g.badgeText}>
+                FEATURED ·{" "}
+                {playable
+                  ? muted
+                    ? "MUTED PREVIEW"
+                    : "MEDIA PREVIEW"
+                  : "CREATION PREVIEW"}
+              </Text>
+            </View>
+          </Animated.View>
+          <View style={[g.copy, { width: compact ? 240 : 300 }]}>
+            <Text style={styles.eyebrow}>
+              {categories.find((entry) => entry.id === current.category)
+                ?.title || "Creation"}
             </Text>
-          </View>
-        </Animated.View>
-        <View style={[g.copy, { width: compact ? 270 : 330 }]}>
-          <Text style={styles.eyebrow}>
-            {categories.find((entry) => entry.id === current.category)?.title ||
-              "Creation"}
-          </Text>
-          <Text accessibilityRole="header" numberOfLines={2} style={g.title}>
-            {current.title}
-          </Text>
-          <Text numberOfLines={1} style={g.creator}>
-            {current.creator}
-          </Text>
-          {!!current.description && (
-            <Text numberOfLines={compact ? 1 : 2} style={styles.small}>
-              {current.description}
+            <Text accessibilityRole="header" numberOfLines={2} style={g.title}>
+              {current.title}
             </Text>
-          )}
-          <View style={{ marginTop: "auto", gap: 6 }}>
-            <Action
-              title={playable ? "Watch creation" : "Open creation"}
-              icon={Play}
-              onPress={() => open(current)}
-            />
-            <Text style={g.hint}>
-              {requestedPaused
-                ? "Preview paused. Press Play when you’re ready."
-                : rotationAllowed
-                  ? `${playable ? (muted ? "Muted media" : "Media preview") : "Creation preview"} · next creation every 7.5 seconds.`
-                  : "Preview enabled · automatic gallery motion paused."}
+            <Text numberOfLines={1} style={g.creator}>
+              {current.creator}
             </Text>
+            {!!current.description && (
+              <Text numberOfLines={compact ? 1 : 2} style={styles.small}>
+                {current.description}
+              </Text>
+            )}
+            <View style={{ marginTop: "auto", gap: 6 }}>
+              <Action
+                title={playable ? "Watch creation" : "Open creation"}
+                icon={Play}
+                onPress={() => open(current)}
+              />
+              <Text style={g.hint}>
+                {requestedPaused
+                  ? "Preview paused. Press Play when you’re ready."
+                  : rotationAllowed
+                    ? `${playable ? (muted ? "Muted media" : "Media preview") : "Creation preview"} · next creation every 7.5 seconds.`
+                    : "Preview enabled · automatic gallery motion paused."}
+              </Text>
+            </View>
           </View>
         </View>
       </View>
@@ -266,17 +403,19 @@ export function DesktopFeaturedGallery({
           {items.length > 1 && (
             <GalleryButton
               label={
-                reducedMotion || !preferences.autoplay
+                reducedMotion || saveData || !preferences.autoplay
                   ? "Automatic gallery rotation disabled by your preference"
                   : rotationEnabled
                     ? "Pause featured gallery rotation"
                     : "Resume featured gallery rotation"
               }
-              disabled={!ready || reducedMotion || !preferences.autoplay}
+              disabled={
+                !ready || reducedMotion || saveData || !preferences.autoplay
+              }
               onPress={() => setRotationEnabled(!rotationEnabled)}
             >
               <Text style={g.controlText}>
-                {reducedMotion || !preferences.autoplay
+                {reducedMotion || saveData || !preferences.autoplay
                   ? "Rotation off"
                   : rotationEnabled
                     ? "Pause rotation"
