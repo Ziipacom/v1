@@ -2,6 +2,13 @@ import * as SecureStore from "expo-secure-store";
 import * as FileSystem from "expo-file-system/legacy";
 import { validateOrigin } from "./config";
 import type { Session } from "./types";
+import {
+  ApiRequestError,
+  OperationTimeoutError,
+  withDeadline,
+} from "./request-deadline";
+
+export { ApiRequestError } from "./request-deadline";
 
 const SESSION_KEY = "ziipa.native.session.v1";
 export class ApiError extends Error {
@@ -57,33 +64,49 @@ export async function request<T>(
 ): Promise<T> {
   if (!path.startsWith("/api/") || path.includes(".."))
     throw new Error("Invalid API path");
+  const url = validateOrigin() + path;
+  const requestBody = data === undefined ? undefined : JSON.stringify(data);
   const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    path === "/api/web3/metadata" ? 120000 : 30000,
-  );
+  const timeoutError = new OperationTimeoutError("The API request timed out.");
+  let failureStatus: number | undefined;
   try {
-    const response = await fetch(validateOrigin() + path, {
-      method: data === undefined ? "GET" : "POST",
-      signal: controller.signal,
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(data === undefined ? {} : { "Content-Type": "application/json" }),
+    return await withDeadline(
+      async (isActive) => {
+        const response = await fetch(url, {
+          method: data === undefined ? "GET" : "POST",
+          signal: controller.signal,
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(data === undefined
+              ? {}
+              : { "Content-Type": "application/json" }),
+          },
+          body: requestBody,
+          credentials: "omit",
+          redirect: "error",
+        });
+        if (!isActive()) throw timeoutError;
+        if (!response.ok) failureStatus = response.status;
+        const body = await response.json().catch(() => {
+          if (response.ok) throw new Error("Invalid API response");
+          return null;
+        });
+        if (!response.ok)
+          throw new ApiError(errorMessage(body), response.status);
+        return body as T;
       },
-      body: data === undefined ? undefined : JSON.stringify(data),
-      credentials: "omit",
-      redirect: "error",
-    });
-    const body = await response.json().catch(() => null);
-    if (!response.ok) throw new ApiError(errorMessage(body), response.status);
-    return body as T;
+      path === "/api/web3/metadata" ? 120000 : 30000,
+      timeoutError,
+      () => controller.abort(),
+    );
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    throw new Error(
-      "Cannot reach Ziipa. Check your connection and the API address for this build.",
+    if (failureStatus !== undefined)
+      throw new ApiError(errorMessage(null), failureStatus);
+    throw new ApiRequestError(
+      data === undefined ? "unavailable" : "unconfirmed",
+      error instanceof OperationTimeoutError,
     );
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -159,42 +182,74 @@ export async function uploadMedia(
     size: file.size,
   });
   const direct = reservation.mode === "direct";
-  const task = FileSystem.createUploadTask(
-    direct ? reservation.url : validateOrigin() + "/api/creator/media",
-    file.uri,
-    {
-      httpMethod: direct ? "PUT" : "POST",
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-      headers: {
-        ...(direct ? reservation.headers : { Authorization: `Bearer ${token}`, "Content-Type": file.mimeType }),
-      },
-      sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
-    },
-    (event) =>
-      onProgress(
-        event.totalBytesExpectedToSend
-          ? Math.round(
-              (event.totalBytesSent / event.totalBytesExpectedToSend) * 100,
-            )
-          : 0,
-      ),
+  const timeoutError = new OperationTimeoutError(
+    "The upload did not finish in time. Keep this edit and try again; this upload has not submitted a creation.",
   );
-  const timer = setTimeout(() => {
-    void task.cancelAsync();
-  }, 180000);
+  let cancel: (() => Promise<void>) | undefined;
+  let response;
   try {
-    const response = await task.uploadAsync();
-    if (!response) throw new Error("Upload was cancelled. Please try again.");
-    const body = response.body ? JSON.parse(response.body) : null;
-    if (response.status >= 400)
-      throw new ApiError(errorMessage(body), response.status);
-    onProgress(100);
-    return direct
-      ? await request<{ id: string; url: string; content_type: string }>(
-          `/api/creator/media/${reservation.id}/complete`, token, {},
-        )
-      : (body as { id: string; url: string; content_type: string });
-  } finally {
-    clearTimeout(timer);
+    response = await withDeadline(
+      (isActive) => {
+        const task = FileSystem.createUploadTask(
+          direct ? reservation.url : validateOrigin() + "/api/creator/media",
+          file.uri,
+          {
+            httpMethod: direct ? "PUT" : "POST",
+            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+            headers: {
+              ...(direct
+                ? reservation.headers
+                : {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": file.mimeType,
+                  }),
+            },
+            sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
+          },
+          (event) => {
+            if (!isActive()) return;
+            onProgress(
+              event.totalBytesExpectedToSend
+                ? Math.round(
+                    (event.totalBytesSent / event.totalBytesExpectedToSend) *
+                      100,
+                  )
+                : 0,
+            );
+          },
+        );
+        cancel = () => task.cancelAsync();
+        return task.uploadAsync();
+      },
+      180000,
+      timeoutError,
+      () => cancel?.(),
+    );
+  } catch (error) {
+    if (error instanceof OperationTimeoutError) throw error;
+    throw new Error(
+      "Ziipa could not finish uploading this file. Keep this edit and check your connection before trying again.",
+    );
   }
+  if (!response) throw new Error("Upload was cancelled. Please try again.");
+  let body = null;
+  try {
+    body = response.body ? JSON.parse(response.body) : null;
+  } catch {
+    /* Storage errors need not be JSON. */
+  }
+  if (response.status < 200 || response.status >= 300)
+    throw new ApiError(errorMessage(body), response.status);
+  if (!direct && (!body || typeof body.id !== "string"))
+    throw new Error(
+      "Ziipa did not confirm the uploaded file. Keep this edit and check your library before trying again.",
+    );
+  onProgress(100);
+  return direct
+    ? await request<{ id: string; url: string; content_type: string }>(
+        `/api/creator/media/${reservation.id}/complete`,
+        token,
+        {},
+      )
+    : (body as { id: string; url: string; content_type: string });
 }

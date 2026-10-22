@@ -11,7 +11,10 @@ function loadApi(portalMode, response={id:7,name:'Studio member',email:'test@exa
   const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   const browserWindow={location:{origin:'https://ziipa.com',replace:(path)=>redirects.push(path)},parent:{postMessage:(...args)=>messages.push(args)}};
   if(standalone) browserWindow.parent=browserWindow;
-  const context={exports,require:(name)=>{assert.equal(name,'./config');return {portalMode,validateOrigin:()=> 'https://ziipa.com',authorizationHeaders:(token)=>token&&!portalMode?{Authorization:`Bearer ${token}`}:{}};},
+  const deadlineExports={};
+  const deadlineSource=readFileSync(new URL('../../mobile/src/lib/request-deadline.ts', import.meta.url), 'utf8');
+  vm.runInNewContext(ts.transpileModule(deadlineSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:deadlineExports,setTimeout,clearTimeout});
+  const context={exports,require:(name)=>{if(name==='./request-deadline')return deadlineExports;assert.equal(name,'./config');return {portalMode,validateOrigin:()=> 'https://ziipa.com',authorizationHeaders:(token)=>token&&!portalMode?{Authorization:`Bearer ${token}`}:{}};},
     AbortController,setTimeout,clearTimeout,Date,window:browserWindow,
     fetch:async(url,options)=>{calls.push({url,options});return {ok:status>=200&&status<300,status,json:async()=>response};}};
   vm.runInNewContext(compiled,context);

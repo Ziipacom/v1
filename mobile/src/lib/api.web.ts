@@ -1,5 +1,12 @@
 import type { Session } from "./types";
 import { validateOrigin, portalMode, authorizationHeaders } from "./config";
+import {
+  ApiRequestError,
+  OperationTimeoutError,
+  withDeadline,
+} from "./request-deadline";
+
+export { ApiRequestError } from "./request-deadline";
 
 // Browser bearer sessions stay in memory, never localStorage or cookies.
 let saved: Session | null = null;
@@ -55,41 +62,56 @@ export async function request<T>(
     throw new Error("Invalid API path");
   if (portalMode && path === "/api/mobile/auth/logout")
     path = "/api/auth/logout";
+  const url = validateOrigin() + path;
+  const requestBody = data === undefined ? undefined : JSON.stringify(data);
   const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    path === "/api/web3/metadata" ? 120000 : 30000,
-  );
+  const timeoutError = new OperationTimeoutError("The API request timed out.");
+  let failureStatus: number | undefined;
   try {
-    const response = await fetch(validateOrigin() + path, {
-      method: data === undefined ? "GET" : "POST",
-      headers: {
-        ...authorizationHeaders(token),
-        ...(data === undefined ? {} : { "Content-Type": "application/json" }),
+    return await withDeadline(
+      async (isActive) => {
+        const response = await fetch(url, {
+          method: data === undefined ? "GET" : "POST",
+          headers: {
+            ...authorizationHeaders(token),
+            ...(data === undefined
+              ? {}
+              : { "Content-Type": "application/json" }),
+          },
+          body: requestBody,
+          credentials: portalMode ? "include" : "omit",
+          redirect: "error",
+          signal: controller.signal,
+        });
+        if (!isActive()) throw timeoutError;
+        if (!response.ok) failureStatus = response.status;
+        const body = await response.json().catch(() => {
+          if (response.ok) throw new Error("Invalid API response");
+          return null;
+        });
+        if (!response.ok)
+          throw new ApiError(
+            typeof body?.detail === "string"
+              ? body.detail
+              : Array.isArray(body?.detail)
+                ? body.detail.map((d: { msg: string }) => d.msg).join("\n")
+                : "Request failed",
+            response.status,
+          );
+        return body as T;
       },
-      body: data === undefined ? undefined : JSON.stringify(data),
-      credentials: portalMode ? "include" : "omit",
-      redirect: "error",
-      signal: controller.signal,
-    });
-    const body = await response.json().catch(() => null);
-    if (!response.ok)
-      throw new ApiError(
-        typeof body?.detail === "string"
-          ? body.detail
-          : Array.isArray(body?.detail)
-            ? body.detail.map((d: { msg: string }) => d.msg).join("\n")
-            : "Request failed",
-        response.status,
-      );
-    return body;
+      path === "/api/web3/metadata" ? 120000 : 30000,
+      timeoutError,
+      () => controller.abort(),
+    );
   } catch (e) {
     if (e instanceof ApiError) throw e;
-    throw new Error(
-      "Cannot reach Ziipa. Check that the API is running and this browser origin is allowed.",
+    if (failureStatus !== undefined)
+      throw new ApiError("Request failed", failureStatus);
+    throw new ApiRequestError(
+      data === undefined ? "unavailable" : "unconfirmed",
+      e instanceof OperationTimeoutError,
     );
-  } finally {
-    clearTimeout(timer);
   }
 }
 export type UploadFile = {
@@ -148,7 +170,27 @@ export async function uploadMedia(
   if (!file.uri.startsWith("blob:") && !file.uri.startsWith("data:"))
     throw new Error("Choose a file from this device.");
   onProgress(0);
-  const blob = await (await fetch(file.uri)).blob();
+  const localController = new AbortController();
+  const readTimeout = new OperationTimeoutError(
+    "Reading this file took too long. Choose it again and keep this edit open.",
+  );
+  const blob = await withDeadline(
+    async (isActive) => {
+      const response = await fetch(file.uri, {
+        signal: localController.signal,
+      });
+      if (!isActive()) throw readTimeout;
+      return response.blob();
+    },
+    30000,
+    readTimeout,
+    () => localController.abort(),
+  ).catch((error: unknown) => {
+    if (error instanceof OperationTimeoutError) throw error;
+    throw new Error(
+      "Ziipa could not read this file. Choose it again and keep this edit open.",
+    );
+  });
   if (blob.size > uploadLimit) throw new Error("File exceeds 100 MB.");
   const reservation = await request<{
     id?: string;
@@ -163,41 +205,58 @@ export async function uploadMedia(
   });
   const direct = reservation.mode === "direct";
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 180000);
-  try {
-    const response = await fetch(
-      direct ? reservation.url : validateOrigin() + "/api/creator/media",
-      {
-        method: direct ? "PUT" : "POST",
-        headers: {
-          ...(direct
-            ? reservation.headers
-            : {
-                ...authorizationHeaders(token),
-                "Content-Type": file.mimeType,
-              }),
+  const timeoutError = new OperationTimeoutError(
+    "The upload did not finish in time. Keep this edit and try again; this upload has not submitted a creation.",
+  );
+  const body = await withDeadline(
+    async (isActive) => {
+      const response = await fetch(
+        direct ? reservation.url : validateOrigin() + "/api/creator/media",
+        {
+          method: direct ? "PUT" : "POST",
+          headers: {
+            ...(direct
+              ? reservation.headers
+              : {
+                  ...authorizationHeaders(token),
+                  "Content-Type": file.mimeType,
+                }),
+          },
+          body: blob,
+          credentials: portalMode && !direct ? "include" : "omit",
+          redirect: "error",
+          signal: controller.signal,
         },
-        body: blob,
-        credentials: portalMode && !direct ? "include" : "omit",
-        redirect: "error",
-        signal: controller.signal,
-      },
-    );
-    const body = await response.json().catch(() => null);
-    if (!response.ok)
-      throw new ApiError(
-        typeof body.detail === "string" ? body.detail : "Upload failed",
-        response.status,
       );
-    onProgress(100);
-    return direct
-      ? await request<{ id: string; url: string; content_type: string }>(
-          `/api/creator/media/${reservation.id}/complete`,
-          token,
-          {},
-        )
-      : (body as { id: string; url: string; content_type: string });
-  } finally {
-    clearTimeout(timer);
-  }
+      if (!isActive()) throw timeoutError;
+      const body = await response.json().catch(() => null);
+      if (!response.ok)
+        throw new ApiError(
+          typeof body?.detail === "string" ? body.detail : "Upload failed",
+          response.status,
+        );
+      if (!direct && (!body || typeof body.id !== "string"))
+        throw new Error(
+          "Ziipa did not confirm the uploaded file. Keep this edit and check your library before trying again.",
+        );
+      return body;
+    },
+    180000,
+    timeoutError,
+    () => controller.abort(),
+  ).catch((error: unknown) => {
+    if (error instanceof ApiError || error instanceof OperationTimeoutError)
+      throw error;
+    throw new Error(
+      "Ziipa could not finish uploading this file. Keep this edit and check your connection before trying again.",
+    );
+  });
+  onProgress(100);
+  return direct
+    ? await request<{ id: string; url: string; content_type: string }>(
+        `/api/creator/media/${reservation.id}/complete`,
+        token,
+        {},
+      )
+    : (body as { id: string; url: string; content_type: string });
 }

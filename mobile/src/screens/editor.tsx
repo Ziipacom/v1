@@ -26,6 +26,7 @@ import {
   Pause,
   Play,
   Radio,
+  RefreshCw,
   Save,
   Scissors,
   Share2,
@@ -65,6 +66,8 @@ import { color, font, styles, themedStyles } from "../theme";
 import { useZiipa } from "../provider";
 import {
   creatorMimeType,
+  ApiError,
+  ApiRequestError,
   uploadLimit,
   uploadMedia,
   type UploadFile,
@@ -72,6 +75,12 @@ import {
 import { editorCaptions } from "../lib/editor-captions";
 import { hasAdvancedOverlays, overlayLayoutSupported, overlayClipRange, validateOverlays, OVERLAY_API_REQUIRED } from "../lib/editor-overlays";
 import { savedComposerParams } from "../lib/composer-navigation";
+import {
+  createEditorSaveController,
+  editorSaveLabel,
+  matchesEditorSubmission,
+  type EditorSavePhase,
+} from "../lib/editor-save";
 import { sourceCaptionsForEdit, validateCaptionCues } from "../lib/auto-captions";
 import { audioCreationSource, sourceMintItem } from "../lib/editor-source";
 import { inCreativeWorld, parseEditing, parsePrice } from "../lib/domain";
@@ -88,6 +97,7 @@ import {
 } from "../lib/social";
 import type {
   Category,
+  Bootstrap,
   Caption,
   Distribution,
   Item,
@@ -115,7 +125,7 @@ export function ComposerScreen({
   const existing = route.params?.item;
   const persistedId = useRef(existing?.id);
   const remix = route.params?.remix;
-  const { data, session, guest, api, refresh, savePreviewDraft } = useZiipa();
+  const { data, session, guest, api, refresh, savePreviewDraft, recordSavedItem } = useZiipa();
   const [overlayConfig, setOverlayConfig] = useState<unknown>(null);
   const [overlayConfigStatus, setOverlayConfigStatus] = useState<"checking" | "unavailable" | "unsupported" | "ready">("checking");
   const overlayConfigEpoch = useRef(0);
@@ -404,6 +414,38 @@ export function ComposerScreen({
   );
   const [paused, setPaused] = useState(true);
   const [busy, setBusy] = useState(false);
+  type SaveButton = "share-draft" | "share-publish" | "desktop-draft" | "mint-draft" | "caption-draft";
+  type PendingSubmission = { payload: ItemInput; id: string | null; baselineIds: string[]; cleanFingerprint: string; ownerToken: string };
+  const saveLock = useRef(false);
+  const saveController = useRef(createEditorSaveController());
+  const [activeSaveButton, setActiveSaveButton] = useState<SaveButton | null>(null);
+  const [savePhase, setSavePhase] = useState<EditorSavePhase>("checking");
+  const [saveNotice, setSaveNotice] = useState("");
+  const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission | null>(null);
+  const [recheckCandidates, setRecheckCandidates] = useState<Item[]>([]);
+  const [rechecking, setRechecking] = useState(false);
+  const recheckLock = useRef(false);
+  const [deliveryNeedsReview, setDeliveryNeedsReview] = useState(false);
+  const saveOwner = useRef(session?.access_token || (guest ? "guest" : null));
+  saveOwner.current = session?.access_token || (guest ? "guest" : null);
+  const saveGeneration = useRef(0);
+  const saveMounted = useRef(true);
+  useEffect(() => {
+    saveMounted.current = true;
+    saveGeneration.current++;
+    saveController.current = createEditorSaveController();
+    saveLock.current = false;
+    recheckLock.current = false;
+    setBusy(false);
+    setSaved(null);
+    setPendingSubmission(null);
+    setRecheckCandidates([]);
+    setActiveSaveButton(null);
+    setRechecking(false);
+    setSaveNotice("");
+    setDeliveryNeedsReview(false);
+    return () => { saveMounted.current = false; saveGeneration.current++; };
+  }, [session?.access_token, guest]);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState<Item | null>(null);
@@ -466,7 +508,7 @@ export function ComposerScreen({
     session?.user.id,
     unsaved,
   );
-  usePreventRemove(busy, () =>
+  usePreventRemove(busy && savePhase !== "refresh" && savePhase !== "distribution", () =>
     Alert.alert(
       "Saving your creation",
       "Please wait for the upload or save to finish.",
@@ -624,9 +666,24 @@ export function ComposerScreen({
     setRecorderMode(null);
     setTab("Edit");
   }
-  async function save(visibility: "draft" | "published") {
+  async function save(visibility: "draft" | "published", button: SaveButton = "share-draft") {
+    if (saveLock.current || recheckLock.current) return;
+    if (saveController.current.unconfirmed || pendingSubmission) {
+      setError("The last save was not confirmed. Check its saved status before submitting again; your edits are still here.");
+      return;
+    }
+    if (visibility === "published" && (deliveryNeedsReview && targets.length)) {
+      setError("Your creation was saved. Check the network outbox before requesting delivery again, or deselect external destinations to update only Ziipa.");
+      return;
+    }
+    if (visibility === "published" && saved?.visibility === "published" && !unsaved) return;
+    saveLock.current = true;
+    const ownerToken = saveOwner.current;
+    const generation = saveGeneration.current;
+    const current = () => saveMounted.current && saveOwner.current === ownerToken && saveGeneration.current === generation;
+    const assertCurrent = () => { if (!current()) throw new Error("Your account changed. Reopen your creation before saving."); };
     setError("");
-    setSaved(null);
+    setSaveNotice("");
     const parsedTags = [
       ...new Set(
         tags
@@ -677,12 +734,16 @@ export function ComposerScreen({
         throw new Error("Soundtrack volume must be between 0 and 100%.");
     } catch (e) {
       setError((e as Error).message);
+      saveLock.current = false;
       return;
     }
     setBusy(true);
+    setActiveSaveButton(button);
+    setSavePhase("checking");
     setProgress(0);
     try {
       if (guest) {
+        setSavePhase("saving");
         const draft: Item = {
           ...base,
           ...parsed,
@@ -757,40 +818,46 @@ export function ComposerScreen({
         navigation.replaceParams(savedComposerParams(draft));
         setSaved(draft);
         setCleanFingerprint(JSON.stringify({ ...formSnapshot, remixId: null }));
+        setSaveNotice("Draft saved for this preview session. Nothing was published.");
       } else {
-        // Check before any upload/write: older APIs ignore unknown overlay
-        // properties, which would otherwise silently discard a creator's edit.
-        if (hasAdvancedOverlays(overlays)) {
-          let config: unknown;
-          try { config = await api("/api/creator/config"); }
-          catch (error) {
-            if ((error as { status?: number }).status === 404) throw new Error(OVERLAY_API_REQUIRED);
-            throw new Error("Could not verify overlay save support. Your changes are still here. Refresh overlay status and try again.");
-          }
-          setOverlayConfig(config);
-          if (!overlayLayoutSupported(config)) throw new Error(OVERLAY_API_REQUIRED);
-        }
-        let selectedId = mediaId;
-        if (file && !selectedId) {
-          const uploaded = await uploadMedia(
-            file,
-            session!.access_token,
-            setProgress,
-          );
-          selectedId = uploaded.id;
-          setMediaId(selectedId);
-        }
-        let selectedSoundtrackId = soundtrackId;
-        if (soundtrackFile && !selectedSoundtrackId) {
-          const uploaded = await uploadMedia(
-            soundtrackFile,
-            session!.access_token,
-            setProgress,
-          );
-          selectedSoundtrackId = uploaded.id;
-          setSoundtrackId(selectedSoundtrackId);
-        }
-        const payload: ItemInput = {
+        let submitted: PendingSubmission | null = null;
+        const controller = saveController.current;
+        const outcome = await controller.run({
+          action: visibility,
+          phase: (phase) => { if (current()) { setSavePhase(phase); setProgress(0); } },
+          isUnconfirmed: (error) => (error instanceof ApiRequestError && error.outcome === "unconfirmed") || (error instanceof ApiError && error.status >= 500),
+          prepare: async (phase) => {
+            assertCurrent();
+            // Older APIs ignore unknown overlay fields. Check before uploading
+            // or writing so an unsupported edit is never silently discarded.
+            if (hasAdvancedOverlays(overlays)) {
+              let config: unknown;
+              try { config = await api("/api/creator/config"); }
+              catch (error) {
+                if ((error as { status?: number }).status === 404) throw new Error(OVERLAY_API_REQUIRED);
+                throw new Error("Could not verify overlay save support. Your changes are still here. Refresh overlay status and try again.");
+              }
+              assertCurrent();
+              setOverlayConfig(config);
+              if (!overlayLayoutSupported(config)) throw new Error(OVERLAY_API_REQUIRED);
+            }
+            let selectedId = mediaId;
+            if (file && !selectedId) {
+              phase("upload_source");
+              const uploaded = await uploadMedia(file, session!.access_token, (value) => { if (current()) setProgress(value); });
+              assertCurrent();
+              selectedId = uploaded.id;
+              setMediaId(selectedId);
+            }
+            let selectedSoundtrackId = soundtrackId;
+            if (soundtrackFile && !selectedSoundtrackId) {
+              phase("upload_soundtrack");
+              const uploaded = await uploadMedia(soundtrackFile, session!.access_token, (value) => { if (current()) setProgress(value); });
+              assertCurrent();
+              selectedSoundtrackId = uploaded.id;
+              setSoundtrackId(selectedSoundtrackId);
+            }
+            const payload: ItemInput = {
           title: title.trim(),
           description,
           category,
@@ -814,42 +881,100 @@ export function ComposerScreen({
               }
             : null,
           distribution_targets: targets,
-        };
-        const result = await api<Item>(
-          persistedId.current
-            ? `/api/creator/items/${persistedId.current}`
-            : "/api/creator/items",
-          payload,
-        );
-        persistedId.current = result.id;
-        // Update this route's identity, not its key. The live form and removal
-        // guards stay mounted, while Create is free to open a fresh new route.
-        navigation.replaceParams(savedComposerParams(result));
-        // Only the submitted snapshot is clean. If a control changed while
-        // saving, its current fingerprint still differs and remains unsaved.
-        setCleanFingerprint(
-          JSON.stringify({
-            ...formSnapshot,
-            mediaId: selectedId,
-            soundtrackId: selectedSoundtrackId,
-            remixId: null,
-          }),
-        );
-        await refresh();
-        setSaved(result);
-        if (visibility === "published" && targets.length) {
-          const distribution = await api<Distribution[]>(
-            `/api/creator/items/${result.id}/distribute`,
-            { providers: targets },
-          );
-          setSaved({ ...result, distribution });
-          await refresh();
+            };
+            return {
+              payload,
+              cleanFingerprint: JSON.stringify({ ...formSnapshot, mediaId: selectedId, soundtrackId: selectedSoundtrackId, remixId: null }),
+            };
+          },
+          write: async (prepared) => {
+            assertCurrent();
+            submitted = { ...prepared, id: persistedId.current || null, baselineIds: data.drafts.map((item) => item.id), ownerToken: session!.access_token };
+            return api<Item>(persistedId.current ? `/api/creator/items/${persistedId.current}` : "/api/creator/items", prepared.payload);
+          },
+          confirmed: (result, prepared) => {
+            assertCurrent();
+            persistedId.current = result.id;
+            // The canonical POST response is the receipt. Show it before a
+            // separate library read, which can fail without undoing the save.
+            setSaved(result);
+            recordSavedItem(result, session!.access_token);
+            setCleanFingerprint(prepared.cleanFingerprint);
+            navigation.replaceParams(savedComposerParams(result));
+          },
+          ...(visibility === "published" && targets.length ? {
+            distribute: async (result: Item) => {
+              assertCurrent();
+              const distribution = await api<Distribution[]>(`/api/creator/items/${result.id}/distribute`, { providers: targets });
+              assertCurrent();
+              const confirmed = { ...result, distribution };
+              setSaved(confirmed);
+              recordSavedItem(confirmed, session!.access_token);
+            },
+          } : {}),
+          refresh: async () => { assertCurrent(); await refresh({ throwOnError: true }); },
+        });
+        if (!current()) return;
+        if (outcome.kind === "failed") throw outcome.error;
+        if (outcome.kind === "unconfirmed") {
+          setPendingSubmission(submitted);
+          setRecheckCandidates([]);
+          setError("Ziipa did not confirm the save response. It may already have saved or published this creation. Your edits are intact. Use Check saved status; do not publish again yet.");
+        } else if (outcome.kind === "confirmed") {
+          setDeliveryNeedsReview(outcome.distributionUnconfirmed);
+          setSaveNotice(outcome.warnings.join("\n") || (visibility === "published" ? "Creation published to Ziipa." : "Private draft saved to your account."));
         }
       }
     } catch (e) {
-      setError((e as Error).message);
+      if (current()) setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (current()) {
+        saveLock.current = false;
+        setBusy(false);
+        setActiveSaveButton(null);
+      }
+    }
+  }
+  function confirmRecheckedItem(item: Item, pending: PendingSubmission) {
+    if (saveOwner.current !== pending.ownerToken || !session || item.creator_id !== session.user.id) return;
+    saveController.current.confirmReadOnlyResult();
+    persistedId.current = item.id;
+    setSaved(item);
+    recordSavedItem(item, pending.ownerToken);
+    setCleanFingerprint(pending.cleanFingerprint);
+    setPendingSubmission(null);
+    setRecheckCandidates([]);
+    setError("");
+    setDeliveryNeedsReview(!!pending.payload.distribution_targets.length);
+    setSaveNotice("Saved creation confirmed from your account. Nothing was submitted again. Review the network outbox separately before requesting external delivery.");
+    navigation.replaceParams(savedComposerParams(item));
+  }
+  async function recheckSavedStatus() {
+    const pending = pendingSubmission;
+    if (!pending || saveLock.current || recheckLock.current || pending.ownerToken !== saveOwner.current || !session) return;
+    recheckLock.current = true;
+    const generation = saveGeneration.current;
+    const current = () => saveMounted.current && generation === saveGeneration.current && pending.ownerToken === saveOwner.current;
+    setRechecking(true);
+    setError("");
+    try {
+      // Owner-only canonical rows, not a title search or an optimistic replay.
+      const bootstrap = await api<Bootstrap>("/api/creator/bootstrap");
+      if (!current()) return;
+      const matches = bootstrap.drafts.filter((item) => matchesEditorSubmission(item, pending.payload, session.user.id));
+      const known = pending.id ? matches.find((item) => item.id === pending.id) : null;
+      if (known) confirmRecheckedItem(known, pending);
+      else {
+        const candidates = pending.id ? [] : matches.filter((item) => !pending.baselineIds.includes(item.id));
+        setRecheckCandidates(candidates.slice(0, 3));
+        setSaveNotice(candidates.length
+          ? "Matching saved creations were found in your account. Review the creation, then explicitly choose Use this saved creation. No creation or external delivery was submitted again."
+          : "No matching acknowledgement is visible yet. Your edits remain here. Checking status only reads your account; it does not submit again.");
+      }
+    } catch (error) {
+      if (current()) setError(error instanceof Error ? error.message : "Could not check saved status. Your edits remain here.");
+    } finally {
+      if (current()) { recheckLock.current = false; setRechecking(false); }
     }
   }
   const frameWidth = Math.min(
@@ -1338,7 +1463,7 @@ export function ComposerScreen({
             accepted={sourceCaptionTrack}
             disabled={busy}
             onApply={(cues) => applyEdit({ sourceCaptionTrack: cues, ...(cues !== null ? { caption: "" } : {}) })}
-            onSaveSource={() => void save("draft")}
+            onSaveSource={() => void save("draft", "caption-draft")}
             onRights={() => navigation.navigate("MediaOS", { tab: "Library" })}
           />}
         />
@@ -1481,16 +1606,17 @@ export function ComposerScreen({
               />
             ) : (
               <Action
-                title="Save private draft for source mint review"
+                title={busy && activeSaveButton === "mint-draft" ? editorSaveLabel(savePhase, progress) : "Save private draft for source mint review"}
                 icon={Save}
                 secondary
-                busy={busy}
+                busy={busy && activeSaveButton === "mint-draft"}
                 disabled={
                   busy ||
+                  !!pendingSubmission || rechecking ||
                   (!file && !mediaId) ||
                   existing?.visibility === "hidden"
                 }
-                onPress={() => void save("draft")}
+                onPress={() => void save("draft", "mint-draft")}
               />
             )}
             <Text style={[styles.small, { fontSize: 11 }]}>
@@ -1549,11 +1675,12 @@ export function ComposerScreen({
                 accessibilityRole="checkbox"
                 accessibilityState={{
                   checked: selected,
-                  disabled: !compatible,
+                  disabled: !compatible || busy,
                 }}
+                disabled={!compatible || busy}
                 accessibilityLabel={`Share to ${connection?.name || provider.id}`}
                 onPress={() => {
-                  if (!compatible) return;
+                  if (!compatible || busy) return;
                   setTargets((current) =>
                     current.includes(provider.id)
                       ? current.filter((item) => item !== provider.id)
@@ -1627,13 +1754,23 @@ export function ComposerScreen({
         </Text>
       )}
       {!!error && <Notice text={error} error />}
+      {!!saveNotice && <Notice text={saveNotice} />}
       {busy && (
         <Text accessibilityLiveRegion="polite" style={styles.small}>
-          {file && !mediaId
-            ? `Uploading… ${progress}%`
-            : "Saving your creation…"}
+          {editorSaveLabel(savePhase, progress)}
         </Text>
       )}
+      {pendingSubmission ? <View style={{ gap: 10 }}>
+        <Action title="Check saved status (read only)" icon={RefreshCw} secondary busy={rechecking} disabled={busy} onPress={() => void recheckSavedStatus()} />
+        <Notice text="A missing match does not prove the earlier request failed. Review your creations before intentionally starting a different draft. Opening your library keeps this editor and its changes in the navigation stack; this unconfirmed save will not be replayed." />
+        <Action title="Review my creations" secondary disabled={busy || rechecking} onPress={() => navigation.navigate("CreatorStudio", { tab: "library" })} />
+        {recheckCandidates.map((item) => <View key={item.id} style={[styles.panel, { gap: 10 }]}>
+          <Text style={styles.label}>{item.title} · {item.visibility === "published" ? "Published" : "Private draft"}</Text>
+          <Text style={styles.small}>{item.created_at ? new Date(item.created_at).toLocaleString() : item.id}</Text>
+          <Action title="Review matching creation" secondary disabled={rechecking || busy} onPress={() => navigation.navigate("Watch", { itemId: item.id, category: item.category })} />
+          <Action title="Use this saved creation" icon={Check} disabled={rechecking || busy} onPress={() => confirmRecheckedItem(item, pendingSubmission)} />
+        </View>)}
+      </View> : null}
       {saved && tab === "Share" && (
         <>
           <Notice
@@ -1708,7 +1845,9 @@ export function ComposerScreen({
         <>
           <Action
             title={
-              guest
+              busy && activeSaveButton === "share-draft"
+                ? editorSaveLabel(savePhase, progress)
+                : guest
                 ? targets.length
                   ? "Save & preview distribution"
                   : file || base.label === "Local draft"
@@ -1717,21 +1856,29 @@ export function ComposerScreen({
                 : "Save private draft"
             }
             icon={Save}
-            onPress={() => void save("draft")}
-            busy={busy}
+            onPress={() => void save("draft", "share-draft")}
+            busy={busy && activeSaveButton === "share-draft"}
+            disabled={busy || rechecking || !!pendingSubmission}
           />
           {!guest && (
             <Action
               title={
-                targets.length
+                busy && activeSaveButton === "share-publish"
+                  ? editorSaveLabel(savePhase, progress)
+                  : saved?.visibility === "published" && !unsaved
+                    ? "Published to Ziipa"
+                    : targets.length
                   ? `Publish to Ziipa + ${targets.length}`
                   : "Publish to Ziipa"
               }
               secondary
               icon={Upload}
-              onPress={() => void save("published")}
-              busy={busy}
+              onPress={() => void save("published", "share-publish")}
+              busy={busy && activeSaveButton === "share-publish"}
               disabled={
+                busy || rechecking || !!pendingSubmission ||
+                (saved?.visibility === "published" && !unsaved) ||
+                (deliveryNeedsReview && !!targets.length) ||
                 category === "live" ||
                 category === "nft" ||
                 existing?.visibility === "hidden"
@@ -1772,7 +1919,7 @@ export function ComposerScreen({
               </Text>
               <Text style={[styles.small, { fontSize: 11 }]}>
                 {busy
-                  ? "Saving..."
+                  ? editorSaveLabel(savePhase, progress)
                   : unsaved
                     ? "Unsaved changes"
                     : "All changes saved"}{" "}
@@ -1780,10 +1927,11 @@ export function ComposerScreen({
               </Text>
             </View>
             <Action
-              title="Save draft"
+              title={busy && activeSaveButton === "desktop-draft" ? editorSaveLabel(savePhase, progress) : "Save draft"}
               icon={Save}
-              busy={busy}
-              onPress={() => void save("draft")}
+              busy={busy && activeSaveButton === "desktop-draft"}
+              disabled={busy || rechecking || !!pendingSubmission}
+              onPress={() => void save("draft", "desktop-draft")}
             />
           </View>
           <View

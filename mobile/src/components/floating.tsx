@@ -160,7 +160,7 @@ export function CategoryDock({
   onSelect,
   onInbox,
 }: {
-  selected: Category;
+  selected: Category | "all";
   onSelect: (id: Category) => void;
   onInbox: () => void;
 }) {

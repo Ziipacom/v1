@@ -28,6 +28,7 @@ import {
 import demo from "./lib/demo.json";
 import { disconnectWallet } from "./lib/wallet-connector";
 import { emptyNetworkHub, type NetworkHub } from "./lib/network-hub";
+import { applyConfirmedEditorItem } from "./lib/editor-save";
 import { useTheme } from "./theme";
 
 const empty: Bootstrap = {
@@ -125,7 +126,8 @@ type State = {
   ) => Promise<void>;
   logout: () => Promise<void>;
   forgetSession: () => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: (options?: { throwOnError?: boolean }) => Promise<void>;
+  recordSavedItem: (item: Item, ownerToken: string) => void;
   api: <T>(path: string, data?: unknown) => Promise<T>;
   preferences: (patch: Partial<Preferences>) => Promise<void>;
   toggle: (key: "liked" | "saved", id: string) => Promise<void>;
@@ -154,6 +156,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     browserPreview ? previewData() : empty,
   );
   const dataRef = useRef(data);
+  const refreshEpoch = useRef(0);
   const activeToken = useRef<string | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const putData = useCallback((value: Bootstrap) => {
@@ -244,19 +247,54 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
       clearInterval(interval);
     };
   }, [session, api]);
-  const refresh = useCallback(async () => {
-    if (!session) return;
-    setRefreshing(true);
-    setError("");
-    try {
-      putData(await api<Bootstrap>("/api/creator/bootstrap"));
-    } catch (e) {
-      if (activeToken.current === session.access_token)
-        setError((e as Error).message);
-    } finally {
+  const refresh = useCallback(
+    async (options?: { throwOnError?: boolean }) => {
+      if (!session) return;
+      const epoch = ++refreshEpoch.current;
+      setRefreshing(true);
+      setError("");
+      try {
+        const bootstrap = await api<Bootstrap>("/api/creator/bootstrap");
+        if (
+          epoch === refreshEpoch.current &&
+          activeToken.current === session.access_token
+        )
+          putData(bootstrap);
+      } catch (e) {
+        if (
+          epoch === refreshEpoch.current &&
+          activeToken.current === session.access_token
+        )
+          setError((e as Error).message);
+        if (options?.throwOnError) throw e;
+      } finally {
+        if (epoch === refreshEpoch.current) setRefreshing(false);
+      }
+    },
+    [session, api, putData],
+  );
+  const recordSavedItem = useCallback(
+    (item: Item, ownerToken: string) => {
+      if (
+        !session ||
+        guest ||
+        activeToken.current !== ownerToken ||
+        session.access_token !== ownerToken
+      )
+        return;
+      const next = applyConfirmedEditorItem(
+        dataRef.current,
+        item,
+        session.user.id,
+      );
+      if (next === dataRef.current) return;
+      // A read started before this acknowledged write cannot replace its receipt.
+      refreshEpoch.current++;
       setRefreshing(false);
-    }
-  }, [session, api, putData]);
+      putData(next);
+    },
+    [session, guest, putData],
+  );
   async function authenticate(email: string, password: string, name?: string) {
     const result = await request<
       Session | { verification_required: true; message: string }
@@ -387,6 +425,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
         logout,
         forgetSession,
         refresh,
+        recordSavedItem,
         preferences,
         toggle,
         savePreviewDraft,

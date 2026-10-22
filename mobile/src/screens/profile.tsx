@@ -31,12 +31,22 @@ import {
   WorldGlyph,
   worlds,
 } from "../components/floating";
-import { Action, Cover, Notice, Pill } from "../components/ui";
+import { Action, Notice, Pill } from "../components/ui";
 import { SignOutButton } from "../components/account-menu";
 import { ProfileImageControls } from "../components/profile-image-controls";
+import {
+  ProfileMediaPreview,
+  useProfilePreviewActivity,
+} from "../components/profile-media-preview";
 import { coverSource } from "../lib/assets";
 import { useProfileImageSource } from "../lib/profile-image-source";
-import { inCreativeWorld } from "../lib/domain";
+import {
+  profileCardVisible,
+  profileCreations,
+  profileVideoSelection,
+  type ProfileCategory,
+  type ProfileCardBounds,
+} from "../lib/profile-preview";
 import type { Category, ProfileImages, RootStack } from "../lib/types";
 import { useZiipa } from "../provider";
 import { color, font, styles } from "../theme";
@@ -46,9 +56,16 @@ export function ProfileScreen({
 }: NativeStackScreenProps<RootStack, "Profile">) {
   const { desktop, contentWidth } = useDesktopLayout();
   const { session, guest, data, api, refresh } = useZiipa();
-  const [category, setCategory] = useState<Category>("music");
+  const [category, setCategory] = useState<ProfileCategory>("all");
   const [saved, setSaved] = useState(false);
   const [sheet, setSheet] = useState<"art" | "account" | "social" | null>(null);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [scrollY, setScrollY] = useState(0);
+  const [gridTop, setGridTop] = useState(0);
+  const [cardLayouts, setCardLayouts] = useState<{
+    key: string;
+    values: Record<string, ProfileCardBounds>;
+  }>({ key: "", values: {} });
   const [previewBanner, setPreviewBanner] = useState<string | null>(null);
   const [profileOverride, setProfileOverride] = useState<{
     token: string;
@@ -102,11 +119,30 @@ export function ProfileScreen({
     : guest
       ? data.items
       : data.drafts.filter((i) => i.visibility === "published");
-  const items = source.filter((i) => inCreativeWorld(i, category));
+  const items = profileCreations(source, category);
+  const layoutKey = `${category}:${saved}:${items.map((item) => item.id).join(",")}`;
+  const layoutIdentity = useRef(layoutKey);
+  layoutIdentity.current = layoutKey;
+  const cardBounds = cardLayouts.key === layoutKey ? cardLayouts.values : {};
+  const viewport = { top: scrollY, height: viewportHeight, gridTop };
+  const activity = useProfilePreviewActivity(!!sheet);
+  const activeVideo = activity.mountVideo
+    ? profileVideoSelection(items, cardBounds, viewport)
+    : null;
+  const createCategory: Category = category === "all" ? "video" : category;
   return (
     <View style={styles.screen}>
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={80}
+        onLayout={(event) => {
+          const height = event.nativeEvent.layout.height;
+          setViewportHeight(height);
+        }}
+        onScroll={(event) => {
+          const offset = event.nativeEvent.contentOffset.y;
+          setScrollY(offset);
+        }}
         contentContainerStyle={
           desktop ? workspace.page : { paddingBottom: 108 + insets.bottom }
         }
@@ -255,7 +291,9 @@ export function ProfileScreen({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Create"
-              onPress={() => navigation.navigate("Composer", { category })}
+              onPress={() =>
+                navigation.navigate("Composer", { category: createCategory })
+              }
               style={p.action}
             >
               <Plus size={18} color="white" />
@@ -265,7 +303,10 @@ export function ProfileScreen({
               accessibilityRole="button"
               accessibilityLabel="Edit your creations"
               onPress={() =>
-                navigation.navigate("Studio", { category, edit: true })
+                navigation.navigate("Studio", {
+                  category: createCategory,
+                  edit: true,
+                })
               }
               style={p.action}
             >
@@ -344,12 +385,47 @@ export function ProfileScreen({
           </Pressable>
           <View style={styles.row}>
             <Text style={p.label}>
-              {worlds.find((w) => w.id === category)?.title}
+              {category === "all"
+                ? "All creations"
+                : worlds.find((w) => w.id === category)?.title}
             </Text>
-            <WorldGlyph id={category} size={19} />
+            {category !== "all" && (
+              <>
+                <WorldGlyph id={category} size={19} />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Show all creations"
+                  onPress={() => setCategory("all")}
+                  style={{
+                    minWidth: 44,
+                    minHeight: 44,
+                    justifyContent: "center",
+                    alignItems: "center",
+                    borderWidth: 1,
+                    borderColor: color.border,
+                    borderRadius: 12,
+                    paddingHorizontal: 10,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: color.text,
+                      fontFamily: font.medium,
+                      fontSize: 12,
+                    }}
+                  >
+                    All
+                  </Text>
+                </Pressable>
+              </>
+            )}
           </View>
         </View>
         <View
+          onLayout={(event) => {
+            const top = event.nativeEvent.layout.y;
+            setGridTop(top);
+          }}
           style={
             desktop
               ? { flexDirection: "row", flexWrap: "wrap", gap: 18 }
@@ -361,8 +437,26 @@ export function ProfileScreen({
               key={item.id}
               accessibilityRole="button"
               accessibilityLabel={`Watch ${item.title}`}
+              onLayout={(event) => {
+                const { y, height } = event.nativeEvent.layout;
+                if (layoutIdentity.current !== layoutKey) return;
+                setCardLayouts((previous) => {
+                  const values =
+                    previous.key === layoutKey ? previous.values : {};
+                  return values[item.id]?.top === y &&
+                    values[item.id]?.height === height
+                    ? previous
+                    : {
+                        key: layoutKey,
+                        values: { ...values, [item.id]: { top: y, height } },
+                      };
+                });
+              }}
               onPress={() =>
-                navigation.navigate("Watch", { itemId: item.id, category })
+                navigation.navigate("Watch", {
+                  itemId: item.id,
+                  category: item.category,
+                })
               }
               style={{
                 ...(desktop
@@ -382,7 +476,15 @@ export function ProfileScreen({
                 borderColor: "#5D506E",
               }}
             >
-              <Cover item={item} style={{ flex: 1 }} />
+              <ProfileMediaPreview
+                item={item}
+                visible={
+                  activity.visible &&
+                  profileCardVisible(cardBounds[item.id], viewport)
+                }
+                videoActive={activeVideo === item.id}
+                autoplay={activity.autoplay}
+              />
               <View
                 style={{
                   position: "absolute",
@@ -419,7 +521,10 @@ export function ProfileScreen({
                 title="Open Studio"
                 secondary
                 onPress={() =>
-                  navigation.navigate("Studio", { category, edit: true })
+                  navigation.navigate("Studio", {
+                    category: createCategory,
+                    edit: true,
+                  })
                 }
               />
             </View>
