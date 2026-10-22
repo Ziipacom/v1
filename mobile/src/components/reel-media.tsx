@@ -127,9 +127,15 @@ function EditedReel({
   return (
     <View
       style={StyleSheet.absoluteFill}
-      onLayout={(event) =>
-        setArea(previous => previous.width === event.nativeEvent.layout.width && previous.height === event.nativeEvent.layout.height ? previous : { width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })
-      }
+      onLayout={(event) => {
+        // Native events may be released before a queued updater is evaluated.
+        const { width, height } = event.nativeEvent.layout;
+        setArea((previous) =>
+          previous.width === width && previous.height === height
+            ? previous
+            : { width, height },
+        );
+      }}
     >
       <EditorPreview
         item={item}

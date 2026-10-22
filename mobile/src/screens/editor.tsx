@@ -831,17 +831,16 @@ export function ComposerScreen({
     : currentTime + (Number(start) || 0);
   const preview = (
     <View
-      onLayout={(event) =>
+      onLayout={(event) => {
+        // Native layout events are pooled; retain values, not the event, for
+        // the state updater that React may evaluate after dispatch returns.
+        const { width, height } = event.nativeEvent.layout;
         setCanvasArea((previous) =>
-          previous.width === event.nativeEvent.layout.width &&
-          previous.height === event.nativeEvent.layout.height
+          previous.width === width && previous.height === height
             ? previous
-            : {
-                width: event.nativeEvent.layout.width,
-                height: event.nativeEvent.layout.height,
-              },
-        )
-      }
+            : { width, height },
+        );
+      }}
       style={{
         height: desktop
           ? "100%"
