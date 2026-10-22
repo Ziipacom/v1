@@ -70,6 +70,7 @@ import {
   type UploadFile,
 } from "../lib/api";
 import { editorCaptions } from "../lib/editor-captions";
+import { hasAdvancedOverlays, overlayLayoutSupported, overlayClipRange, validateOverlays, OVERLAY_API_REQUIRED } from "../lib/editor-overlays";
 import { savedComposerParams } from "../lib/composer-navigation";
 import { sourceCaptionsForEdit, validateCaptionCues } from "../lib/auto-captions";
 import { audioCreationSource, sourceMintItem } from "../lib/editor-source";
@@ -115,6 +116,29 @@ export function ComposerScreen({
   const persistedId = useRef(existing?.id);
   const remix = route.params?.remix;
   const { data, session, guest, api, refresh, savePreviewDraft } = useZiipa();
+  const [overlayConfig, setOverlayConfig] = useState<unknown>(null);
+  const [overlayConfigStatus, setOverlayConfigStatus] = useState<"checking" | "unavailable" | "unsupported" | "ready">("checking");
+  const overlayConfigEpoch = useRef(0);
+  const reloadOverlayConfig = useCallback(async () => {
+    const epoch = ++overlayConfigEpoch.current;
+    setOverlayConfig(null);
+    if (!session || guest) { setOverlayConfigStatus(guest ? "ready" : "unsupported"); return; }
+    setOverlayConfigStatus("checking");
+    try {
+      const result = await api("/api/creator/config");
+      if (epoch !== overlayConfigEpoch.current) return;
+      setOverlayConfig(result);
+      setOverlayConfigStatus(overlayLayoutSupported(result) ? "ready" : "unsupported");
+    } catch (error) {
+      if (epoch !== overlayConfigEpoch.current) return;
+      setOverlayConfigStatus((error as { status?: number }).status === 404 ? "unsupported" : "unavailable");
+    }
+  }, [api, session?.access_token, guest]);
+  useEffect(() => {
+    void reloadOverlayConfig();
+    return () => { overlayConfigEpoch.current++; };
+  }, [reloadOverlayConfig]);
+  const advancedOverlaysSupported = guest || overlayLayoutSupported(overlayConfig);
   const originalUpload = !guest && session ? route.params?.upload : undefined;
   const [category, setCategory] = useState<Category>(
     existing?.category || remix?.category || route.params?.category || "music",
@@ -620,6 +644,7 @@ export function ComposerScreen({
       }
       if (parsedTags.length > 12 || parsedTags.some((t) => t.length > 40))
         throw new Error("Use up to 12 tags, each under 40 characters.");
+      validateOverlays(overlays);
       parsed = parseEditing(start, end, caption);
       if (timelineEdited) {
         validateClips(clips, duration || 86400);
@@ -733,6 +758,18 @@ export function ComposerScreen({
         setSaved(draft);
         setCleanFingerprint(JSON.stringify({ ...formSnapshot, remixId: null }));
       } else {
+        // Check before any upload/write: older APIs ignore unknown overlay
+        // properties, which would otherwise silently discard a creator's edit.
+        if (hasAdvancedOverlays(overlays)) {
+          let config: unknown;
+          try { config = await api("/api/creator/config"); }
+          catch (error) {
+            if ((error as { status?: number }).status === 404) throw new Error(OVERLAY_API_REQUIRED);
+            throw new Error("Could not verify overlay save support. Your changes are still here. Refresh overlay status and try again.");
+          }
+          setOverlayConfig(config);
+          if (!overlayLayoutSupported(config)) throw new Error(OVERLAY_API_REQUIRED);
+        }
         let selectedId = mediaId;
         if (file && !selectedId) {
           const uploaded = await uploadMedia(
@@ -878,6 +915,7 @@ export function ComposerScreen({
       <EditorCanvasLayers
         frame={previewFrame}
         overlays={overlays}
+        time={currentTime}
         caption={
           canvas.captions?.find(
             (cue) =>
@@ -889,6 +927,10 @@ export function ComposerScreen({
           setSelectedOverlay(id);
           setTab("Overlay");
         }}
+        onPositionChange={tab === "Overlay" && !busy && advancedOverlaysSupported ? (id, position) => {
+          applyEdit({ overlays: overlays.map((layer) => layer.id === id ? { ...layer, ...position } : layer) });
+        } : undefined}
+        onInteractionStart={() => setPaused(true)}
       />
       <View
         style={{
@@ -1278,6 +1320,13 @@ export function ComposerScreen({
           sourceCover={frames[Math.min(2, frames.length - 1)]?.source}
           caption={caption}
           disabled={busy}
+          time={currentTime}
+          duration={totalDuration(clips)}
+          selectedClipRange={overlayClipRange(clips, selectedClip)}
+          onSeek={(time) => { setPaused(true); seekTo(time); }}
+          advancedSupported={advancedOverlaysSupported}
+          advancedStatus={overlayConfigStatus}
+          onRefreshCapabilities={() => void reloadOverlayConfig()}
           onChange={(value) => applyEdit({ overlays: value })}
           onSelect={setSelectedOverlay}
           onEffect={(value) => applyEdit({ visualEffect: value })}

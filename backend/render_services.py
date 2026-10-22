@@ -7,12 +7,14 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import subprocess
 import tempfile
 import textwrap
 import time
+import unicodedata
 import uuid
 from typing import Literal
 
@@ -25,7 +27,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app import Base, User, cache, settings
-from creator import CreatorItem, CreatorMedia, ItemInput
+from creator import CreatorItem, CreatorMedia, ItemInput, Overlay, OVERLAY_LAYOUT
 from storage_services import LocalStorage, object_key, storage
 from media_quota import lock_admission, require_capacity, MediaAdmissionError, config as quota_config
 from timeline_edit import EFFECT_FILTERS, checked_timeline
@@ -81,14 +83,20 @@ def coordination_scope():
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:24]
 
 
-EDIT_PROTOCOL = 2
-HEARTBEAT_KEY = 'ziipa:render:worker:v2:' + coordination_scope()
-WAKE_KEY = 'ziipa:render:queue-revision:v2:' + coordination_scope()
+EDIT_PROTOCOL = 3
+HEARTBEAT_KEY = 'ziipa:render:worker:v3:' + coordination_scope()
+WAKE_KEY = 'ziipa:render:queue-revision:v3:' + coordination_scope()
+LEGACY_HEARTBEAT_KEYS = ('ziipa:render:worker:' + coordination_scope(),
+                         'ziipa:render:worker:v2:' + coordination_scope())
 FORMATS = {'video/mp4': 'mov', 'video/quicktime': 'mov', 'video/webm': 'matroska',
            'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/mp4': 'mov', 'audio/aac': 'aac',
            'audio/flac': 'flac', 'audio/ogg': 'ogg',
            'image/jpeg': 'image2', 'image/png': 'image2', 'image/webp': 'image2', 'image/gif': 'gif'}
 IMAGE_FORMATS = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+
+
+class OverlayLayoutError(RuntimeError):
+    """Only fixed, user-actionable overlay messages may reach job receipts."""
 
 
 def notify_worker():
@@ -140,15 +148,20 @@ def readiness():
     except HTTPException:
         requirements.append('Install FFmpeg, ffprobe and a Unicode font')
     try:
-        worker_ready = bool(cache.get(HEARTBEAT_KEY))
+        incompatible_worker_active = any(cache.get(key) for key in LEGACY_HEARTBEAT_KEYS)
+        worker_ready = bool(cache.get(HEARTBEAT_KEY)) and not incompatible_worker_active
     except Exception:
-        worker_ready = False
+        worker_ready, incompatible_worker_active = False, False
+    if incompatible_worker_active:
+        requirements.append('Stop and drain the older render worker before queuing protocol-three edits')
     return {'configured': not requirements, 'worker_ready': worker_ready,
+            'incompatible_worker_active': bool(incompatible_worker_active),
             'edit_protocol': EDIT_PROTOCOL,
             'can_render': not requirements and worker_ready, 'requirements': requirements,
             'max_input_bytes': MAX_INPUT_BYTES, 'max_output_bytes': MAX_OUTPUT_BYTES,
             'max_duration_seconds': MAX_DURATION, 'max_output_long_edge': 1280,
-            'output_type': 'video/mp4', 'features': ['trim', 'timed_captions', 'text_overlays', 'owned_soundtrack_mix', 'contain_renditions', 'timeline_v1', 'visual_effects', 'audio_canvas', 'still_image_canvas'],
+            'output_type': 'video/mp4', 'features': ['trim', 'timed_captions', 'text_overlays', 'positioned_text_overlays', 'timed_text_overlays', 'owned_soundtrack_mix', 'contain_renditions', 'timeline_v1', 'visual_effects', 'audio_canvas', 'still_image_canvas'],
+            'overlay_layout': dict(OVERLAY_LAYOUT),
             'still_image_seconds': 6, 'still_image_types': sorted(IMAGE_FORMATS),
             'timeline': {'version': 1, 'max_clips': 12, 'min_source_clip_seconds': 0.2, 'max_output_seconds': MAX_DURATION,
                          'speeds': [0.5, 1, 1.5, 2], 'caption_clock': 'output'},
@@ -199,7 +212,8 @@ def input_snapshot(session, item: CreatorItem, rendition: Rendition = 'original'
             raise HTTPException(422, 'Caption times must be finite.')
     descriptor = rendition_descriptor(rendition)
     # Original is deliberately absent: every existing snapshot/hash stays valid.
-    return {'schema': 2 if parsed.timeline is not None or parsed.visual_effect != 'none' else 1, 'source': source, 'audio': audio, 'edit': edit,
+    advanced_overlays = any(any(value.get(key) is not None for key in ('x', 'y', 'scale', 'start', 'end')) for value in edit['overlays'])
+    return {'schema': 3 if advanced_overlays else 2 if parsed.timeline is not None or parsed.visual_effect != 'none' else 1, 'source': source, 'audio': audio, 'edit': edit,
             **({'rendition': descriptor} if rendition != 'original' else {})}
 
 
@@ -295,7 +309,7 @@ def _run(command, cwd: Path, timeout: float):
 def _probe(path: Path, content_type: str):
     _, ffprobe, _ = runtime_paths()
     raw = _run([ffprobe, '-v', 'error', '-max_alloc', '67108864', '-threads', '2', '-protocol_whitelist', 'file',
-                '-f', FORMATS[content_type], '-show_entries', 'format=duration:stream=codec_type,width,height,duration',
+                '-f', FORMATS[content_type], '-show_entries', 'format=duration:stream=codec_type,width,height,duration,sample_aspect_ratio',
                 '-of', 'json', path.name], path.parent, 15)
     try:
         result = json.loads(raw)
@@ -348,6 +362,52 @@ def _display_text(text, width):
                      for line in (textwrap.wrap(paragraph, width=width, replace_whitespace=False) or ['']))
 
 
+def _custom_display_text(text, scale):
+    """Shared mobile/web policy: whole words, then Unicode-codepoint chunks."""
+    columns = max(1, math.floor(15 / scale))
+    lines = []
+    for paragraph in text.split('\n'):
+        # ECMAScript horizontal whitespace, then Unicode category-C removal:
+        # same order as the shared TypeScript preview (tabs become spaces).
+        safe = re.sub(r'[\u0009\u000b\u000c\u000d\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+', ' ', paragraph)
+        safe = ''.join(c for c in safe if not unicodedata.category(c).startswith('C')).strip(' ')
+        current = ''
+        for word in safe.split(' '):
+            if not word:
+                continue
+            if len(word) > columns:
+                if current:
+                    lines.append(current); current = ''
+                while len(word) > columns:
+                    lines.append(word[:columns]); word = word[columns:]
+            if current and len(current) + 1 + len(word) > columns:
+                lines.append(current); current = ''
+            current = current + ' ' + word if current else word
+        lines.append(current)
+    return '\n'.join(lines)
+
+
+def _measure_text(ffmpeg, work, filename, font_size):
+    """Measure actual glyphs with the renderer's font in a tiny offline frame.
+
+    AVExpr print emits only numeric dimensions. No source is decoded and no
+    image is retained. Existing process, memory, log and timeout guards apply.
+    """
+    graph = (f"drawtext=fontfile=font.ttf:textfile={filename}:expansion=none:fontsize={font_size}:"
+             "x='print(text_w)':y='print(text_h)'")
+    _run([ffmpeg, '-hide_banner', '-loglevel', 'repeat+info', '-nostdin', '-nostats', '-max_alloc', '67108864',
+          '-filter_threads', '1', '-threads', '1', '-f', 'lavfi', '-i', 'color=c=black:s=2x2:r=1:d=1',
+          '-vf', graph, '-frames:v', '1', '-threads', '1', '-f', 'null', '-'], work, 10)
+    messages = (work / 'stderr.log').read_text(encoding='utf-8', errors='replace')
+    values = re.findall(r'^\[Eval @ [^\]]+\]\s+([0-9]+(?:\.[0-9]+)?)\s*$', messages, re.MULTILINE)
+    if len(values) < 2:
+        raise OverlayLayoutError('The render worker could not verify the positioned text size. Your editable original remains saved.')
+    width, height = map(float, values[:2])
+    if not math.isfinite(width) or not math.isfinite(height):
+        raise OverlayLayoutError('The positioned text size could not be verified.')
+    return width, height
+
+
 def _still_source(snapshot, work):
     """Probe then freeze exactly the first image frame under the same limits."""
     ffmpeg, ffprobe, _ = runtime_paths()
@@ -372,11 +432,17 @@ def _still_source(snapshot, work):
 
 def validate_snapshot_version(snapshot):
     version = snapshot.get('schema')
-    if type(version) is not int or version not in (1, EDIT_PROTOCOL):
+    if type(version) is not int or version not in (1, 2, EDIT_PROTOCOL):
         raise RuntimeError('The render snapshot version is unsupported; save and queue this edit again.')
     edit = snapshot.get('edit')
     if not isinstance(edit, dict) or (version == 1 and (edit.get('timeline') is not None or edit.get('visual_effect', 'none') != 'none')):
         raise RuntimeError('The saved edit does not match its render snapshot version.')
+    try:
+        overlays = [Overlay.model_validate(value).model_dump() for value in edit.get('overlays', [])]
+        if len(overlays) > 8 or any(any(value.get(key) is not None for key in ('x', 'y', 'scale', 'start', 'end')) for value in overlays) and version < 3:
+            raise ValueError('Extended overlays require protocol three')
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError('The saved overlays do not match their render snapshot version.') from exc
 
 
 def render_files(snapshot: dict, work: Path):
@@ -394,7 +460,8 @@ def render_files(snapshot: dict, work: Path):
     has_audio = any(stream.get('codec_type') == 'audio' for stream in streams)
     if audio_source and not has_audio:
         raise RuntimeError('The original has no supported audio stream.')
-    edit = snapshot['edit']
+    edit = {**snapshot['edit'], 'overlays': [Overlay.model_validate(value).model_dump()
+                                            for value in snapshot['edit'].get('overlays', [])]}
     timeline = None
     if edit.get('timeline') is not None:
         if still_source:
@@ -413,6 +480,15 @@ def render_files(snapshot: dict, work: Path):
     if effect not in EFFECT_FILTERS:
         raise RuntimeError('Choose one of the supported visual effects.')
     width, height = (int(video['width']), int(video['height'])) if video else (1280, 720)
+    source_aspect = width / height
+    if video and video.get('sample_aspect_ratio'):
+        try:
+            numerator, denominator = map(float, video['sample_aspect_ratio'].split(':'))
+            ratio = numerator / denominator
+            if math.isfinite(ratio) and ratio > 0:
+                source_aspect *= ratio
+        except (ValueError, ZeroDivisionError):
+            pass
     scale = min(1, 1280 / max(width, height), 720 / min(width, height))
     width, height = max(2, int(width * scale) // 2 * 2), max(2, int(height * scale) // 2 * 2)
     rendition = snapshot_rendition(snapshot)
@@ -423,6 +499,12 @@ def render_files(snapshot: dict, work: Path):
         contain = (f"scale=w='max(2,trunc(min({width},{height}*dar)/2)*2)':"
                    f"h='max(2,trunc(min({height},{width}/dar)/2)*2)'")
         canvas = [contain, 'setsar=1', f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black', 'fps=30', 'format=yuv420p']
+    # Custom centers belong to the contained media, not the padded rendition.
+    content_width, content_height = width, height
+    if rendition['name'] != 'original':
+        content_width = max(2, math.trunc(min(width, height * source_aspect) / 2) * 2)
+        content_height = max(2, math.trunc(min(height, width / source_aspect) / 2) * 2)
+    content_left, content_top = (width - content_width) / 2, (height - content_height) / 2
     command = [ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-max_alloc', '67108864', '-filter_threads', '1', '-threads', '2']
     graph_prefix = []
     if timeline:
@@ -464,11 +546,35 @@ def render_files(snapshot: dict, work: Path):
     themes = {'light': ('black', 'white@0.9'), 'dark': ('white', 'black@0.75'),
               'purple': ('white', '0x5424AF@0.9'), 'lime': ('black', '0xA4E900@0.95')}
     for overlay in edit['overlays']:
+        overlay_start = overlay.get('start') or 0
+        overlay_end = min(length, overlay['end']) if overlay.get('end') is not None else length
+        if overlay_end <= overlay_start:
+            continue
         filename = f'text{index}.txt'; index += 1
-        (work / filename).write_text(_display_text(overlay['text'], max(12, round(width / (max(16,round(width/19))*0.65)))), encoding='utf-8')
+        custom = overlay.get('x') is not None
+        if custom:
+            font_size = max(1, round(content_width / 19 * (overlay.get('scale') or 1)))
+            border = max(0, round(content_width / 90))
+            text = _custom_display_text(overlay['text'], overlay.get('scale') or 1)
+            # Do not turn LF into CRLF on Windows: drawtext can treat the CR as
+            # another line, diverging from mobile and the Linux worker.
+            (work / filename).write_text(text, encoding='utf-8', newline='\n')
+            text_width, text_height = _measure_text(ffmpeg, work, filename, font_size)
+            if text_width + 2 * border > content_width or text_height + 2 * border > content_height:
+                raise OverlayLayoutError('The positioned text does not fit inside this media canvas. Reduce its size, shorten it or use fewer lines; your editable original remains saved.')
+        else:
+            font_size = max(1, round(max(16, round(width / 19)) * (overlay.get('scale') or 1)))
+            border = 12
+            (work / filename).write_text(_display_text(overlay['text'], max(12, round(width / (font_size * 0.65)))), encoding='utf-8')
         fg, bg = themes[overlay['theme']]
         y = {'top': 'h*0.12', 'center': '(h-text_h)/2', 'bottom': 'h*0.80-text_h'}[overlay['position']]
-        filters.append(f'drawtext=fontfile=font.ttf:textfile={filename}:expansion=none:fontsize={max(16,round(width/19))}:fontcolor={fg}:box=1:boxcolor={bg}:boxborderw=12:x=(w-text_w)/2:y={y}')
+        x = '(w-text_w)/2'
+        if custom:
+            center_x, center_y = content_left + overlay['x'] * content_width, content_top + overlay['y'] * content_height
+            x = f"'max({content_left + border:.6f},min({center_x:.6f}-text_w/2,{content_left + content_width - border:.6f}-text_w))'"
+            y = f"'max({content_top + border:.6f},min({center_y:.6f}-text_h/2,{content_top + content_height - border:.6f}-text_h))'"
+        enabled = f":enable='gte(t,{overlay_start:.6f})*lt(t,{overlay_end:.6f})'" if overlay.get('start') is not None or overlay.get('end') is not None else ''
+        filters.append(f'drawtext=fontfile=font.ttf:textfile={filename}:expansion=none:fontsize={font_size}:fontcolor={fg}:box=1:boxcolor={bg}:boxborderw={border:g}:x={x}:y={y}{enabled}')
     for caption in edit['captions']:
         caption_start, caption_end = max(0, caption['start'] - start), min(length, caption['end'] - start)
         if caption_end <= caption_start:
@@ -622,7 +728,7 @@ def process_job(session_factory, job_id: str, claim: str):
                 return
             job = session.scalar(select(RenderJob).where(RenderJob.id == job_id).with_for_update())
             if job and job.claim_token == claim and job.status == 'processing':
-                job.status, job.detail = 'failed', (exc.detail if isinstance(exc, MediaAdmissionError) else
+                job.status, job.detail = 'failed', (exc.detail if isinstance(exc, MediaAdmissionError) else str(exc) if isinstance(exc, OverlayLayoutError) else
                     'The media could not be rendered within the format, duration or resource limits. Check your trim/audio and retry.')
                 job.updated_at, job.lease_until = datetime.now(timezone.utc), None
                 # A failed final storage write may leave this reserved key.

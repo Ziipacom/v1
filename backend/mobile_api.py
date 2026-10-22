@@ -190,6 +190,11 @@ def drain_media_deletions(session):
         return
     root = creator.MEDIA_ROOT.resolve()
     for row in session.scalars(select(MediaDeletion).limit(500)).all():
+        # This outbox belongs to completed account deletions, not orphan media
+        # garbage collection. Never remove a still-catalogued original, profile
+        # image or creation even if an old cleanup entry remains in the queue.
+        if session.get(CreatorMedia, row.id) is not None:
+            continue
         try:
             safe_id = str(uuid.UUID(row.id))
             path = (root / safe_id).resolve()

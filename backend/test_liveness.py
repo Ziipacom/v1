@@ -79,15 +79,18 @@ def test_health_only_reports_worker_for_the_apis_coordination_scope(monkeypatch,
     # bucket or quota must not make this API claim that rendering is available.
     monkeypatch.setattr(rendering.settings, 'media_storage_backend', 'r2')
     monkeypatch.setattr(rendering.settings, 'r2_bucket_name', 'health-check-owned-bucket')
-    key = 'ziipa:render:worker:' + rendering.coordination_scope()
+    key = 'ziipa:render:worker:v3:' + rendering.coordination_scope()
     monkeypatch.setattr(rendering, 'HEARTBEAT_KEY', key)
+    legacy_keys = ('ziipa:render:worker:' + rendering.coordination_scope(),
+                   'ziipa:render:worker:v2:' + rendering.coordination_scope())
+    monkeypatch.setattr(rendering, 'LEGACY_HEARTBEAT_KEYS', legacy_keys)
     worker_key = key
     with monkeypatch.context() as worker_settings:
         if heartbeat == 'different_bucket':
             worker_settings.setattr(rendering.settings, 'r2_bucket_name', 'another-worker-bucket')
         elif heartbeat == 'different_quota':
             worker_settings.setattr(rendering.quota_config, 'project_max_bytes', rendering.quota_config.project_max_bytes + 1)
-        worker_key = 'ziipa:render:worker:' + rendering.coordination_scope()
+        worker_key = 'ziipa:render:worker:v3:' + rendering.coordination_scope()
     if heartbeat.startswith('different_'):
         assert worker_key != key
     values = {} if heartbeat == 'missing' else {worker_key: 'private-worker-heartbeat'}
@@ -100,7 +103,7 @@ def test_health_only_reports_worker_for_the_apis_coordination_scope(monkeypatch,
         'enabled': True, 'worker_ready': heartbeat == 'matching', 'can_render': heartbeat == 'matching',
     }
     assert response.headers['cache-control'] == 'private, no-store'
-    get.assert_called_once_with(key)
+    assert [call.args[0] for call in get.call_args_list] == [*legacy_keys, key]
     for sensitive in (key, worker_key, 'private-worker-heartbeat', 'health-check-owned-bucket', 'requirements'):
         assert sensitive not in response.text
     for call in healthy_services:
@@ -109,7 +112,7 @@ def test_health_only_reports_worker_for_the_apis_coordination_scope(monkeypatch,
 
 @pytest.mark.parametrize('unavailable', ['disabled', 'missing_runtime', 'redis_down', 'unexpected_error'])
 def test_optional_renderer_never_makes_healthy_api_unhealthy(monkeypatch, healthy_services, unavailable):
-    monkeypatch.setattr(rendering, 'cache', SimpleNamespace(get=Mock(return_value='heartbeat')))
+    monkeypatch.setattr(rendering, 'cache', SimpleNamespace(get=Mock(side_effect=lambda key: 'heartbeat' if key == rendering.HEARTBEAT_KEY else None)))
     if unavailable == 'disabled':
         monkeypatch.setattr(rendering.config, 'enabled', False)
     elif unavailable == 'missing_runtime':

@@ -32,6 +32,7 @@ import { CalendarScreen } from "./screens/calendar";
 import { LiveScreen } from "./screens/live";
 import { RecordingsScreen } from "./screens/recordings";
 import { NotificationsScreen } from "./screens/notifications";
+import { InboxScreen, NotificationMessagesScreen } from "./screens/account-messages";
 import { AdministrationScreen } from "./screens/admin";
 import { NotificationBridge } from "./components/notification-bridge";
 import { PostScreen } from "./screens/post";
@@ -348,6 +349,16 @@ function NavigationContent() {
                 name="Notifications"
                 component={NotificationsScreen}
                 options={{ title: "Private updates" }}
+              />
+              <Stack.Screen
+                name="Inbox"
+                component={InboxScreen}
+                options={{ title: "Inbox" }}
+              />
+              <Stack.Screen
+                name="NotificationMessages"
+                component={NotificationMessagesScreen}
+                options={{ title: "Notifications" }}
               />
             </>
           ) : (

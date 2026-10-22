@@ -259,6 +259,33 @@ def test_subprocess_output_is_bounded(tmp_path):
 
 @pytest.mark.skipif(os.environ.get('ZIIPA_TEST_TRANSCRIPTION_REAL') != '1',
                     reason='Opt-in local CPU speech acceptance; no implicit model downloads')
+def test_real_decoder_silence_never_calls_recognition_or_changes_saved_edit(source, monkeypatch):
+    session, owner, _, item, media, _, tmp_path = source
+    root = Path(__file__).resolve().parents[1]
+    ffmpeg = root / '.local/ffmpeg-runtime/ffmpeg-9.0.1-essentials_build/bin/ffmpeg.exe'
+    ffprobe = ffmpeg.with_name('ffprobe.exe')
+    assert ffmpeg.is_file() and ffprobe.is_file(), 'Use the documented installed local decoder'
+    fixture = tmp_path / 'digital-silence.wav'
+    with wave.open(str(fixture), 'wb') as writer:
+        writer.setnchannels(1); writer.setsampwidth(2); writer.setframerate(22050)
+        writer.writeframes(b'\0' * 22050 * 2 * 2)
+    monkeypatch.setattr(speech.config, 'ffmpeg', str(ffmpeg))
+    monkeypatch.setattr(speech.config, 'ffprobe', str(ffprobe))
+    monkeypatch.setattr(speech, '_materialize', lambda owner, descriptor, target: target.write_bytes(fixture.read_bytes()))
+    media.content_type, media.size = 'audio/wav', fixture.stat().st_size
+    item.data = {**item.data, 'captions': [{'start': 0, 'end': 1, 'text': 'Keep my manual words'}]}
+    session.commit()
+    original = json.loads(json.dumps(item.data))
+    result = speech.transcribe_media(session, owner.id, item.id,
+        recognize=lambda *args: pytest.fail('Digital silence reached the recognition engine'))
+    assert result['status'] == 'no_speech' and result['segments'] == [] and result['text'] == ''
+    session.refresh(item)
+    assert item.data == original and not session.dirty
+    assert list((tmp_path / 'work').iterdir()) == [tmp_path / 'work' / 'speech.lock']
+
+
+@pytest.mark.skipif(os.environ.get('ZIIPA_TEST_TRANSCRIPTION_REAL') != '1',
+                    reason='Opt-in local CPU speech acceptance; no implicit model downloads')
 def test_real_engine_synthetic_speech(source, monkeypatch):
     session, owner, _, item, media, _, _ = source
     root = Path(__file__).resolve().parents[1]

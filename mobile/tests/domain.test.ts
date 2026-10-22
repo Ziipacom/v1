@@ -27,6 +27,13 @@ test("portal media rebases only exact trusted API origins and exact owned-media 
   for (const bad of [`https://evil.test${path}`, `https://api.ziipa.com.evil.test${path}`, `https://api.ziipa.com:8443${path}`, `https://x:y@api.ziipa.com${path}`, `https://api.ziipa.com${path}?token=foo`, `https://api.ziipa.com${path}#x`, "file:///etc/passwd", "/api/creator/media/../secrets"])
     assert.equal(trustedMediaPath(bad, ["https://api.ziipa.com"]), null);
 });
+test("profile images authenticate only a closed owner-only inline image endpoint", () => {
+  const path = "/api/creator/profile-images/4aeaf40c-2176-4980-9c42-410a2460abf4";
+  assert.equal(trustedMediaPath(path, []), path);
+  assert.equal(trustedMediaPath(`https://api.ziipa.com${path}`, ["https://api.ziipa.com"]), path);
+  for (const bad of [path + "?token=abc", path + "/edit", "/api/creator/profile-images/../media", "https://evil.test" + path])
+    assert.equal(trustedMediaPath(bad, ["https://api.ziipa.com"]), null);
+});
 test("Music & Film includes video while other worlds stay separate", () => {
   assert.equal(inCreativeWorld({ ...item, category: "video" }, "music"), true);
   assert.equal(inCreativeWorld(item, "music"), true);

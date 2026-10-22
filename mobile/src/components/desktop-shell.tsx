@@ -15,7 +15,6 @@ import {
 } from "react-native";
 import {
   ArrowUpRight,
-  Bell,
   Bookmark,
   CalendarDays,
   ChartColumn,
@@ -44,6 +43,7 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import { Logo } from "./ui";
+import { AccountMenu } from "./account-menu";
 import { useDesktopLayout } from "./desktop-layout";
 import { useZiipa } from "../provider";
 import {
@@ -104,7 +104,9 @@ function NavButton({
             ? color.hover
             : "transparent",
         borderWidth: 1,
-        borderColor: item.active ? themeValue("#7547B65E", color.purple) : "transparent",
+        borderColor: item.active
+          ? themeValue("#7547B65E", color.purple)
+          : "transparent",
         opacity: pressed ? 0.7 : 1,
       })}
     >
@@ -117,7 +119,9 @@ function NavButton({
         <Text
           style={{
             fontFamily: item.active ? font.semibold : font.regular,
-            color: item.active ? color.text : themeValue("#C3B8D0", color.muted),
+            color: item.active
+              ? color.text
+              : themeValue("#C3B8D0", color.muted),
             fontSize: 14,
             flex: 1,
           }}
@@ -348,7 +352,9 @@ export function DesktopShell({
       Icon: MailOpen,
       name: "Utility",
       params: { kind: "inbox" },
-      active: route.name === "Utility" && params.kind === "inbox",
+      active:
+        route.name === "Inbox" ||
+        (route.name === "Utility" && params.kind === "inbox"),
     },
     ...(session
       ? [
@@ -670,39 +676,18 @@ export function DesktopShell({
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Private updates and notifications"
-              onPress={() => navigate("Notifications")}
-              style={{ padding: 5 }}
-            >
-              <Bell size={19} color={color.muted} />
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Open your account profile"
-              onPress={() => navigate("Profile")}
+              accessibilityLabel="Open settings"
+              onPress={() => navigate("Settings")}
               style={{
-                width: 35,
-                height: 35,
-                borderRadius: 18,
+                width: 44,
+                height: 44,
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: themeValue("#47256B", color.accentSoft),
-                borderWidth: 1,
-                borderColor: themeValue("#79549C", color.border),
               }}
             >
-              <Text
-                style={{
-                  color: color.text,
-                  fontFamily: font.semibold,
-                  fontSize: 14,
-                }}
-              >
-                {(session?.user.name?.trim() || "Ziipa")
-                  .slice(0, 1)
-                  .toUpperCase()}
-              </Text>
+              <Settings size={20} color={color.muted} />
             </Pressable>
+            <AccountMenu onNavigate={(name) => navigate(name)} />
           </View>
         )}
         <View

@@ -138,6 +138,32 @@ def test_real_background_contract_no_saved_edit_mutation(workspace):
     assert item.data == original and cache.get(captions._LEASE_KEY) is None
 
 
+@pytest.mark.parametrize('status,detail', [
+    ('no_speech', 'No speech was recognized.'),
+    ('unavailable', 'The speech runtime is unavailable.'),
+])
+def test_empty_or_unavailable_recognition_preserves_saved_caption_track(workspace, monkeypatch, status, detail):
+    client, session, _, _, item, _, _, cache, pool, _ = workspace
+    original = json.loads(json.dumps(item.data))
+
+    def recognize(*args, before_recognize=None, **kwargs):
+        if before_recognize:
+            before_recognize()
+        return {'status': status, 'segments': [], 'detail': detail}
+
+    monkeypatch.setattr(captions.speech, 'transcribe_media', recognize)
+    response = create(workspace)
+    assert response.status_code == 202
+    pool.run()
+    result = client.get('/api/editor/caption-jobs/' + response.json()['job_id'])
+    assert result.status_code == 200
+    assert result.json()['status'] == status and result.json()['segments'] == []
+    session.refresh(item)
+    assert item.data == original
+    assert item.data['captions'] == [{'start': 0, 'end': .5, 'text': 'Existing caption'}]
+    assert cache.get(captions._LEASE_KEY) is None
+
+
 @pytest.mark.parametrize('changes', [{'consent': False}, {'consent': 1}, {'consent': 'true'},
     {'language': 'en'}, {'media_url': 'https://private.example/source.mp4'}, {'expected_media_id': '../secret'},
     {'expected_provider': 'arbitrary'}, {'request_id': 'not-a-uuid'}])

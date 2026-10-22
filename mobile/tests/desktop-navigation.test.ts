@@ -40,6 +40,8 @@ test("desktop route views round-trip only their declared filters and identifiers
     ["Utility", { kind: "promote" }],
     ["Utility", { kind: "inbox" }],
     ["Profile", undefined],
+    ["Inbox", undefined],
+    ["NotificationMessages", undefined],
     ["Notifications", { deliveryId: first }],
     ["Settings", undefined],
     ["Administration", undefined],

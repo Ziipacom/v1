@@ -52,6 +52,7 @@ function layoutHandler(relativePath: string, setter: string) {
 for (const [name, path, setter] of [
   ["creation editor", "../src/screens/editor.tsx", "setCanvasArea"],
   ["feed edit preview", "../src/components/reel-media.tsx", "setArea"],
+  ["draggable text layer", "../src/components/editor-canvas-layers.tsx", "setMeasured"],
 ] as const) {
   test(`${name} keeps dimensions after a native layout event is released`, () => {
     const { handler, pending } = layoutHandler(path, setter);

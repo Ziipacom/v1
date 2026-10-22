@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import {
+  Pressable,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import {
-  LockKeyholeOpen,
-  Menu,
-  Search,
-  Settings,
-  SlidersHorizontal,
-} from "lucide-react-native";
+import { Menu, Search, Settings, SlidersHorizontal } from "lucide-react-native";
 import {
   CategoryDock,
   FloatButton,
@@ -20,6 +20,7 @@ import {
 } from "../components/floating";
 import { Logo } from "../components/ui";
 import { GallerySlider } from "../components/gallery-slider";
+import { AccountMenu } from "../components/account-menu";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { DesktopExplore } from "./desktop-explore";
 import { galleryItems } from "../lib/gallery";
@@ -44,6 +45,8 @@ function MobileDiscoverScreen({
 }: NativeStackScreenProps<RootStack, "Main">) {
   const { data, guest } = useZiipa();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const logoWidth = Math.max(96, Math.min(145, width - 188));
   const [category, setCategory] = useState<Category>(
     route.params?.category || "music",
   );
@@ -64,27 +67,24 @@ function MobileDiscoverScreen({
       style={[styles.screen, { overflow: "hidden" }]}
     >
       <View style={[floating.header, { height: 87 }]}>
+        <FloatButton
+          label="Open Studio"
+          icon={Menu}
+          plain
+          size={44}
+          onPress={() => navigation.navigate("Studio")}
+        />
+        <Logo width={logoWidth} />
         <View style={{ flexDirection: "row", alignItems: "center", gap: 0 }}>
           <FloatButton
             label="Open settings"
             icon={Settings}
             plain
-            size={40}
+            size={44}
             onPress={() => navigation.navigate("Settings")}
           />
-          <FloatButton
-            label="Open Studio"
-            icon={Menu}
-            plain
-            onPress={() => navigation.navigate("Studio")}
-          />
+          <AccountMenu navigation={navigation} />
         </View>
-        <Logo width={145} />
-        <FloatButton
-          label="Your creator profile"
-          icon={LockKeyholeOpen}
-          onPress={() => navigation.navigate("Profile")}
-        />
       </View>
       <View
         style={{

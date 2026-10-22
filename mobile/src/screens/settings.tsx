@@ -348,6 +348,22 @@ function ScopedSettingsScreen({
       ) : (
         <Text style={styles.title}>Settings</Text>
       )}
+      {session && (
+        <View style={{ gap: 7 }}>
+          <Action
+            title="Sign out"
+            secondary
+            icon={LogOut}
+            onPress={() => void run(logout)}
+            busy={busy}
+          />
+          <Text style={styles.small}>
+            Return to Get Started on this device. Your account and saved media stay on Ziipa.
+          </Text>
+        </View>
+      )}
+      {!!error && <Notice error text={error} />}
+      {!!message && <Notice text={message} />}
       <SettingsControls navigation={navigation} />
       <View style={[styles.panel, desktop && workspace.panel]}>
         <Text accessibilityRole="header" style={styles.heading}>
@@ -424,19 +440,9 @@ function ScopedSettingsScreen({
         </>
       )}
 
-      {!!error && <Notice error text={error} />}
-      {!!message && <Notice text={message} />}
       {!desktop && policyPanel}
 
-      {session ? (
-        <Action
-          title="Sign out"
-          secondary
-          icon={LogOut}
-          onPress={() => void run(logout)}
-          busy={busy}
-        />
-      ) : (
+      {!session && (
         <Action
           title="Sign in to Ziipa"
           onPress={() => navigation.navigate("Login")}

@@ -81,16 +81,17 @@ def test_legacy_fingerprints_unchanged_and_new_edit_stales_old_export(database):
     assert denied.value.status_code == 404
 
 
-def test_protocol_two_readiness_ignores_old_worker_heartbeats(runtime, monkeypatch):
+def test_current_protocol_readiness_ignores_old_worker_heartbeats(runtime, monkeypatch):
     class Cache:
         values = {'ziipa:render:worker:' + render.coordination_scope(): 'old-worker'}
         def get(self, key):
             return self.values.get(key)
     coordinator = Cache()
     monkeypatch.setattr(render, 'cache', coordinator)
-    assert render.readiness()['edit_protocol'] == 2
+    assert render.readiness()['edit_protocol'] == 3
     assert render.readiness()['worker_ready'] is False
-    coordinator.values[render.HEARTBEAT_KEY] = 'matching-v2-worker'
+    coordinator.values.clear()
+    coordinator.values[render.HEARTBEAT_KEY] = 'matching-v3-worker'
     assert render.readiness()['can_render'] is True
 
 

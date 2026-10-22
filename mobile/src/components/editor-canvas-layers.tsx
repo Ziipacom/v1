@@ -1,7 +1,21 @@
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import {
+  PanResponder,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from "react-native";
 import type { Overlay } from "../lib/types";
 import { color, font } from "../theme";
+import {
+  customOverlayText,
+  overlayBox,
+  overlayVisibleAt,
+} from "../lib/editor-overlays";
+import { overlayDragHandlers } from "../lib/overlay-gestures";
 
 export type EditorCanvasFrame = {
   x: number;
@@ -15,6 +29,9 @@ export type EditorCanvasLayersProps = {
   caption?: string;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
+  time?: number;
+  onPositionChange?: (id: string, position: { x: number; y: number }) => void;
+  onInteractionStart?: () => void;
 };
 
 const themes = {
@@ -31,6 +48,9 @@ export function EditorCanvasLayers({
   caption,
   selectedId,
   onSelect,
+  time = 0,
+  onPositionChange,
+  onInteractionStart,
 }: EditorCanvasLayersProps) {
   if (
     ![frame.x, frame.y, frame.width, frame.height].every(Number.isFinite) ||
@@ -53,7 +73,7 @@ export function EditorCanvasLayers({
       }}
     >
       {overlays
-        .filter((layer) => layer.text.trim())
+        .filter((layer) => layer.text.trim() && overlayVisibleAt(layer, time))
         .map((layer) => (
           <OverlayLayer
             key={layer.id}
@@ -63,6 +83,8 @@ export function EditorCanvasLayers({
             padding={padding}
             selected={selectedId === layer.id}
             onSelect={onSelect}
+            onPositionChange={onPositionChange}
+            onInteractionStart={onInteractionStart}
           />
         ))}
       {!!caption?.trim() && (
@@ -110,6 +132,8 @@ function OverlayLayer({
   padding,
   selected,
   onSelect,
+  onPositionChange,
+  onInteractionStart,
 }: {
   layer: Overlay;
   width: number;
@@ -117,24 +141,50 @@ function OverlayLayer({
   padding: number;
   selected: boolean;
   onSelect?: (id: string) => void;
+  onPositionChange?: EditorCanvasLayersProps["onPositionChange"];
+  onInteractionStart?: () => void;
 }) {
-  const fontSize = width / 19;
-  const [measuredHeight, setMeasuredHeight] = useState(
-    fontSize * 1.15 + padding * 2,
+  const fontSize = (width / 19) * (layer.scale ?? 1);
+  const [measured, setMeasured] = useState({
+    width: 0,
+    height: fontSize * 1.15 + padding * 2,
+  });
+  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
+  const activeLayer = drag ? { ...layer, ...drag } : layer;
+  const box = overlayBox(activeLayer, { width, height }, measured);
+  const latest = useRef({
+    layer,
+    width,
+    height,
+    measured,
+    box,
+    onSelect,
+    onPositionChange,
+    onInteractionStart,
+  });
+  latest.current = {
+    layer,
+    width,
+    height,
+    measured,
+    box,
+    onSelect,
+    onPositionChange,
+    onInteractionStart,
+  };
+  const responder = useMemo(
+    () =>
+      PanResponder.create(overlayDragHandlers(() => latest.current, setDrag)),
+    [],
   );
-  const position =
-    layer.position === "top"
-      ? { top: height * 0.12 - padding }
-      : layer.position === "bottom"
-        ? { bottom: height * 0.2 - padding }
-        : { top: (height - measuredHeight) / 2 };
   const theme = themes[layer.theme];
   return (
     <View
+      {...responder.panHandlers}
       pointerEvents="box-none"
       style={[
         { position: "absolute", left: 0, right: 0, alignItems: "center" },
-        position,
+        { top: box.y },
       ]}
     >
       <Pressable
@@ -143,21 +193,37 @@ function OverlayLayer({
           onSelect ? `Edit overlay: ${layer.text}` : layer.text
         }
         accessibilityState={onSelect ? { selected } : undefined}
+        accessibilityHint={
+          onPositionChange
+            ? "Drag to move this text. Position buttons are also available below."
+            : undefined
+        }
         pointerEvents={onSelect ? "auto" : "none"}
         disabled={!onSelect}
         onPress={() => onSelect?.(layer.id)}
         onLayout={(event) => {
-          const next = event.nativeEvent.layout.height;
-          setMeasuredHeight((previous) =>
-            Math.abs(previous - next) >= 0.5 ? next : previous,
+          const { width: nextWidth, height: nextHeight } =
+            event.nativeEvent.layout;
+          setMeasured((previous) =>
+            Math.abs(previous.width - nextWidth) >= 0.5 ||
+            Math.abs(previous.height - nextHeight) >= 0.5
+              ? { width: nextWidth, height: nextHeight }
+              : previous,
           );
         }}
-        style={{
-          maxWidth: "90%",
-          alignSelf: "center",
-          padding,
-          backgroundColor: theme.backgroundColor,
-        }}
+        style={[
+          {
+            maxWidth: "90%",
+            alignSelf: "center",
+            padding,
+            backgroundColor: theme.backgroundColor,
+            transform: [{ translateX: box.x + box.width / 2 - width / 2 }],
+          },
+          Platform.OS === "web" && onPositionChange
+            ? // RN Web supports these DOM-only CSS properties.
+              ({ touchAction: "none", cursor: "move" } as unknown as ViewStyle)
+            : null,
+        ]}
       >
         <Text
           style={{
@@ -169,7 +235,9 @@ function OverlayLayer({
             includeFontPadding: false,
           }}
         >
-          {layer.text}
+          {layer.x != null && layer.y != null
+            ? customOverlayText(layer.text, layer.scale ?? 1)
+            : layer.text}
         </Text>
         {selected && (
           <View
@@ -181,6 +249,24 @@ function OverlayLayer({
           />
         )}
       </Pressable>
+      {selected && measured.height > height && (
+        <Text
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            color: "white",
+            backgroundColor: "#8D173CEB",
+            padding: 6,
+            fontSize: 12,
+          }}
+        >
+          Text exceeds this canvas. Reduce its size or shorten it before
+          exporting.
+        </Text>
+      )}
     </View>
   );
 }

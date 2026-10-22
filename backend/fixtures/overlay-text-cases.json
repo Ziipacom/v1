@@ -1,0 +1,9 @@
+[
+  {"text":"A title", "scale":1, "output":"A title"},
+  {"text":"My longer video title", "scale":1, "output":"My longer video\ntitle"},
+  {"text":"12345678901234567890", "scale":1, "output":"123456789012345\n67890"},
+  {"text":"One  two\tthree\n\nFour five", "scale":1, "output":"One two three\n\nFour five"},
+  {"text":"1234567 8901234 56", "scale":2, "output":"1234567\n8901234\n56"},
+  {"text":"一二三四五六七八九十一二三四五六", "scale":1, "output":"一二三四五六七八九十一二三四五\n六"},
+  {"text":"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀", "scale":1, "output":"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\n😀"}
+]

@@ -177,6 +177,7 @@ function EditedReel({
       <EditorCanvasLayers
         frame={frame}
         overlays={item.overlays || []}
+        time={time}
         caption={caption}
       />
     </View>

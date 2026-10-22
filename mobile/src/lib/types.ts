@@ -14,6 +14,13 @@ export type Overlay = {
   text: string;
   position: "top" | "center" | "bottom";
   theme: "light" | "dark" | "purple" | "lime";
+  /** Optional box-center coordinates in the contained media, not its letterbox. */
+  x?: number | null;
+  y?: number | null;
+  scale?: number | null;
+  /** Half-open interval in seconds on the edited output, not the source. */
+  start?: number | null;
+  end?: number | null;
 };
 export type Soundtrack = {
   media_id: string | null;
@@ -116,6 +123,7 @@ export type FeedInput = {
 };
 export type Feed = FeedInput & { id: string; owner_name?: string };
 export type Bootstrap = {
+  profile?: ProfileImages;
   items: Item[];
   drafts: Item[];
   preferences: Preferences;
@@ -123,6 +131,13 @@ export type Bootstrap = {
   community_feeds: Feed[];
   connections: SocialConnection[];
   distributions: Distribution[];
+};
+export type ProfileImages = {
+  avatar_media_id: string | null;
+  avatar_url: string | null;
+  cover_media_id: string | null;
+  cover_url: string | null;
+  cover_sample: string | null;
 };
 export type User = {
   id: number;
@@ -152,6 +167,8 @@ export type RootStack = {
     | { tab?: "overview" | "library"; query?: string; category?: Category }
     | undefined;
   Profile: undefined;
+  Inbox: undefined;
+  NotificationMessages: undefined;
   Feeds: undefined;
   MediaOS:
     | {

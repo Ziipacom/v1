@@ -1,7 +1,9 @@
 import { useDesktopLayout } from "../components/desktop-layout";
 import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
+  Image,
   ImageBackground,
   Pressable,
   ScrollView,
@@ -30,9 +32,12 @@ import {
   worlds,
 } from "../components/floating";
 import { Action, Cover, Notice, Pill } from "../components/ui";
+import { SignOutButton } from "../components/account-menu";
+import { ProfileImageControls } from "../components/profile-image-controls";
 import { coverSource } from "../lib/assets";
+import { useProfileImageSource } from "../lib/profile-image-source";
 import { inCreativeWorld } from "../lib/domain";
-import type { Category, RootStack } from "../lib/types";
+import type { Category, ProfileImages, RootStack } from "../lib/types";
 import { useZiipa } from "../provider";
 import { color, font, styles } from "../theme";
 
@@ -40,11 +45,57 @@ export function ProfileScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Profile">) {
   const { desktop, contentWidth } = useDesktopLayout();
-  const { session, guest, data } = useZiipa();
+  const { session, guest, data, api, refresh } = useZiipa();
   const [category, setCategory] = useState<Category>("music");
   const [saved, setSaved] = useState(false);
   const [sheet, setSheet] = useState<"art" | "account" | "social" | null>(null);
-  const [banner, setBanner] = useState("/media/studio.jpg");
+  const [previewBanner, setPreviewBanner] = useState<string | null>(null);
+  const [profileOverride, setProfileOverride] = useState<{
+    token: string;
+    profile: ProfileImages;
+  } | null>(null);
+  const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
+  const profileLoad = useRef(0);
+  const profile =
+    profileOverride?.token === session?.access_token
+      ? profileOverride?.profile
+      : data.profile;
+  const banner = previewBanner || profile?.cover_url || "/media/studio.jpg";
+  const bannerSource = useProfileImageSource(banner, session?.access_token);
+  const avatarSource = useProfileImageSource(
+    profile?.avatar_url,
+    session?.access_token,
+  );
+  useEffect(() => {
+    setProfileOverride(null);
+    setPreviewBanner(null);
+  }, [session?.access_token]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!session || guest) return;
+      let active = true;
+      const version = ++profileLoad.current;
+      void api<ProfileImages>("/api/creator/profile")
+        .then((profile) => {
+          if (active && version === profileLoad.current)
+            setProfileOverride({ token: session.access_token, profile });
+        })
+        .catch(() => {
+          /* Older APIs keep the initial avatar and local cover fallback. */
+        });
+      return () => {
+        active = false;
+        profileLoad.current++;
+      };
+    }, [api, guest, session?.access_token]),
+  );
+  function savedProfile(images: ProfileImages) {
+    if (!session) return;
+    profileLoad.current++;
+    setProfileOverride({ token: session.access_token, profile: images });
+    setPreviewBanner(null);
+    void refresh();
+  }
   const insets = useSafeAreaInsets();
   const source = saved
     ? data.items.filter((i) => data.preferences.saved.includes(i.id))
@@ -67,7 +118,7 @@ export function ProfileScreen({
           />
         )}
         <ImageBackground
-          source={coverSource(banner, session?.access_token)}
+          source={bannerSource || coverSource("/media/studio.jpg")}
           style={
             desktop
               ? { height: 180, borderRadius: 12, overflow: "hidden" }
@@ -88,11 +139,16 @@ export function ProfileScreen({
                 plain
                 onPress={() => navigation.navigate("Main")}
               />
-              <FloatButton
-                label="Open Studio menu"
-                icon={Menu}
-                onPress={() => navigation.navigate("Studio")}
-              />
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
+                <SignOutButton />
+                <FloatButton
+                  label="Open Studio menu"
+                  icon={Menu}
+                  onPress={() => navigation.navigate("Studio")}
+                />
+              </View>
             </View>
             <View
               style={{
@@ -163,15 +219,26 @@ export function ProfileScreen({
                 alignItems: "center",
               }}
             >
-              <Text
-                style={{
-                  fontFamily: font.semibold,
-                  fontSize: 32,
-                  color: "#170D27",
-                }}
-              >
-                {session?.user.name.slice(0, 1) || "Z"}
-              </Text>
+              {profile?.avatar_url &&
+              avatarSource &&
+              failedAvatar !== profile.avatar_url ? (
+                <Image
+                  source={avatarSource}
+                  onError={() => setFailedAvatar(profile.avatar_url)}
+                  resizeMode="cover"
+                  style={{ width: "100%", height: "100%", borderRadius: 39 }}
+                />
+              ) : (
+                <Text
+                  style={{
+                    fontFamily: font.semibold,
+                    fontSize: 32,
+                    color: "#170D27",
+                  }}
+                >
+                  {session?.user.name.slice(0, 1) || "Z"}
+                </Text>
+              )}
               <View
                 style={{
                   position: "absolute",
@@ -376,27 +443,13 @@ export function ProfileScreen({
           onClose={() => setSheet(null)}
         >
           {sheet === "art" ? (
-            <>
-              <Notice text="Try a cover from the sample collection. This appearance preview lasts until the app restarts; it is not uploaded to your account." />
-              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                {data.items.slice(0, 5).map((item) => (
-                  <Pressable
-                    key={item.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Use ${item.title} artwork`}
-                    onPress={() => {
-                      setBanner(item.cover);
-                      setSheet(null);
-                    }}
-                  >
-                    <Cover
-                      item={item}
-                      style={{ height: 88, width: 94, borderRadius: 13 }}
-                    />
-                  </Pressable>
-                ))}
-              </View>
-            </>
+            <ProfileImageControls
+              key={`cover:${session?.access_token || "guest"}`}
+              kind="cover"
+              profile={profile}
+              onSaved={savedProfile}
+              onPreviewSample={setPreviewBanner}
+            />
           ) : sheet === "social" ? (
             <>
               <Notice text="Find your public following and supported network feeds in Networks. Importing a profile never invents Ziipa followers or sends invitations automatically." />
@@ -410,6 +463,12 @@ export function ProfileScreen({
             </>
           ) : (
             <>
+              <ProfileImageControls
+                key={`avatar:${session?.access_token || "guest"}`}
+                kind="avatar"
+                profile={profile}
+                onSaved={savedProfile}
+              />
               <Text style={styles.body}>
                 {guest
                   ? "Explore your Studio, drafts, saved creations and feed rules. Sample changes stay in memory and reset on restart."

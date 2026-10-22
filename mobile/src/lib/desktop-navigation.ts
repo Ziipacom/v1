@@ -28,6 +28,8 @@ const screens = {
   wallet: "Utility",
   promote: "Utility",
   inbox: "Utility",
+  messages: "Inbox",
+  notifications: "NotificationMessages",
   profile: "Profile",
   updates: "Notifications",
   settings: "Settings",

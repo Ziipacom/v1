@@ -5,14 +5,14 @@ from typing import Literal
 import math
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
-from sqlalchemy import ForeignKey, String, JSON, DateTime, select, func, delete, UniqueConstraint
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator, model_serializer
+from sqlalchemy import ForeignKey, String, JSON, DateTime, select, func, delete, update, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, Session
 from app import Base, User, db, current_user, guard, settings
 from catalog import CATALOG
-from storage_services import LocalStorage, storage
+from storage_services import LocalStorage, object_key, storage
 from media_quota import lock_admission, available_bytes, require_capacity, MediaAdmissionError
 from timeline_edit import TimelineEdit, VisualEffect
 
@@ -28,6 +28,10 @@ PROVIDERS = {
     'twitch': ('Twitch', 'Live broadcasting and channel library'),
     'youtube': ('YouTube', 'Videos, Shorts and live streams'),
 }
+PROFILE_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+PROFILE_IMAGE_TYPES = ('image/jpeg', 'image/png', 'image/webp')
+PROFILE_COVER_SAMPLES = ('/media/studio.jpg', '/media/dj.jpg', '/media/gaming.jpg',
+                         '/media/ocean.jpg', '/media/sintel.png', '/brand/ziipa-background.png')
 
 
 class CreatorItem(Base):
@@ -119,6 +123,46 @@ class Overlay(BaseModel):
     text: str = Field(min_length=1, max_length=120, pattern=r'.*\S.*')
     position: Literal['top', 'center', 'bottom'] = 'center'
     theme: Literal['light', 'dark', 'purple', 'lime'] = 'dark'
+    x: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    y: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    scale: float | None = Field(default=None, ge=0.5, le=2, allow_inf_nan=False)
+    start: float | None = Field(default=None, ge=0, le=86400, allow_inf_nan=False)
+    end: float | None = Field(default=None, gt=0, le=86400, allow_inf_nan=False)
+
+    @field_validator('x', 'y', 'scale', 'start', 'end', mode='before')
+    @classmethod
+    def numeric_layout(cls, value):
+        if value is not None and type(value) not in (int, float):
+            raise ValueError('Overlay placement, size and times must be finite numbers')
+        return value
+
+    @model_validator(mode='after')
+    def valid_layout(self):
+        if (self.x is None) != (self.y is None):
+            raise ValueError('Overlay x and y must be supplied together')
+        if self.end is not None and self.end <= (self.start or 0):
+            raise ValueError('Overlay end must follow start')
+        return self
+
+    @model_serializer(mode='wrap')
+    def compatible_serialization(self, handler):
+        # Missing/null additions must not change legacy editor snapshots/hashes.
+        result = handler(self)
+        return {key: value for key, value in result.items() if value is not None}
+
+
+OVERLAY_LAYOUT = {'version': 1, 'coordinates': 'normalized_media_center',
+                  'timing': 'output', 'interval': 'half_open',
+                  'scale_min': 0.5, 'scale_max': 2, 'max_overlays': 8}
+
+
+@router.get('/config')
+def editor_configuration():
+    """Save/preview support is independent of render-worker availability."""
+    return {'overlay_layout': dict(OVERLAY_LAYOUT),
+            'profile_images': {'version': 1, 'max_bytes': PROFILE_IMAGE_MAX_BYTES,
+                               'content_types': list(PROFILE_IMAGE_TYPES),
+                               'cover_samples': list(PROFILE_COVER_SAMPLES)}}
 
 
 class Soundtrack(BaseModel):
@@ -191,6 +235,20 @@ class PreferencesInput(BaseModel):
         return self
 
 
+class ProfileInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    avatar_media_id: uuid.UUID | None = None
+    cover_media_id: uuid.UUID | None = None
+    cover_sample: Literal['/media/studio.jpg', '/media/dj.jpg', '/media/gaming.jpg',
+                          '/media/ocean.jpg', '/media/sintel.png', '/brand/ziipa-background.png'] | None = None
+
+    @model_validator(mode='after')
+    def one_cover(self):
+        if self.cover_media_id is not None and self.cover_sample is not None:
+            raise ValueError('Choose uploaded cover artwork or a bundled sample, not both')
+        return self
+
+
 class FeedInput(BaseModel):
     name: str = Field(min_length=1, max_length=80, pattern=r'.*\S.*')
     category: Literal['all', 'video', 'music', 'games', 'live', 'nft', 'store'] = 'all'
@@ -251,6 +309,170 @@ def media_url(media_id: str) -> str:
 def prefs_for(session, user):
     row = session.get(CreatorPreferences, user.id)
     return PreferencesInput(**row.data).model_dump() if row else PreferencesInput().model_dump()
+
+
+def _locked_preferences(session, user):
+    # Share the existing preferences/rewards lock order. PostgreSQL's advisory
+    # lock serializes creation of a previously absent preferences row, too.
+    from media_rewards import lock_user
+    lock_user(session, user)
+    if session.get_bind().dialect.name == 'sqlite':
+        # FOR UPDATE is ignored by SQLite; take its real write lock instead.
+        session.execute(update(User).where(User.id == user.id).values(id=user.id),
+                        execution_options={'synchronize_session': False})
+    return session.scalar(select(CreatorPreferences).where(CreatorPreferences.owner_id == user.id)
+                          .with_for_update().execution_options(populate_existing=True))
+
+
+def _profile_state(row):
+    try:
+        return ProfileInput.model_validate((row.data or {}).get('profile', {})).model_dump(mode='json') if row else ProfileInput().model_dump()
+    except (ValidationError, TypeError):
+        # Corrupt/legacy private metadata must never expose another account's
+        # image or introduce an arbitrary URL through the read serializer.
+        return ProfileInput().model_dump()
+
+
+def _profile_media(session, owner_id, media_id):
+    row = session.scalar(select(CreatorMedia).where(CreatorMedia.id == str(media_id),
+                         CreatorMedia.owner_id == owner_id).execution_options(populate_existing=True))
+    if not row:
+        raise HTTPException(404, 'Your profile image was not found. Upload the image again.')
+    if row.content_type not in PROFILE_IMAGE_TYPES:
+        raise HTTPException(415, 'Profile images must be static JPEG, PNG or WebP files.')
+    if not 0 < row.size <= PROFILE_IMAGE_MAX_BYTES:
+        raise HTTPException(413, 'Profile images must be at most 10 MB.')
+    return row
+
+
+def _static_profile_image(content_type, data):
+    if not valid_signature(content_type, data[:32]):
+        return False
+    if content_type == 'image/jpeg':
+        return data.endswith(b'\xff\xd9')
+    if content_type == 'image/png':
+        offset, image_data, header = 8, False, False
+        while offset + 12 <= len(data):
+            length = int.from_bytes(data[offset:offset + 4], 'big')
+            kind = data[offset + 4:offset + 8]
+            stop = offset + 12 + length
+            if stop > len(data) or kind == b'acTL':
+                return False
+            if offset == 8:
+                header = kind == b'IHDR' and length == 13
+            image_data = image_data or kind == b'IDAT'
+            if kind == b'IEND':
+                return header and image_data and length == 0 and stop == len(data)
+            offset = stop
+        return False
+    if content_type == 'image/webp':
+        if len(data) < 20 or int.from_bytes(data[4:8], 'little') + 8 != len(data):
+            return False
+        offset, image_data = 12, False
+        while offset + 8 <= len(data):
+            kind, length = data[offset:offset + 4], int.from_bytes(data[offset + 4:offset + 8], 'little')
+            start, stop = offset + 8, offset + 8 + length
+            if stop > len(data) or kind in (b'ANIM', b'ANMF'):
+                return False
+            if kind == b'VP8X' and (length < 10 or data[start] & 2):
+                return False
+            image_data = image_data or (kind in (b'VP8 ', b'VP8L') and length > 0)
+            offset = stop + length % 2
+        return image_data and offset == len(data)
+    return False
+
+
+def _profile_image_bytes(row):
+    """Bounded private read; never return a signed URL or follow a redirect."""
+    provider = storage()
+    try:
+        if isinstance(provider, LocalStorage):
+            original = provider.path(row.id)
+            path = original.resolve()
+            if original.is_symlink() or path.parent != provider.root.resolve() or not path.is_file():
+                raise HTTPException(409, 'Your profile image is unavailable. Upload it again.')
+            with path.open('rb') as image:
+                data = image.read(min(row.size, PROFILE_IMAGE_MAX_BYTES) + 1)
+        else:
+            result = provider.client.get_object(Bucket=provider.bucket, Key=object_key(row.owner_id, row.id),
+                                                Range=f'bytes=0-{min(row.size, PROFILE_IMAGE_MAX_BYTES)}')
+            body = result['Body']
+            try:
+                data = body.read(min(row.size, PROFILE_IMAGE_MAX_BYTES) + 1)
+            finally:
+                body.close()
+            if result.get('ContentType', row.content_type).split(';')[0] != row.content_type:
+                raise HTTPException(409, 'The stored profile image no longer matches its verified type.')
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, 'Private profile image storage is temporarily unavailable.') from exc
+    if len(data) != row.size or len(data) > PROFILE_IMAGE_MAX_BYTES:
+        raise HTTPException(409, 'The stored profile image no longer matches its verified size. Upload it again.')
+    if not _static_profile_image(row.content_type, data):
+        raise HTTPException(415, 'Choose a static JPEG, PNG or WebP profile image with matching file contents.')
+    return data
+
+
+def _profile_image_url(media_id):
+    path = f'/api/creator/profile-images/{media_id}'
+    return settings.api_public_origin.rstrip('/') + path if settings.api_public_origin else path
+
+
+def profile_for(session, user):
+    profile = _profile_state(session.get(CreatorPreferences, user.id))
+    for field in ('avatar_media_id', 'cover_media_id'):
+        if profile[field] is not None:
+            try:
+                _profile_media(session, user.id, profile[field])
+            except HTTPException:
+                profile[field] = None
+    return {**profile,
+            'avatar_url': _profile_image_url(profile['avatar_media_id']) if profile['avatar_media_id'] else None,
+            'cover_url': _profile_image_url(profile['cover_media_id']) if profile['cover_media_id'] else profile['cover_sample']}
+
+
+@router.get('/profile')
+def get_profile(response: Response, user: User = Depends(current_user), session: Session = Depends(db)):
+    response.headers['Cache-Control'] = 'private, no-store'
+    return profile_for(session, user)
+
+
+@router.post('/profile', dependencies=[Depends(guard)])
+def save_profile(data: ProfileInput, response: Response, user: User = Depends(current_user), session: Session = Depends(db)):
+    row = _locked_preferences(session, user)
+    previous = _profile_state(row)
+    patch = data.model_dump(mode='json', exclude_unset=True)
+    if patch.get('cover_media_id') is not None:
+        patch['cover_sample'] = None
+    if patch.get('cover_sample') is not None:
+        patch['cover_media_id'] = None
+    profile = ProfileInput.model_validate({**previous, **patch}).model_dump(mode='json')
+    for field in ('avatar_media_id', 'cover_media_id'):
+        if profile[field] is not None:
+            media = _profile_media(session, user.id, profile[field])
+            if field in patch:
+                _profile_image_bytes(media)
+    if row is None:
+        row = CreatorPreferences(owner_id=user.id, data={})
+        session.add(row)
+    # Replacing artwork does not delete the prior owned file or any media used
+    # by creations; the ordinary media ledger continues to count its storage.
+    row.data = {**(row.data or {}), 'profile': profile}
+    session.commit()
+    response.headers['Cache-Control'] = 'private, no-store'
+    return profile_for(session, user)
+
+
+@router.get('/profile-images/{media_id}')
+def read_profile_image(media_id: uuid.UUID, user: User = Depends(current_user), session: Session = Depends(db)):
+    profile = _profile_state(session.get(CreatorPreferences, user.id))
+    if str(media_id) not in (profile['avatar_media_id'], profile['cover_media_id']):
+        raise HTTPException(404, 'Profile image not found')
+    media = _profile_media(session, user.id, media_id)
+    return Response(content=_profile_image_bytes(media), media_type=media.content_type,
+                    headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
+                             'Content-Disposition': 'inline'})
 
 
 def serialize_item(item, session, *, viewer_id=None):
@@ -318,7 +540,7 @@ def bootstrap(user: User = Depends(current_user), session: Session = Depends(db)
     feeds = session.scalars(select(CreatorFeed).where(CreatorFeed.owner_id == user.id)).all()
     community_feeds = session.scalars(select(CreatorFeed).where(CreatorFeed.data['shared'].as_boolean() == True).limit(100)).all()
     distributions = session.scalars(select(CreatorDistribution).where(CreatorDistribution.owner_id == user.id).order_by(CreatorDistribution.updated_at.desc()).limit(200)).all()
-    return {'items': items, 'drafts': [serialize_item(i, session, viewer_id=user.id) for i in own], 'preferences': prefs, 'feeds': [{'id': f.id, **f.data} for f in feeds], 'community_feeds': [{'id': f.id, **f.data, 'owner_name': session.get(User, f.owner_id).name} for f in community_feeds if account_is_discoverable(session, f.owner_id)], 'connections': connections_for(user, session), 'distributions': [serialize_distribution(d) for d in distributions]}
+    return {'editor_capabilities': editor_configuration(), 'profile': profile_for(session, user), 'items': items, 'drafts': [serialize_item(i, session, viewer_id=user.id) for i in own], 'preferences': prefs, 'feeds': [{'id': f.id, **f.data} for f in feeds], 'community_feeds': [{'id': f.id, **f.data, 'owner_name': session.get(User, f.owner_id).name} for f in community_feeds if account_is_discoverable(session, f.owner_id)], 'connections': connections_for(user, session), 'distributions': [serialize_distribution(d) for d in distributions]}
 
 
 def save_item(data, session, user, row=None):
@@ -428,17 +650,16 @@ def distribute_item(item_id: str, data: DistributionInput, user: User = Depends(
 
 @router.post('/preferences', dependencies=[Depends(guard)])
 def preferences(data: PreferencesInput, user: User = Depends(current_user), session: Session = Depends(db)):
-    from media_rewards import lock_user, sync_preferences_rewards
-    lock_user(session, user)
-    row = session.get(CreatorPreferences, user.id)
+    from media_rewards import sync_preferences_rewards
+    row = _locked_preferences(session, user)
     previous = dict(row.data or {}) if row else {}
     if row is None:
         row = CreatorPreferences(owner_id=user.id)
         session.add(row)
-    row.data = data.model_dump()
+    row.data = {**previous, **data.model_dump()}
     sync_preferences_rewards(session, user, previous, row.data)
     session.commit()
-    return row.data
+    return data.model_dump()
 
 
 @router.post('/feeds', status_code=201, dependencies=[Depends(guard)])

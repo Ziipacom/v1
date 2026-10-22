@@ -35,6 +35,7 @@ import {
 } from "../components/floating";
 import { Cover, Logo } from "../components/ui";
 import { StudioFeed } from "../components/studio-feed";
+import { AccountMenu } from "../components/account-menu";
 import { useDevicePreferences } from "../components/device-preferences";
 import { color, font, styles, themedStyles } from "../theme";
 import { useZiipa } from "../provider";
@@ -100,6 +101,7 @@ export function StudioScreen({
           <Logo width={96} />
         </Pressable>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <AccountMenu navigation={navigation} />
           <FloatButton
             label="Open settings"
             icon={Settings}
