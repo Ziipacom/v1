@@ -2,12 +2,16 @@ import { inCreativeWorld, searchItems } from "./domain.ts";
 import type { Category, Item } from "./types";
 
 /** Gallery is a discovery surface, never a shortcut to someone's private tray. */
-export function galleryItems(items: Item[], category: Category, query: string) {
+export function galleryItems(
+  items: Item[],
+  category: Category | "all",
+  query: string,
+) {
   return searchItems(items, query).filter(
     (item) =>
       item.visibility !== "draft" &&
       item.visibility !== "hidden" &&
-      inCreativeWorld(item, category),
+      (category === "all" || inCreativeWorld(item, category)),
   );
 }
 

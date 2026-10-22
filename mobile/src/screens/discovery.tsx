@@ -11,7 +11,13 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { Menu, Search, Settings, SlidersHorizontal } from "lucide-react-native";
+import {
+  Menu,
+  RefreshCw,
+  Search,
+  Settings,
+  SlidersHorizontal,
+} from "lucide-react-native";
 import {
   CategoryDock,
   FloatButton,
@@ -47,18 +53,22 @@ function MobileDiscoverScreen({
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const logoWidth = Math.max(96, Math.min(145, width - 188));
-  const [category, setCategory] = useState<Category>(
-    route.params?.category || "music",
-  );
-  const [query, setQuery] = useState("");
-  useEffect(() => {
-    if (route.params?.category) {
-      setCategory(route.params.category);
-    }
-  }, [route.params?.category]);
+  const category = route.params?.category || "all";
+  const [query, setQuery] = useState(route.params?.query || "");
+  const [resetVersion, setResetVersion] = useState(0);
+  useEffect(() => setQuery(route.params?.query || ""), [route.params?.query]);
   const items = galleryItems(data.items, category, query);
   function select(id: Category) {
-    setCategory(id);
+    navigation.setParams({ category: id });
+  }
+  function reset() {
+    setQuery("");
+    navigation.setParams({
+      category: undefined,
+      query: undefined,
+      collection: undefined,
+    });
+    setResetVersion((version) => version + 1);
   }
   const activeWorld = worlds.find((w) => w.id === category);
   return (
@@ -120,11 +130,15 @@ function MobileDiscoverScreen({
       >
         {items.length ? (
           <GallerySlider
-            key={`${category}:${query}`}
+            key={`${category}:${query}:${resetVersion}`}
             items={items}
-            label={activeWorld?.title || "Gallery"}
+            label={activeWorld?.title || "All creations"}
+            startMuted={resetVersion > 0 ? true : undefined}
             onOpen={(item) =>
-              navigation.navigate("Watch", { itemId: item.id, category })
+              navigation.navigate("Watch", {
+                itemId: item.id,
+                category: item.category,
+              })
             }
           />
         ) : (
@@ -163,6 +177,20 @@ function MobileDiscoverScreen({
             {guest ? "SAMPLE STUDIO" : "YOUR CREATIVE WORLD"}
             {activeWorld?.concept ? " · CONCEPT" : ""}
           </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Reset gallery to all creations and clear search"
+            accessibilityHint="Returns to the first creation. Your saved settings are unchanged."
+            onPress={reset}
+            style={{
+              minWidth: 44,
+              minHeight: 44,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <RefreshCw size={16} color={color.muted} />
+          </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Build a custom feed"

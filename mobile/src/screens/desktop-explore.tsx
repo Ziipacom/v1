@@ -39,6 +39,7 @@ export function DesktopExplore({ route, navigation }: Props) {
   const { data, refresh, refreshing, loading, error } = useZiipa();
   const { contentWidth } = useDesktopLayout();
   const [query, setQuery] = useState(route.params?.query || "");
+  const [resetVersion, setResetVersion] = useState(0);
   const category = route.params?.category;
   const saved = route.params?.collection === "saved";
   useEffect(() => setQuery(route.params?.query || ""), [route.params?.query]);
@@ -66,17 +67,6 @@ export function DesktopExplore({ route, navigation }: Props) {
         .slice(0, 8),
     [published],
   );
-  const featured = useMemo(
-    () =>
-      items
-        .filter(
-          (item) =>
-            !!item.media_url &&
-            /^(video|audio)\//.test(item.content_type || ""),
-        )
-        .slice(0, 8),
-    [items],
-  );
   const columns = contentWidth >= 1400 ? 4 : contentWidth >= 980 ? 3 : 2;
   // The sidebar owns its width. onLayout below measures only this grid's space.
   const [gridWidth, setGridWidth] = useState(0);
@@ -103,6 +93,7 @@ export function DesktopExplore({ route, navigation }: Props) {
       query: undefined,
       collection: undefined,
     });
+    setResetVersion((version) => version + 1);
   }
 
   return (
@@ -114,7 +105,25 @@ export function DesktopExplore({ route, navigation }: Props) {
       <View style={s.content}>
         <View style={s.headingRow}>
           <View style={{ flex: 1, gap: 8 }}>
-            <Text style={styles.eyebrow}>YOUR CREATIVE WORLD</Text>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
+              <Text style={styles.eyebrow}>YOUR CREATIVE WORLD</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Reset gallery to all creations and clear search"
+                accessibilityHint="Clears category, search and Saved filters; returns to the first creation. Your saved settings are unchanged."
+                onPress={reset}
+                style={{
+                  minWidth: 44,
+                  minHeight: 44,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <RefreshCw size={16} color={color.muted} />
+              </Pressable>
+            </View>
             <Text accessibilityRole="header" style={s.heading}>
               {saved ? "Saved for later" : "Explore"}
             </Text>
@@ -285,8 +294,13 @@ export function DesktopExplore({ route, navigation }: Props) {
           </View>
         ) : (
           <>
-            {!!featured.length && (
-              <DesktopFeaturedGallery items={featured} open={open} />
+            {!!items.length && (
+              <DesktopFeaturedGallery
+                key={resetVersion}
+                items={items}
+                open={open}
+                startMuted={resetVersion > 0 ? true : undefined}
+              />
             )}
             <View style={s.sectionHeading}>
               <Text accessibilityRole="header" style={s.sectionTitle}>
@@ -485,178 +499,188 @@ function Step({
   );
 }
 
-const s = themedStyles(() => StyleSheet.create({
-  page: { padding: 24, paddingBottom: 40, flexGrow: 1 },
-  content: { width: "100%", maxWidth: 1440, alignSelf: "center", gap: 20 },
-  headingRow: {
-    flexDirection: "row",
-    gap: 24,
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  heading: {
-    color: color.text,
-    fontFamily: font.bold,
-    fontSize: 28,
-    lineHeight: 34,
-    letterSpacing: -0.5,
-  },
-  toolbar: { flexDirection: "row", gap: 12, alignItems: "center" },
-  search: {
-    flex: 1,
-    minHeight: 52,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: color.panel,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  searchInput: {
-    flex: 1,
-    minWidth: 0,
-    color: color.text,
-    fontFamily: font.regular,
-    fontSize: 16,
-    height: 50,
-  },
-  smallButton: { padding: 8 },
-  toolbarButton: {
-    minHeight: 52,
-    minWidth: 52,
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: 14,
-    backgroundColor: color.panel,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-  },
-  buttonLabel: { color: color.text, fontFamily: font.medium, fontSize: 14 },
-  categories: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  filter: {
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: 24,
-    paddingHorizontal: 17,
-    paddingVertical: 11,
-    backgroundColor: color.panel,
-  },
-  filterText: { color: color.muted, fontFamily: font.medium, fontSize: 14 },
-  selected: { backgroundColor: color.purple, borderColor: "#8156C3" },
-  loading: { paddingVertical: 64, gap: 16, alignItems: "center" },
-  welcome: {
-    borderRadius: 26,
-    borderWidth: 1,
-    borderColor: themeValue("#563677", color.border),
-    padding: 36,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 24,
-  },
-  welcomeIcon: {
-    width: 76,
-    height: 76,
-    borderRadius: 24,
-    backgroundColor: "#A6E21B14",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#A6E21B44",
-  },
-  welcomeTitle: {
-    color: color.text,
-    fontFamily: font.semibold,
-    fontSize: 29,
-    lineHeight: 35,
-    letterSpacing: -0.6,
-  },
-  nextSteps: { flexDirection: "row", flexWrap: "wrap", gap: 16 },
-  step: {
-    flex: 1,
-    minWidth: 195,
-    borderRadius: 20,
-    backgroundColor: color.panel,
-    borderWidth: 1,
-    borderColor: color.border,
-    padding: 22,
-    gap: 14,
-  },
-  sectionHeading: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 20,
-  },
-  sectionTitle: { color: color.text, fontFamily: font.semibold, fontSize: 20 },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 18 },
-  card: {
-    borderRadius: 18,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: color.panel,
-  },
-  cover: {
-    width: "100%",
-    aspectRatio: 16 / 9,
-    overflow: "hidden",
-    backgroundColor: color.raised,
-  },
-  cardCategory: {
-    position: "absolute",
-    top: 13,
-    left: 13,
-    backgroundColor: "#120D1FCC",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  cardCategoryText: { fontFamily: font.medium, fontSize: 11, color: themeValue("#E6DBF3", color.text) },
-  play: {
-    position: "absolute",
-    bottom: 16,
-    left: 16,
-    width: 42,
-    height: 42,
-    borderRadius: 24,
-    backgroundColor: "#FFFFFF24",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#FFFFFF66",
-  },
-  savedBadge: { position: "absolute", right: 14, bottom: 19 },
-  cardCopy: { padding: 13, gap: 5 },
-  cardTitle: {
-    color: color.text,
-    fontFamily: font.semibold,
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  cardTags: { color: color.faint, fontFamily: font.regular, fontSize: 12 },
-  noResults: {
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: color.border,
-    padding: 42,
-    minHeight: 320,
-    gap: 16,
-  },
-  discoveryFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 28,
-    padding: 24,
-    borderRadius: 22,
-    backgroundColor: color.panel,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-}));
+const s = themedStyles(() =>
+  StyleSheet.create({
+    page: { padding: 24, paddingBottom: 40, flexGrow: 1 },
+    content: { width: "100%", maxWidth: 1440, alignSelf: "center", gap: 20 },
+    headingRow: {
+      flexDirection: "row",
+      gap: 24,
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    heading: {
+      color: color.text,
+      fontFamily: font.bold,
+      fontSize: 28,
+      lineHeight: 34,
+      letterSpacing: -0.5,
+    },
+    toolbar: { flexDirection: "row", gap: 12, alignItems: "center" },
+    search: {
+      flex: 1,
+      minHeight: 52,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: color.border,
+      backgroundColor: color.panel,
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      gap: 12,
+    },
+    searchInput: {
+      flex: 1,
+      minWidth: 0,
+      color: color.text,
+      fontFamily: font.regular,
+      fontSize: 16,
+      height: 50,
+    },
+    smallButton: { padding: 8 },
+    toolbarButton: {
+      minHeight: 52,
+      minWidth: 52,
+      borderWidth: 1,
+      borderColor: color.border,
+      borderRadius: 14,
+      backgroundColor: color.panel,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      paddingHorizontal: 16,
+    },
+    buttonLabel: { color: color.text, fontFamily: font.medium, fontSize: 14 },
+    categories: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+    filter: {
+      borderWidth: 1,
+      borderColor: color.border,
+      borderRadius: 24,
+      paddingHorizontal: 17,
+      paddingVertical: 11,
+      backgroundColor: color.panel,
+    },
+    filterText: { color: color.muted, fontFamily: font.medium, fontSize: 14 },
+    selected: { backgroundColor: color.purple, borderColor: "#8156C3" },
+    loading: { paddingVertical: 64, gap: 16, alignItems: "center" },
+    welcome: {
+      borderRadius: 26,
+      borderWidth: 1,
+      borderColor: themeValue("#563677", color.border),
+      padding: 36,
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 24,
+    },
+    welcomeIcon: {
+      width: 76,
+      height: 76,
+      borderRadius: 24,
+      backgroundColor: "#A6E21B14",
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: "#A6E21B44",
+    },
+    welcomeTitle: {
+      color: color.text,
+      fontFamily: font.semibold,
+      fontSize: 29,
+      lineHeight: 35,
+      letterSpacing: -0.6,
+    },
+    nextSteps: { flexDirection: "row", flexWrap: "wrap", gap: 16 },
+    step: {
+      flex: 1,
+      minWidth: 195,
+      borderRadius: 20,
+      backgroundColor: color.panel,
+      borderWidth: 1,
+      borderColor: color.border,
+      padding: 22,
+      gap: 14,
+    },
+    sectionHeading: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 20,
+    },
+    sectionTitle: {
+      color: color.text,
+      fontFamily: font.semibold,
+      fontSize: 20,
+    },
+    grid: { flexDirection: "row", flexWrap: "wrap", gap: 18 },
+    card: {
+      borderRadius: 18,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: color.border,
+      backgroundColor: color.panel,
+    },
+    cover: {
+      width: "100%",
+      aspectRatio: 16 / 9,
+      overflow: "hidden",
+      backgroundColor: color.raised,
+    },
+    cardCategory: {
+      position: "absolute",
+      top: 13,
+      left: 13,
+      backgroundColor: "#120D1FCC",
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+    },
+    cardCategoryText: {
+      fontFamily: font.medium,
+      fontSize: 11,
+      color: themeValue("#E6DBF3", color.text),
+    },
+    play: {
+      position: "absolute",
+      bottom: 16,
+      left: 16,
+      width: 42,
+      height: 42,
+      borderRadius: 24,
+      backgroundColor: "#FFFFFF24",
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: "#FFFFFF66",
+    },
+    savedBadge: { position: "absolute", right: 14, bottom: 19 },
+    cardCopy: { padding: 13, gap: 5 },
+    cardTitle: {
+      color: color.text,
+      fontFamily: font.semibold,
+      fontSize: 15,
+      lineHeight: 20,
+    },
+    cardTags: { color: color.faint, fontFamily: font.regular, fontSize: 12 },
+    noResults: {
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: color.border,
+      padding: 42,
+      minHeight: 320,
+      gap: 16,
+    },
+    discoveryFooter: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 28,
+      padding: 24,
+      borderRadius: 22,
+      backgroundColor: color.panel,
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+  }),
+);

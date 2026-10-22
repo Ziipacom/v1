@@ -20,8 +20,9 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react-native";
-import { Cover } from "./ui";
+import { Cover, categories } from "./ui";
 import { ReelMedia } from "./reel-media";
+import { ProfileMediaPreview } from "./profile-media-preview";
 import { useDevicePreferences } from "./device-preferences";
 import { isPlayableMedia } from "../lib/domain";
 import { galleryIndex, galleryRotationAllowed } from "../lib/gallery";
@@ -32,10 +33,12 @@ import { color, font, useTheme } from "../theme";
 export function GallerySlider({
   items,
   label,
+  startMuted,
   onOpen,
 }: {
   items: Item[];
   label: string;
+  startMuted?: boolean;
   onOpen: (item: Item) => void;
 }) {
   useTheme();
@@ -77,7 +80,7 @@ export function GallerySlider({
     !ready ||
     (audioOverride?.id === item.id
       ? audioOverride.muted
-      : preferences.startMuted);
+      : (startMuted ?? preferences.startMuted));
   const playbackPaused =
     mediaPaused ||
     ((reducedMotion || !ready || !preferences.autoplay) && !explicitPlayback);
@@ -200,7 +203,7 @@ export function GallerySlider({
   );
   const rotating = galleryRotationAllowed({
     count: items.length,
-    enabled: rotationEnabled,
+    enabled: ready && preferences.autoplay && rotationEnabled,
     focused,
     foreground,
     visible,
@@ -208,6 +211,7 @@ export function GallerySlider({
     controlFocused,
     reducedMotion,
   });
+  const rotationBlocked = reducedMotion || !ready || !preferences.autoplay;
   useEffect(() => {
     if (!rotating) return;
     const timer = setTimeout(() => advance(1), 7000);
@@ -296,13 +300,25 @@ export function GallerySlider({
               boxShadow: "0 18px 28px #0005",
             }}
           >
-            <ReelMedia
-              key={item.id}
-              item={item}
-              active={mediaActive}
-              paused={playbackPaused}
-              muted={muted}
-            />
+            {item.content_type?.startsWith("image/") ? (
+              <ProfileMediaPreview
+                key={item.id}
+                item={item}
+                visible={focused && foreground && visible}
+                videoActive={false}
+                autoplay={!playbackPaused}
+              />
+            ) : playable ? (
+              <ReelMedia
+                key={item.id}
+                item={item}
+                active={mediaActive}
+                paused={playbackPaused}
+                muted={muted}
+              />
+            ) : (
+              <Cover item={item} style={{ flex: 1 }} />
+            )}
             <LinearGradient
               pointerEvents="none"
               colors={
@@ -320,7 +336,10 @@ export function GallerySlider({
                   letterSpacing: 2,
                 }}
               >
-                {label.toUpperCase()}
+                {(
+                  categories.find((entry) => entry.id === item.category)
+                    ?.title || label
+                ).toUpperCase()}
               </Text>
               <View style={{ gap: 12 }}>
                 <Text
@@ -458,12 +477,14 @@ export function GallerySlider({
             {...interaction}
             accessibilityRole="button"
             accessibilityLabel={
-              rotationEnabled && !reducedMotion
-                ? "Pause gallery rotation"
-                : "Start gallery rotation"
+              rotationBlocked
+                ? "Automatic gallery rotation disabled by your preference"
+                : rotationEnabled
+                  ? "Pause gallery rotation"
+                  : "Start gallery rotation"
             }
-            accessibilityState={{ disabled: reducedMotion }}
-            disabled={reducedMotion}
+            accessibilityState={{ disabled: rotationBlocked }}
+            disabled={rotationBlocked}
             onPress={() => setRotationEnabled(!rotationEnabled)}
             style={{
               minWidth: 44,
@@ -471,10 +492,10 @@ export function GallerySlider({
               flexDirection: "row",
               gap: 6,
               alignItems: "center",
-              opacity: reducedMotion ? 0.6 : 1,
+              opacity: rotationBlocked ? 0.6 : 1,
             }}
           >
-            {rotationEnabled && !reducedMotion ? (
+            {rotationEnabled && !rotationBlocked ? (
               <Pause color={color.onMedia} size={15} />
             ) : (
               <Play color={color.onMedia} size={15} />

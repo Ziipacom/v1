@@ -11,9 +11,11 @@ import { useIsFocused } from "@react-navigation/native";
 import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react-native";
 import { ReelMedia } from "./reel-media";
 import { useDevicePreferences } from "./device-preferences";
-import { Action, categories } from "./ui";
+import { Action, Cover, categories } from "./ui";
+import { ProfileMediaPreview } from "./profile-media-preview";
 import { useDesktopLayout } from "./desktop-layout";
 import { featuredGalleryPlayback } from "../lib/featured-gallery-playback";
+import { isPlayableMedia } from "../lib/domain";
 import type { Item } from "../lib/types";
 import { color, font, styles, themedStyles } from "../theme";
 
@@ -21,9 +23,11 @@ import { color, font, styles, themedStyles } from "../theme";
 export function DesktopFeaturedGallery({
   items,
   open,
+  startMuted,
 }: {
   items: Item[];
   open: (item: Item) => void;
+  startMuted?: boolean;
 }) {
   const focused = useIsFocused();
   const {
@@ -53,6 +57,8 @@ export function DesktopFeaturedGallery({
     items.findIndex((item) => item.id === selectedId),
   );
   const current = items[selectedIndex];
+  const muted = startMuted ?? preferences.startMuted;
+  const playable = !!current && isPlayableMedia(current);
   const { requestedPaused, playbackPaused, rotationAllowed } =
     featuredGalleryPlayback({
       count: items.length,
@@ -163,17 +169,33 @@ export function DesktopFeaturedGallery({
     >
       <View style={[g.feature, { height: compact ? 280 : 320 }]}>
         <Animated.View style={[g.media, { opacity }]}>
-          <ReelMedia
-            key={current.id}
-            item={current}
-            active={focused && foreground}
-            paused={playbackPaused}
-            muted={preferences.startMuted}
-          />
+          {current.content_type?.startsWith("image/") ? (
+            <ProfileMediaPreview
+              key={current.id}
+              item={current}
+              visible={focused && foreground}
+              videoActive={false}
+              autoplay={!playbackPaused}
+            />
+          ) : playable ? (
+            <ReelMedia
+              key={current.id}
+              item={current}
+              active={focused && foreground}
+              paused={playbackPaused}
+              muted={muted}
+            />
+          ) : (
+            <Cover item={current} style={{ flex: 1 }} />
+          )}
           <View pointerEvents="none" style={g.featureBadge}>
             <Text style={g.badgeText}>
               FEATURED ·{" "}
-              {preferences.startMuted ? "MUTED PREVIEW" : "MEDIA PREVIEW"}
+              {playable
+                ? muted
+                  ? "MUTED PREVIEW"
+                  : "MEDIA PREVIEW"
+                : "CREATION PREVIEW"}
             </Text>
           </View>
         </Animated.View>
@@ -195,7 +217,7 @@ export function DesktopFeaturedGallery({
           )}
           <View style={{ marginTop: "auto", gap: 6 }}>
             <Action
-              title="Watch creation"
+              title={playable ? "Watch creation" : "Open creation"}
               icon={Play}
               onPress={() => open(current)}
             />
@@ -203,7 +225,7 @@ export function DesktopFeaturedGallery({
               {requestedPaused
                 ? "Preview paused. Press Play when you’re ready."
                 : rotationAllowed
-                  ? `${preferences.startMuted ? "Muted media" : "Media preview"} · next creation every 7.5 seconds.`
+                  ? `${playable ? (muted ? "Muted media" : "Media preview") : "Creation preview"} · next creation every 7.5 seconds.`
                   : "Preview enabled · automatic gallery motion paused."}
             </Text>
           </View>
@@ -218,23 +240,29 @@ export function DesktopFeaturedGallery({
           >
             <ChevronLeft size={18} color={color.text} />
           </GalleryButton>
-          <GalleryButton
-            label={requestedPaused ? "Play featured preview" : "Pause featured preview"}
-            disabled={!ready}
-            onPress={() => {
-              setExplicitPlaybackId(current.id);
-              setUserPaused(!requestedPaused);
-            }}
-          >
-            {requestedPaused ? (
-              <Play size={15} color={color.text} />
-            ) : (
-              <Pause size={15} color={color.text} />
-            )}
-            <Text style={g.controlText}>
-              {requestedPaused ? "Play" : "Pause"}
-            </Text>
-          </GalleryButton>
+          {playable && (
+            <GalleryButton
+              label={
+                requestedPaused
+                  ? "Play featured preview"
+                  : "Pause featured preview"
+              }
+              disabled={!ready}
+              onPress={() => {
+                setExplicitPlaybackId(current.id);
+                setUserPaused(!requestedPaused);
+              }}
+            >
+              {requestedPaused ? (
+                <Play size={15} color={color.text} />
+              ) : (
+                <Pause size={15} color={color.text} />
+              )}
+              <Text style={g.controlText}>
+                {requestedPaused ? "Play" : "Pause"}
+              </Text>
+            </GalleryButton>
+          )}
           {items.length > 1 && (
             <GalleryButton
               label={
@@ -265,17 +293,18 @@ export function DesktopFeaturedGallery({
           </GalleryButton>
         </View>
         <View style={g.buttons}>
-          {items.map((item, index) => (
-            <Pressable
-              key={item.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Show featured creation ${index + 1}: ${item.title}`}
-              accessibilityState={{ selected: selectedIndex === index }}
-              onPress={() => setSelectedId(item.id)}
-              hitSlop={8}
-              style={[g.dot, selectedIndex === index && g.activeDot]}
-            />
-          ))}
+          {items.length <= 8 &&
+            items.map((item, index) => (
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Show featured creation ${index + 1}: ${item.title}`}
+                accessibilityState={{ selected: selectedIndex === index }}
+                onPress={() => setSelectedId(item.id)}
+                hitSlop={8}
+                style={[g.dot, selectedIndex === index && g.activeDot]}
+              />
+            ))}
           <Text style={g.controlText}>
             {selectedIndex + 1} / {items.length}
           </Text>
