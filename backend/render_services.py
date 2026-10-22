@@ -399,11 +399,20 @@ def _measure_text(ffmpeg, work, filename, font_size):
           '-filter_threads', '1', '-threads', '1', '-f', 'lavfi', '-i', 'color=c=black:s=2x2:r=1:d=1',
           '-vf', graph, '-frames:v', '1', '-threads', '1', '-f', 'null', '-'], work, 10)
     messages = (work / 'stderr.log').read_text(encoding='utf-8', errors='replace')
-    values = re.findall(r'^\[Eval @ [^\]]+\]\s+([0-9]+(?:\.[0-9]+)?)\s*$', messages, re.MULTILINE)
+    # AVExpr print() has no log context in distro FFmpeg (bare numbers), while
+    # newer builds include an Eval context prefix. Match only complete numeric
+    # lines in either format, not numbers from stream metadata or progress.
+    # Keep invalid numeric values in order too: dropping a NaN height could
+    # incorrectly pair the width with drawtext's second x evaluation instead.
+    # Keep repeat+info above: equal dimensions must not become "Last message
+    # repeated" and disappear from this fixed, one-frame measurement graph.
+    scalar = r'[+-]?(?:[0-9]+(?:\.[0-9]*)?(?:e[+-]?[0-9]+)?|nan|inf(?:inity)?)'
+    values = re.findall(r'^(?:\[Eval @ [^\]\r\n]+\][ \t]+)?(' + scalar + r')[ \t]*$',
+                        messages, re.MULTILINE | re.IGNORECASE)
     if len(values) < 2:
         raise OverlayLayoutError('The render worker could not verify the positioned text size. Your editable original remains saved.')
     width, height = map(float, values[:2])
-    if not math.isfinite(width) or not math.isfinite(height):
+    if not math.isfinite(width) or not math.isfinite(height) or width < 0 or height < 0:
         raise OverlayLayoutError('The positioned text size could not be verified.')
     return width, height
 

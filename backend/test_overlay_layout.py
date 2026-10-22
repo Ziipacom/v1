@@ -2,6 +2,7 @@
 import math
 import json
 from pathlib import Path
+import shutil
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -45,6 +46,60 @@ def test_legacy_and_null_extensions_keep_identical_wire_values():
 @pytest.mark.parametrize('case', json.loads((Path(__file__).resolve().parent / 'fixtures' / 'overlay-text-cases.json').read_text(encoding='utf-8')))
 def test_shared_custom_text_wrapping(case):
     assert render._custom_display_text(case['text'], case['scale']) == case['output']
+
+
+@pytest.mark.parametrize('messages,expected', [
+    # Distro builds print without an AVExpr logging context.
+    ('Input #0, lavfi, from generated color:\n  Stream #0:0: 2x2, 1 fps\n'
+     '69.000000\n18.000000\n69.000000\nframe=1 fps=0.0\n', (69, 18)),
+    # The Windows FFmpeg 9 runtime prefixes the same print() values.
+    ('[Eval @ 0000019d9f310a40] 69.000000\n[Eval @ 0000019d9f310a40] 18.000000\n'
+     '[Eval @ 0000019d9f310a40] 69.000000\n', (69, 18)),
+    # A square glyph box needs both values, even when the log lines are equal.
+    ('18.000000\n18.000000\n18.000000\n', (18, 18)),
+])
+def test_text_measurement_accepts_ffmpeg_print_log_formats(tmp_path, monkeypatch, messages, expected):
+    commands = []
+    def run(command, work, timeout):
+        commands.append((command, timeout))
+        (work / 'stderr.log').write_text(messages, encoding='utf-8')
+    monkeypatch.setattr(render, '_run', run)
+    assert render._measure_text('ffmpeg', tmp_path, 'text0.txt', 24) == expected
+    command, timeout = commands[0]
+    assert command[command.index('-loglevel') + 1] == 'repeat+info'
+    assert command[command.index('-frames:v') + 1] == '1' and timeout == 10
+    assert 'textfile=text0.txt:expansion=none:' in command[command.index('-vf') + 1]
+
+
+@pytest.mark.parametrize('messages', [
+    '', '69.000000\n', '[Eval @ 0x123] 69.000000\n',
+    # Other logging contexts and numbers inside metadata are not dimensions.
+    '[Parsed_drawtext_0 @ 0x123] 69.000000\n[Parsed_drawtext_0 @ 0x123] 18.000000\n',
+    'width=69.000000\nheight=18.000000\n',
+    'nan\n18.000000\n', '69.000000\ninf\n', '-1.000000\n18.000000\n',
+    # Drawtext evaluates x,y,x. Never replace an invalid height with the last x.
+    '69.000000\nnan\n69.000000\n', '69.000000\n-1.000000\n69.000000\n',
+    '[Eval @ 0x123] 69.000000\n[Eval @ 0x123] inf\n[Eval @ 0x123] 69.000000\n',
+    '69.000000\n1e999\n69.000000\n',
+    ('9' * 400) + '\n18.000000\n',
+])
+def test_text_measurement_fails_closed_on_missing_or_invalid_metrics(tmp_path, monkeypatch, messages):
+    def run(command, work, timeout):
+        (work / 'stderr.log').write_text(messages, encoding='utf-8')
+    monkeypatch.setattr(render, '_run', run)
+    with pytest.raises(render.OverlayLayoutError, match='could not (verify|be verified)'):
+        render._measure_text('ffmpeg', tmp_path, 'text0.txt', 24)
+
+
+def test_real_text_measurement_preserves_width_height_order(runtime, tmp_path):
+    ffmpeg, _ = runtime
+    shutil.copyfile(render.config.font, tmp_path / 'font.ttf')
+    (tmp_path / 'text0.txt').write_text('MMMMMMiij', encoding='utf-8')
+    width, height = render._measure_text(ffmpeg, tmp_path, 'text0.txt', 24)
+    assert width > height * 3 and height > 5
+    (tmp_path / 'text0.txt').write_text('i', encoding='utf-8')
+    width, height = render._measure_text(ffmpeg, tmp_path, 'text0.txt', 24)
+    assert 0 < width < height
 
 
 @pytest.fixture

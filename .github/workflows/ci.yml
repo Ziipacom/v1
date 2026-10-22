@@ -129,7 +129,17 @@ jobs:
       - run: python -m pytest -q
       - run: docker build -t ziipa-api-ci .
       - name: Verify actual rendering in the production Linux image
-        run: docker run --rm --network none --cpus 1 --memory 1g --memory-swap 1g -e ZIIPA_RENDER_RESOURCE_TEST=1 --mount "type=bind,source=$PWD/test_rendering.py,target=/app/test_rendering.py,readonly" ziipa-api-ci python -m pytest test_rendering.py -q -p no:cacheprovider
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --cpus 1 --memory 1g --memory-swap 1g \
+            -e ZIIPA_RENDER_RESOURCE_TEST=1 \
+            --mount "type=bind,source=$PWD/test_rendering.py,target=/app/test_rendering.py,readonly" \
+            --mount "type=bind,source=$PWD/test_timeline_rendering.py,target=/app/test_timeline_rendering.py,readonly" \
+            --mount "type=bind,source=$PWD/test_creation_campaigns.py,target=/app/test_creation_campaigns.py,readonly" \
+            --mount "type=bind,source=$PWD/test_overlay_layout.py,target=/app/test_overlay_layout.py,readonly" \
+            ziipa-api-ci python -m pytest test_rendering.py test_overlay_layout.py -q -p no:cacheprovider \
+            | tee "$RUNNER_TEMP/ziipa-linux-render.log"
+          ! grep -Eq '[0-9]+ skipped' "$RUNNER_TEMP/ziipa-linux-render.log"
 
   native-arm-worker:
     # Standard ARM runners are free for public repositories. Fail closed if a
@@ -156,7 +166,7 @@ jobs:
             --file backend/Dockerfile backend
           test "$(docker image inspect --format '{{.Architecture}}' ziipa-native-arm-ci)" = arm64
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' ziipa-native-arm-ci)" = "$GITHUB_SHA"
-      - name: Native ARM 90-second rendering acceptance
+      - name: Native ARM 90-second rendering and overlay acceptance
         timeout-minutes: 10
         run: |
           set -euo pipefail
@@ -165,9 +175,12 @@ jobs:
             --cpus 1 --memory 1g --memory-swap 1g --pids-limit 128 \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=268435456,mode=1777 \
             --mount "type=bind,source=$PWD/backend/test_rendering.py,target=/app/test_rendering.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/test_timeline_rendering.py,target=/app/test_timeline_rendering.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/test_creation_campaigns.py,target=/app/test_creation_campaigns.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/test_overlay_layout.py,target=/app/test_overlay_layout.py,readonly" \
             -e DATABASE_URL=sqlite:// -e REDIS_URL=redis://127.0.0.1:6379/0 -e ENVIRONMENT=test \
             -e ZIIPA_RENDER_RESOURCE_TEST=1 \
-            ziipa-native-arm-ci python -m pytest test_rendering.py \
+            ziipa-native-arm-ci python -m pytest test_rendering.py test_overlay_layout.py \
             -q -s -p no:cacheprovider --basetemp=/tmp/acceptance \
             | tee "$RUNNER_TEMP/ziipa-arm-render.log"
           # Missing FFmpeg/fonts must fail acceptance, not silently skip it.
