@@ -20,7 +20,13 @@ export function useProfileImageSource(path?: string | null, token?: string): Ima
   useEffect(() => {
     const visibility = () => {
       const visible = document.visibilityState !== "hidden";
-      if (!visible) { resource.current?.abort(); resource.current?.dispose(); }
+      if (!visible) {
+        resource.current?.abort();
+        resource.current?.dispose();
+        // Foreground can render before passive effects recreate this lease.
+        // Never hand Image a URL that this handler has already revoked.
+        setLoaded(null);
+      }
       setForeground(visible);
     };
     document.addEventListener("visibilitychange", visibility);

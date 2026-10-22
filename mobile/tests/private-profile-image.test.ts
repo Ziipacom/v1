@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import ts from "typescript";
 import { privateProfileImageBlob, privateProfileImageLease, privateProfileImageRequest, trustedProfileImagePath } from "../src/lib/private-profile-image.ts";
 
 const path = "/api/creator/profile-images/209fbea3-2a64-45cc-a656-aeec2f900971";
@@ -63,4 +65,81 @@ test("a late response after sign-out cannot create an image URL", async () => {
   await assert.rejects(privateProfileImageLease({ ...options(), signal: controller.signal }, async () => { controller.abort(); return image(); },
     { createObjectURL: () => { created++; return "blob:wrong-account"; }, revokeObjectURL: () => {} }), /canceled/);
   assert.equal(created, 0);
+});
+
+test("actual web image hook never returns a revoked source when the same account returns to the foreground", async () => {
+  const source = readFileSync(new URL("../src/lib/profile-image-source.web.ts", import.meta.url), "utf8");
+  const compiled = ts.transpileModule(source, { compilerOptions: {
+    target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
+  } }).outputText;
+  // Minimal hook host: render reads state; passive effects run only when flushed.
+  // This tests the actual exported hook's visibility handler and pre-effect result.
+  const slots: { value?: any; deps?: readonly unknown[]; cleanup?: () => void }[] = [];
+  let cursor = 0;
+  let effects: (() => void)[] = [];
+  const same = (left: readonly unknown[] | undefined, right: readonly unknown[]) =>
+    !!left && left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
+  const react = {
+    useMemo: (factory: () => unknown, deps: readonly unknown[]) => {
+      const index = cursor++, slot = slots[index] ||= {};
+      if (!same(slot.deps, deps)) { slot.value = factory(); slot.deps = deps; }
+      return slot.value;
+    },
+    useState: (initial: unknown) => {
+      const index = cursor++, slot = slots[index] ||= { value: initial };
+      return [slot.value, (next: unknown) => { slot.value = typeof next === "function" ? next(slot.value) : next; }];
+    },
+    useRef: (initial: unknown) => {
+      const index = cursor++, slot = slots[index] ||= { value: { current: initial } };
+      return slot.value;
+    },
+    useEffect: (effect: () => (() => void) | void, deps: readonly unknown[]) => {
+      const index = cursor++, slot = slots[index] ||= {};
+      if (!same(slot.deps, deps)) {
+        slot.deps = deps;
+        effects.push(() => { slot.cleanup?.(); slot.cleanup = effect() || undefined; });
+      }
+    },
+  };
+  const visibilityListeners = new Set<() => void>();
+  const document = {
+    visibilityState: "visible",
+    addEventListener: (_: string, listener: () => void) => visibilityListeners.add(listener),
+    removeEventListener: (_: string, listener: () => void) => visibilityListeners.delete(listener),
+  };
+  let requests = 0;
+  const revoked: string[] = [];
+  const exported: Record<string, any> = {};
+  new Function("exports", "require", "document", compiled)(exported, (name: string) => {
+    if (name === "react") return react;
+    if (name === "./assets") return { localImages: {}, coverSource: (uri: string) => ({ uri }) };
+    if (name === "./config") return { apiOrigin: "https://api.ziipa.test", canonicalApiOrigin: "https://api.ziipa.test", portalMode: false };
+    if (name === "./private-profile-image") return {
+      trustedProfileImagePath,
+      privateProfileImageLease: async () => {
+        const uri = `blob:profile-${++requests}`; let disposed = false;
+        return { uri, dispose: () => { if (!disposed) { disposed = true; revoked.push(uri); } } };
+      },
+    };
+    throw new Error(`Unexpected hook dependency ${name}`);
+  }, document);
+  const render = (token = "owner-session") => {
+    cursor = 0;
+    return exported.useProfileImageSource(path, token);
+  };
+  const flushEffects = () => { const pending = effects; effects = []; for (const effect of pending) effect(); };
+  const visibility = (value: string) => { document.visibilityState = value; for (const listener of visibilityListeners) listener(); };
+  try {
+    assert.equal(render(), null); flushEffects(); await Promise.resolve();
+    assert.deepEqual(render(), { uri: "blob:profile-1" });
+    visibility("hidden"); assert.equal(render(), null); flushEffects();
+    assert.deepEqual(revoked, ["blob:profile-1"]);
+    visibility("visible");
+    assert.equal(render(), null, "The first foreground render must not reuse the revoked URL before passive effects run.");
+    flushEffects(); await Promise.resolve();
+    assert.deepEqual(render(), { uri: "blob:profile-2" });
+    assert.equal(render("different-account"), null, "Account changes mask old image data synchronously.");
+  } finally {
+    for (const slot of slots) slot.cleanup?.();
+  }
 });
