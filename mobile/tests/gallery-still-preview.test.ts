@@ -249,6 +249,30 @@ test("Disabled side previews and bearer-web transport do not mount private video
   portal.unmount();
 });
 
+test("Web side video uses explicit container dimensions while native inset sizing stays unchanged", () => {
+  const web = stillUI({ platform: "web", portal: true });
+  const webNodes = web.render();
+  const webVideo = webNodes.find((node) => node.type === "VideoView")!;
+  const webStyle = Object.assign({}, ...webVideo.props.style);
+  assert.equal(webStyle.width, "100%");
+  assert.equal(webStyle.height, "100%");
+  assert.equal(webVideo.props.style[0], webNodes[0].props.style);
+  web.flush();
+  assert.equal(web.counts().plays, 0);
+  web.unmount();
+
+  const native = stillUI();
+  const nativeNodes = native.render();
+  const nativeVideo = nativeNodes.find((node) => node.type === "VideoView")!;
+  assert.equal(nativeVideo.props.style, nativeNodes[0].props.style);
+  assert.equal(Array.isArray(nativeVideo.props.style), false);
+  assert.equal(nativeVideo.props.style.width, undefined);
+  assert.equal(nativeVideo.props.style.height, undefined);
+  native.flush();
+  assert.equal(native.counts().plays, 0);
+  native.unmount();
+});
+
 test("Usable artwork is shown as a non-animated image rather than a video; audio never creates a player", () => {
   const photo = stillUI();
   const nodes = photo.render({

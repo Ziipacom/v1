@@ -272,7 +272,11 @@ function StillVideo({
     <View style={StyleSheet.absoluteFill}>
       <VideoView
         player={player}
-        style={StyleSheet.absoluteFill}
+        style={
+          Platform.OS === "web"
+            ? [StyleSheet.absoluteFill, { width: "100%", height: "100%" }]
+            : StyleSheet.absoluteFill
+        }
         contentFit="cover"
         nativeControls={false}
         playsInline
