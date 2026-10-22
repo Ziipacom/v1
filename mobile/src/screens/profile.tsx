@@ -22,6 +22,7 @@ import {
   Menu,
   Pencil,
   Plus,
+  RefreshCw,
   Sparkles,
 } from "lucide-react-native";
 import {
@@ -31,7 +32,7 @@ import {
   WorldGlyph,
   worlds,
 } from "../components/floating";
-import { Action, Notice, Pill } from "../components/ui";
+import { Action, Notice, Pill, allCategories } from "../components/ui";
 import { SignOutButton } from "../components/account-menu";
 import { ProfileImageControls } from "../components/profile-image-controls";
 import {
@@ -54,7 +55,7 @@ import { color, font, styles } from "../theme";
 export function ProfileScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Profile">) {
-  const { desktop, contentWidth } = useDesktopLayout();
+  const { desktop } = useDesktopLayout();
   const { session, guest, data, api, refresh } = useZiipa();
   const [category, setCategory] = useState<ProfileCategory>("all");
   const [saved, setSaved] = useState(false);
@@ -365,148 +366,161 @@ export function ProfileScreen({
             paddingVertical: 15,
           }}
         >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              saved ? "Show creations" : "Show saved creations"
-            }
-            onPress={() => setSaved(!saved)}
-            style={{ paddingVertical: 6 }}
-          >
-            <Text
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                saved ? "Show creations" : "Show saved creations"
+              }
+              onPress={() => setSaved(!saved)}
+              style={{ paddingVertical: 6 }}
+            >
+              <Text
+                style={{
+                  color: saved ? color.lime : color.faint,
+                  fontFamily: font.regular,
+                  fontSize: 12,
+                }}
+              >
+                {saved ? "Saved" : "Creations"}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Reset Profile to all creations"
+              accessibilityHint="Clears the category and Saved view. Your account and saved settings are unchanged."
+              onPress={() => {
+                setCategory("all");
+                setSaved(false);
+              }}
               style={{
-                color: saved ? color.lime : color.faint,
-                fontFamily: font.regular,
-                fontSize: 12,
+                minWidth: 44,
+                minHeight: 44,
+                justifyContent: "center",
+                alignItems: "center",
               }}
             >
-              {saved ? "Saved" : "Creations"}
-            </Text>
-          </Pressable>
+              <RefreshCw size={16} color={color.muted} />
+            </Pressable>
+          </View>
           <View style={styles.row}>
             <Text style={p.label}>
               {category === "all"
                 ? "All creations"
                 : worlds.find((w) => w.id === category)?.title}
             </Text>
-            {category !== "all" && (
-              <>
-                <WorldGlyph id={category} size={19} />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Show all creations"
-                  onPress={() => setCategory("all")}
-                  style={{
-                    minWidth: 44,
-                    minHeight: 44,
-                    justifyContent: "center",
-                    alignItems: "center",
-                    borderWidth: 1,
-                    borderColor: color.border,
-                    borderRadius: 12,
-                    paddingHorizontal: 10,
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: color.text,
-                      fontFamily: font.medium,
-                      fontSize: 12,
-                    }}
-                  >
-                    All
-                  </Text>
-                </Pressable>
-              </>
-            )}
+            {category !== "all" && <WorldGlyph id={category} size={19} />}
           </View>
         </View>
         <View
+          testID="profile-creations-feed"
           onLayout={(event) => {
             const top = event.nativeEvent.layout.y;
             setGridTop(top);
           }}
-          style={
-            desktop
-              ? { flexDirection: "row", flexWrap: "wrap", gap: 18 }
-              : { paddingHorizontal: 23, gap: 10 }
-          }
+          style={{
+            width: "100%",
+            maxWidth: desktop ? 900 : undefined,
+            alignSelf: "center",
+            paddingHorizontal: desktop ? 0 : 23,
+            gap: desktop ? 18 : 10,
+          }}
         >
-          {items.map((item) => (
-            <Pressable
-              key={item.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Watch ${item.title}`}
-              onLayout={(event) => {
-                const { y, height } = event.nativeEvent.layout;
-                if (layoutIdentity.current !== layoutKey) return;
-                setCardLayouts((previous) => {
-                  const values =
-                    previous.key === layoutKey ? previous.values : {};
-                  return values[item.id]?.top === y &&
-                    values[item.id]?.height === height
-                    ? previous
-                    : {
-                        key: layoutKey,
-                        values: { ...values, [item.id]: { top: y, height } },
-                      };
-                });
-              }}
-              onPress={() =>
-                navigation.navigate("Watch", {
-                  itemId: item.id,
-                  category: item.category,
-                })
-              }
-              style={{
-                ...(desktop
-                  ? {
-                      width: Math.max(
-                        200,
-                        Math.floor(
-                          (Math.min(contentWidth, 1240) - 56 - 36) / 3,
-                        ),
-                      ),
-                      height: 250,
-                    }
-                  : { height: 179 }),
-                borderRadius: desktop ? 12 : 25,
-                overflow: "hidden",
-                borderWidth: 1,
-                borderColor: "#5D506E",
-              }}
-            >
-              <ProfileMediaPreview
-                item={item}
-                visible={
-                  activity.visible &&
-                  profileCardVisible(cardBounds[item.id], viewport)
+          {items.map((item) => {
+            const world = allCategories.find(
+              (entry) => entry.id === item.category,
+            );
+            const worldTitle =
+              item.category === "video" || item.category === "music"
+                ? "Music & Film"
+                : world?.title || "Creation";
+            const WorldIcon = world?.icon || Sparkles;
+            return (
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Watch ${item.title} · ${worldTitle}`}
+                onLayout={(event) => {
+                  const { y, height } = event.nativeEvent.layout;
+                  if (layoutIdentity.current !== layoutKey) return;
+                  setCardLayouts((previous) => {
+                    const values =
+                      previous.key === layoutKey ? previous.values : {};
+                    return values[item.id]?.top === y &&
+                      values[item.id]?.height === height
+                      ? previous
+                      : {
+                          key: layoutKey,
+                          values: { ...values, [item.id]: { top: y, height } },
+                        };
+                  });
+                }}
+                onPress={() =>
+                  navigation.navigate("Watch", {
+                    itemId: item.id,
+                    category: item.category,
+                  })
                 }
-                videoActive={activeVideo === item.id}
-                autoplay={activity.autoplay}
-              />
-              <View
                 style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  padding: 14,
-                  backgroundColor: "#0C04185C",
+                  width: "100%",
+                  height: desktop ? 320 : 179,
+                  borderRadius: desktop ? 12 : 25,
+                  overflow: "hidden",
+                  borderWidth: 1,
+                  borderColor: "#5D506E",
                 }}
               >
-                <Text
+                <ProfileMediaPreview
+                  item={item}
+                  visible={
+                    activity.visible &&
+                    profileCardVisible(cardBounds[item.id], viewport)
+                  }
+                  videoActive={activeVideo === item.id}
+                  autoplay={activity.autoplay}
+                />
+                <View
                   style={{
-                    color: "white",
-                    fontSize: 19,
-                    fontFamily: font.semibold,
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    padding: 14,
+                    backgroundColor: "#0C04185C",
+                    gap: 6,
                   }}
                 >
-                  {item.title}
-                </Text>
-              </View>
-            </Pressable>
-          ))}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <WorldIcon size={15} color="white" />
+                    <Text
+                      style={{
+                        color: "white",
+                        fontFamily: font.medium,
+                        fontSize: 11,
+                      }}
+                    >
+                      {worldTitle}
+                    </Text>
+                  </View>
+                  <Text
+                    style={{
+                      color: "white",
+                      fontSize: 19,
+                      fontFamily: font.semibold,
+                    }}
+                  >
+                    {item.title}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
           {!items.length && (
             <View style={{ paddingVertical: 35, gap: 12 }}>
               <Text style={styles.heading}>

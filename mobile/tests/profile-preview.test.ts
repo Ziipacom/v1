@@ -197,7 +197,7 @@ test("preview loops only retained trim or the first retained timeline clip, neve
   );
 });
 
-type Node = { type: any; props: Record<string, any> };
+type Node = { type: any; props: Record<string, any>; key?: string };
 function previewHarness(
   options: {
     platform?: string;
@@ -607,5 +607,323 @@ test("profile card layout snapshots native event dimensions before a deferred st
   assert.deepEqual(pending[0]({ key: "all", values: {} }), {
     key: "all",
     values: { clip: { top: 190, height: 179 } },
+  });
+});
+
+/** Render the real Profile screen with inert native leaves and persistent hook
+ * slots, so local filters, native layout events and scroll position interact. */
+function profileScreenHarness(desktop = false) {
+  const source = readFileSync(
+    new URL("../src/screens/profile.tsx", import.meta.url),
+    "utf8",
+  );
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.CommonJS,
+      jsx: ts.JsxEmit.ReactJSX,
+    },
+  }).outputText;
+  const exported: Record<string, any> = {};
+  const hooks: any[] = [];
+  let cursor = 0;
+  let requests = 0;
+  let refreshes = 0;
+  let preferenceWrites = 0;
+  const navigations: unknown[] = [];
+  const creations = [
+    item("game", { category: "games" }),
+    item("film"),
+    item("song", { category: "music" }),
+    item("art", { category: "nft" }),
+    item("broadcast", { category: "live" }),
+    item("product", { category: "store" }),
+    item("private", { visibility: "draft" }),
+  ];
+  const preferences = { saved: ["game"], autoplay: true, startMuted: false };
+  const jsx = (
+    type: unknown,
+    props: Record<string, unknown>,
+    key?: string,
+  ) => ({ type, props, key });
+  const categories = [
+    { id: "video", title: "Videos", icon: "FilmIcon" },
+    { id: "music", title: "Music & Film", icon: "MusicIcon" },
+    { id: "games", title: "Games", icon: "GamesIcon" },
+    { id: "nft", title: "NFTs", icon: "ArtIcon" },
+    { id: "live", title: "Live feeds", icon: "LiveIcon" },
+    { id: "store", title: "Store", icon: "StoreIcon" },
+  ];
+  new Function("exports", "require", compiled)(exported, (name: string) => {
+    if (name === "react")
+      return {
+        useState(initial: unknown) {
+          const slot = cursor++;
+          if (!(slot in hooks))
+            hooks[slot] = typeof initial === "function" ? initial() : initial;
+          return [
+            hooks[slot],
+            (value: any) => {
+              hooks[slot] =
+                typeof value === "function" ? value(hooks[slot]) : value;
+            },
+          ];
+        },
+        useRef(current: unknown) {
+          const slot = cursor++;
+          return (hooks[slot] ||= { current });
+        },
+        useEffect() {},
+        useCallback: (fn: unknown) => fn,
+      };
+    if (name === "react/jsx-runtime")
+      return { jsx, jsxs: jsx, Fragment: "Fragment" };
+    if (name === "react-native")
+      return Object.fromEntries(
+        [
+          "Image",
+          "ImageBackground",
+          "Pressable",
+          "ScrollView",
+          "Text",
+          "View",
+        ].map((name) => [name, name]),
+      );
+    if (name === "react-native-safe-area-context")
+      return {
+        SafeAreaView: "SafeAreaView",
+        useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
+      };
+    if (name === "@react-navigation/native") return { useFocusEffect() {} };
+    if (name === "lucide-react-native")
+      return new Proxy({}, { get: (_, key) => key });
+    if (name.endsWith("/desktop-layout"))
+      return { useDesktopLayout: () => ({ desktop, contentWidth: 1200 }) };
+    if (name.endsWith("/desktop-workspace"))
+      return { workspace: { page: {} }, WorkspaceHeading: "WorkspaceHeading" };
+    if (name.endsWith("/floating"))
+      return {
+        CategoryDock: "CategoryDock",
+        FloatButton: "FloatButton",
+        Sheet: "Sheet",
+        WorldGlyph: "WorldGlyph",
+        worlds: categories,
+      };
+    if (name.endsWith("/ui"))
+      return {
+        Action: "Action",
+        Notice: "Notice",
+        Pill: "Pill",
+        allCategories: categories,
+      };
+    if (name.endsWith("/account-menu"))
+      return { SignOutButton: "SignOutButton" };
+    if (name.endsWith("/profile-image-controls"))
+      return { ProfileImageControls: "ProfileImageControls" };
+    if (name.endsWith("/profile-media-preview"))
+      return {
+        ProfileMediaPreview: "ProfileMediaPreview",
+        useProfilePreviewActivity: () => ({
+          mountVideo: true,
+          visible: true,
+          autoplay: true,
+        }),
+      };
+    if (name.endsWith("/assets"))
+      return { coverSource: (uri: string) => ({ uri }) };
+    if (name.endsWith("/profile-image-source"))
+      return { useProfileImageSource: () => null };
+    if (name.endsWith("/profile-preview")) return helpers;
+    if (name === "../provider")
+      return {
+        useZiipa: () => ({
+          session: {
+            access_token: "fixture-token",
+            user: { id: 1, name: "Creator" },
+          },
+          guest: false,
+          data: {
+            items: creations.filter((row) => row.visibility === "published"),
+            drafts: creations,
+            preferences,
+          },
+          api: () => {
+            requests++;
+            throw new Error("Local filters must not request account changes");
+          },
+          refresh: () => {
+            refreshes++;
+          },
+          preferences: () => {
+            preferenceWrites++;
+          },
+        }),
+      };
+    if (name === "../theme") return { color: {}, font: {}, styles: {} };
+    throw new Error(`Unexpected Profile screen dependency ${name}`);
+  });
+  function nodes(value: any): Node[] {
+    if (Array.isArray(value)) return value.flatMap(nodes);
+    if (!value || typeof value !== "object" || !("props" in value)) return [];
+    return [value, ...nodes(value.props.children)];
+  }
+  return {
+    preferences,
+    navigations,
+    counts: () => ({ requests, refreshes, preferenceWrites }),
+    render() {
+      cursor = 0;
+      return nodes(
+        exported.ProfileScreen({
+          navigation: {
+            navigate: (...args: unknown[]) => navigations.push(args),
+          },
+        }),
+      );
+    },
+  };
+}
+
+test("Profile stacks every published creation in one scrollable column and badges use each creation's own world", () => {
+  for (const desktop of [false, true]) {
+    const ui = profileScreenHarness(desktop);
+    const nodes = ui.render();
+    const feed = nodes.find(
+      (node) => node.props.testID === "profile-creations-feed",
+    )!;
+    assert.equal(feed.props.style.flexDirection, undefined);
+    assert.equal(feed.props.style.flexWrap, undefined);
+    const cards = feed.props.children[0];
+    assert.deepEqual(
+      cards.map((card: any) => card.props.accessibilityLabel),
+      [
+        "Watch game · Games",
+        "Watch film · Music & Film",
+        "Watch song · Music & Film",
+        "Watch art · NFTs",
+        "Watch broadcast · Live feeds",
+        "Watch product · Store",
+      ],
+    );
+    assert.ok(cards.every((card: any) => card.props.style.width === "100%"));
+    assert.deepEqual(
+      nodes
+        .filter((node) =>
+          [
+            "GamesIcon",
+            "FilmIcon",
+            "MusicIcon",
+            "ArtIcon",
+            "LiveIcon",
+            "StoreIcon",
+          ].includes(String(node.type)),
+        )
+        .map((node) => node.type),
+      [
+        "GamesIcon",
+        "FilmIcon",
+        "MusicIcon",
+        "ArtIcon",
+        "LiveIcon",
+        "StoreIcon",
+      ],
+    );
+    assert.equal(
+      nodes.some((node) => node.props.accessibilityLabel?.includes("private")),
+      false,
+    );
+    cards[0].props.onPress();
+    assert.deepEqual(ui.navigations, [
+      ["Watch", { itemId: "game", category: "games" }],
+    ]);
+    assert.deepEqual(ui.counts(), {
+      requests: 0,
+      refreshes: 0,
+      preferenceWrites: 0,
+    });
+  }
+});
+
+test("Profile reset clears only category and Saved view, preserving scroll and stacked-card visibility", () => {
+  const ui = profileScreenHarness();
+  let nodes = ui.render();
+  const scroll = () => nodes.find((node) => node.type === "ScrollView")!;
+  const feed = () =>
+    nodes.find((node) => node.props.testID === "profile-creations-feed")!;
+  const reset = () =>
+    nodes.find(
+      (node) =>
+        node.props.accessibilityLabel === "Reset Profile to all creations",
+    )!;
+  scroll().props.onLayout({ nativeEvent: { layout: { height: 300 } } });
+  scroll().props.onScroll({ nativeEvent: { contentOffset: { y: 420 } } });
+  feed().props.onLayout({ nativeEvent: { layout: { y: 0 } } });
+  feed().props.children[0].forEach((card: any, n: number) =>
+    card.props.onLayout({
+      nativeEvent: { layout: { y: n * 200, height: 179 } },
+    }),
+  );
+  nodes = ui.render();
+  assert.deepEqual(
+    nodes
+      .filter(
+        (node) => node.type === "ProfileMediaPreview" && node.props.videoActive,
+      )
+      .map((node) => node.props.item.id),
+    ["song"],
+  );
+  nodes.find((node) => node.type === "CategoryDock")!.props.onSelect("games");
+  nodes = ui.render();
+  assert.deepEqual(
+    nodes
+      .filter((node) => node.type === "ProfileMediaPreview")
+      .map((node) => node.props.item.id),
+    ["game"],
+  );
+  nodes
+    .find((node) => node.props.accessibilityLabel === "Show saved creations")!
+    .props.onPress();
+  nodes = ui.render();
+  assert.ok(
+    nodes.some((node) => node.props.accessibilityLabel === "Show creations"),
+  );
+  assert.equal(reset().props.style.minWidth, 44);
+  assert.equal(reset().props.style.minHeight, 44);
+  reset().props.onPress();
+  nodes = ui.render();
+  assert.equal(
+    nodes.find((node) => node.type === "CategoryDock")!.props.selected,
+    "all",
+  );
+  assert.ok(
+    nodes.some(
+      (node) => node.props.accessibilityLabel === "Show saved creations",
+    ),
+  );
+  assert.deepEqual(
+    nodes
+      .filter((node) => node.type === "ProfileMediaPreview")
+      .map((node) => node.props.item.id),
+    ["game", "film", "song", "art", "broadcast", "product"],
+  );
+  assert.deepEqual(
+    nodes
+      .filter(
+        (node) => node.type === "ProfileMediaPreview" && node.props.videoActive,
+      )
+      .map((node) => node.props.item.id),
+    ["song"],
+    "reset retains scroll offset rather than remounting or snapping the feed",
+  );
+  assert.equal(scroll().key, undefined);
+  assert.deepEqual(ui.preferences, {
+    saved: ["game"],
+    autoplay: true,
+    startMuted: false,
+  });
+  assert.deepEqual(ui.counts(), {
+    requests: 0,
+    refreshes: 0,
+    preferenceWrites: 0,
   });
 });
