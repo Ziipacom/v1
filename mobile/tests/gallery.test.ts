@@ -730,6 +730,50 @@ test("Front Gallery silhouettes stay opaque above neighboring images in narrow/w
     }
 });
 
+test("Live front Gallery players avoid animated opacity and transforms while creation copy retains its transition", () => {
+  const containsPlayer = (value: any): boolean =>
+    Array.isArray(value)
+      ? value.some(containsPlayer)
+      : !!value?.props &&
+        (value.type === "ReelMedia" || containsPlayer(value.props.children));
+  for (const [file, name, copyID] of [
+    ["components/gallery-slider", "GallerySlider", "gallery-animated-copy"],
+    [
+      "components/desktop-featured-gallery",
+      "DesktopFeaturedGallery",
+      "desktop-gallery-animated-copy",
+    ],
+  ]) {
+    const ui = galleryUI(file);
+    const nodes = ui.render(name, {
+      items: [
+        creation("video", "video", {
+          content_type: "video/mp4",
+          media_url: "/api/creator/media/video",
+        }),
+      ],
+      label: "All creations",
+      onOpen() {},
+      open() {},
+    });
+    assert.equal(nodes.filter((node) => node.type === "ReelMedia").length, 1);
+    assert.equal(
+      nodes.filter((node) => node.type === "AnimatedView").some(containsPlayer),
+      false,
+      "live video must not share the fading/transformed compositing layer",
+    );
+    const copy = nodes.find((node) => node.props.testID === copyID)!;
+    assert.equal(copy.type, "AnimatedView");
+    const style = Array.isArray(copy.props.style)
+      ? Object.assign({}, ...copy.props.style)
+      : copy.props.style;
+    assert.ok(
+      style.opacity,
+      "rotation still animates the copy unless reduced motion disables it",
+    );
+  }
+});
+
 test("Desktop viewport observer suspends all media and rotation offscreen and cleans up on unmount", async () => {
   const names = [
     "window",

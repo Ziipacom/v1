@@ -277,12 +277,11 @@ export function GallerySlider({
         onHoverOut={() => setHovering(false)}
         style={{ flex: 1 }}
       >
-        <Animated.View
+        {/* Keep the live video out of a fading/transformed compositing layer. */}
+        <View
           {...swipe.panHandlers}
           style={{
             flex: 1,
-            opacity: fade,
-            transform: [{ translateX: translation }],
             justifyContent: "center",
             alignItems: "center",
           }}
@@ -404,79 +403,100 @@ export function GallerySlider({
             ) : (
               <Cover item={item} style={{ flex: 1 }} />
             )}
-            <LinearGradient
-              pointerEvents="none"
-              colors={
-                item.category === "music" || item.category === "video"
-                  ? ["#5300AF33", "#30005F00", "#160A29ED"]
-                  : ["#0001", "#0000", "#110D1CED"]
-              }
-              style={{ flex: 1, padding: 21, justifyContent: "space-between" }}
+            <Animated.View
+              testID="gallery-animated-copy"
+              style={{
+                flex: 1,
+                opacity: fade,
+                transform: [{ translateX: translation }],
+              }}
             >
-              <Text
+              <LinearGradient
+                pointerEvents="none"
+                colors={
+                  item.category === "music" || item.category === "video"
+                    ? ["#5300AF33", "#30005F00", "#160A29ED"]
+                    : ["#0001", "#0000", "#110D1CED"]
+                }
                 style={{
-                  color: "#F1E9FF",
-                  fontFamily: font.medium,
-                  fontSize: 11,
-                  letterSpacing: 2,
+                  flex: 1,
+                  padding: 21,
+                  justifyContent: "space-between",
                 }}
               >
-                {(
-                  categories.find((entry) => entry.id === item.category)
-                    ?.title || label
-                ).toUpperCase()}
-              </Text>
-              <View style={{ gap: 12 }}>
-                <Text
-                  numberOfLines={3}
-                  style={{
-                    fontFamily: font.semibold,
-                    fontSize: 32,
-                    lineHeight: 34,
-                    color: "white",
-                  }}
-                >
-                  {item.title}
-                </Text>
                 <Text
                   style={{
-                    color: "#D9CDEB",
-                    fontSize: 12,
-                    fontFamily: font.regular,
+                    color: "#F1E9FF",
+                    fontFamily: font.medium,
+                    fontSize: 11,
+                    letterSpacing: 2,
                   }}
                 >
-                  {item.creator}
+                  {(
+                    categories.find((entry) => entry.id === item.category)
+                      ?.title || label
+                  ).toUpperCase()}
                 </Text>
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-                >
-                  <View
+                <View style={{ gap: 12 }}>
+                  <Text
+                    numberOfLines={3}
                     style={{
-                      borderRadius: 20,
-                      padding: 10,
-                      backgroundColor: "#FFF",
+                      fontFamily: font.semibold,
+                      fontSize: 32,
+                      lineHeight: 34,
+                      color: "white",
                     }}
                   >
-                    <Play size={14} fill={color.purple} color={color.purple} />
-                  </View>
+                    {item.title}
+                  </Text>
                   <Text
                     style={{
-                      color: "white",
+                      color: "#D9CDEB",
                       fontSize: 12,
-                      fontFamily: font.medium,
+                      fontFamily: font.regular,
                     }}
                   >
-                    {playable
-                      ? item.content_type?.startsWith("audio/")
-                        ? "Listen in the feed"
-                        : "Open full video"
-                      : "Explore collection"}
+                    {item.creator}
                   </Text>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <View
+                      style={{
+                        borderRadius: 20,
+                        padding: 10,
+                        backgroundColor: "#FFF",
+                      }}
+                    >
+                      <Play
+                        size={14}
+                        fill={color.purple}
+                        color={color.purple}
+                      />
+                    </View>
+                    <Text
+                      style={{
+                        color: "white",
+                        fontSize: 12,
+                        fontFamily: font.medium,
+                      }}
+                    >
+                      {playable
+                        ? item.content_type?.startsWith("audio/")
+                          ? "Listen in the feed"
+                          : "Open full video"
+                        : "Explore collection"}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            </LinearGradient>
+              </LinearGradient>
+            </Animated.View>
           </Pressable>
-        </Animated.View>
+        </View>
         {items.length > 1 &&
           [-1, 1].map((direction) => (
             <Pressable

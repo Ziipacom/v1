@@ -13,6 +13,7 @@ import { VideoView, useVideoPlayer, type VideoSource } from "expo-video";
 import { useIsFocused } from "@react-navigation/native";
 import { ImageIcon, Music2, Play, RefreshCw } from "lucide-react-native";
 import { Cover } from "./ui";
+import { GalleryStillPreview } from "./gallery-still-preview";
 import { useDevicePreferences } from "./device-preferences";
 import { useZiipa } from "../provider";
 import { coverSource, localImages, playbackSource } from "../lib/assets";
@@ -88,16 +89,26 @@ export function ProfileMediaPreview({
   visible,
   videoActive,
   autoplay,
+  allowVideoStill = false,
 }: {
   item: Item;
   visible: boolean;
   videoActive: boolean;
   autoplay: boolean;
+  allowVideoStill?: boolean;
 }) {
   const { session } = useZiipa();
   const identity = useMemo(
     () => ({}),
-    [item.id, item.media_url, item.cover, session?.access_token],
+    [
+      item.id,
+      item.media_url,
+      item.cover,
+      item.trim_start,
+      item.trim_end,
+      item.timeline,
+      session?.access_token,
+    ],
   );
   const [failure, setFailure] = useState<object | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -120,7 +131,20 @@ export function ProfileMediaPreview({
   const image =
     visible && transport && kind === "image" && !failed && !animationPaused;
   const video =
-    videoActive && transport && kind === "video" && !!source && !failed;
+    visible &&
+    videoActive &&
+    transport &&
+    kind === "video" &&
+    !!source &&
+    !failed;
+  const videoStill =
+    allowVideoStill &&
+    visible &&
+    !videoActive &&
+    transport &&
+    kind === "video" &&
+    !!source &&
+    !failed;
   const fallback = localImages[item.cover]
     ? item
     : { ...item, cover: "/brand/ziipa-background.png" };
@@ -141,6 +165,30 @@ export function ProfileMediaPreview({
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       <Cover item={fallback} style={{ flex: 1 }} />
+      {videoStill && <GalleryStillPreview item={item} enabled={visible} />}
+      {videoStill && (
+        <View
+          pointerEvents="none"
+          testID="profile-video-still-play"
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 5,
+            paddingHorizontal: 8,
+            paddingVertical: 6,
+            borderRadius: 14,
+            backgroundColor: "#0009",
+          }}
+        >
+          <Play color="white" size={14} strokeWidth={1.5} />
+          <Text style={{ color: "white", fontFamily: font.medium, fontSize: 10 }}>
+            Open to play
+          </Text>
+        </View>
+      )}
       {image && (
         <Image
           source={coverSource(item.cover, session?.access_token)}
@@ -161,7 +209,7 @@ export function ProfileMediaPreview({
           onError={() => setFailure(identity)}
         />
       )}
-      {((!image && !video) || failed) && (
+      {((!image && !video && !videoStill) || failed) && (
         <View
           pointerEvents="none"
           style={[

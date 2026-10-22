@@ -1,21 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  AppState,
-  Pressable,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
-import {
-  useAudioPlayer,
-  useAudioPlayerStatus,
-  type AudioSource,
-} from "expo-audio";
 import {
   Check,
   Music2,
-  Pause,
   Play,
   RefreshCw,
   Sparkles,
@@ -25,7 +13,8 @@ import { Action, Field, Notice, Pill } from "./ui";
 import { useDesktopLayout } from "./desktop-layout";
 import { useZiipa } from "../provider";
 import { useOperationScope } from "../lib/use-operation-scope";
-import { usePlaybackSource } from "../lib/media-playback";
+import { MusicAudition } from "./audio-audition";
+import { VoiceNarrationWorkspace } from "./voice-narration-workspace";
 import {
   generatedMusicFile,
   type GeneratedMusicFile,
@@ -134,7 +123,10 @@ function ScopedMusicWorkspace({
   const [audition, setAudition] = useState<Audition | null>(null);
   const [settings, setSettings] = useState<MusicSettings>(initialSettings);
   const [generating, setGenerating] = useState(false);
-  const [createMode, setCreateMode] = useState<"ai" | "offline">("ai");
+  const [createMode, setCreateMode] = useState<"ai" | "voice" | "offline">(
+    "ai",
+  );
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [aiConsent, setAiConsent] = useState(false);
   const [aiConfig, setAiConfig] = useState<AiMusicConfig | null>(null);
   const [configLoading, setConfigLoading] = useState(false);
@@ -145,6 +137,14 @@ function ScopedMusicWorkspace({
   const [generated, setGenerated] = useState<Generated | null>(null);
   const [attached, setAttached] = useState(false);
   const generatedRef = useRef<Generated | null>(null);
+  const auditionPause = useRef<(() => void) | null>(null);
+  const registerAuditionPause = useCallback((pause: (() => void) | null) => {
+    auditionPause.current = pause;
+  }, []);
+  const pauseForVoiceCapture = useCallback(() => {
+    auditionPause.current?.();
+    onAuditionStart?.();
+  }, [onAuditionStart]);
   const generationLock = useRef(false);
   const ownerId = session?.user.id || 0;
   const tracks = session
@@ -164,7 +164,7 @@ function ScopedMusicWorkspace({
             path: `/api/creator/media/${selectedMediaId}`,
           }
         : null);
-  const disabled = busy || generating;
+  const disabled = busy || generating || voiceBusy;
 
   const load = useCallback(async () => {
     if (!session || !focused) return;
@@ -369,11 +369,12 @@ function ScopedMusicWorkspace({
       <View style={[styles.between, { gap: 12, flexWrap: "wrap" }]}>
         <View style={{ gap: 5, flex: 1, minWidth: 180 }}>
           <Text style={[styles.heading, desktop && { fontSize: 19 }]}>
-            {purpose === "creation" ? "AI audio creation" : "Music workspace"}
+            {purpose === "creation" ? "AI audio creation" : "Audio Workspace"}
           </Text>
           <Text style={styles.small}>
-            Upload audio you have rights to use, or create an instrumental with
-            Ziipa.
+            Upload audio you have rights to use, compose instrumental music, or
+            create voice narration. Preview and choose the audio before saving.
+            Video generation and voice cloning are not connected.
           </Text>
         </View>
         <Action
@@ -389,15 +390,18 @@ function ScopedMusicWorkspace({
           <Pill
             title="Your audio"
             active={tab === "library"}
-            onPress={() => setTab("library")}
+            onPress={() => {
+              if (!disabled) setTab("library");
+            }}
           />
         )}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="AI Creation"
-          accessibilityHint="Create instrumental music from a description. No audio upload is needed."
+          accessibilityHint="Compose instrumental music or create voice narration. No audio upload is needed."
           accessibilityState={{ selected: tab === "create" }}
           onPress={() => {
+            if (disabled) return;
             setCreateMode("ai");
             setTab("create");
           }}
@@ -425,7 +429,7 @@ function ScopedMusicWorkspace({
       </View>
       {!!error && <Notice error text={error} />}
       {!!notice && <Notice text={notice} />}
-      {selected && (
+      {selected && !voiceBusy && (
         <View style={[styles.panel, { gap: 12, padding: desktop ? 16 : 20 }]}>
           <Text style={styles.label}>Audition · {selected.name}</Text>
           <MusicAudition
@@ -433,6 +437,7 @@ function ScopedMusicWorkspace({
             audition={selected}
             volume={safeVolume}
             onAuditionStart={onAuditionStart}
+            onPauseReady={registerAuditionPause}
           />
           {purpose !== "creation" && (
             <Field
@@ -567,7 +572,7 @@ function ScopedMusicWorkspace({
           <View style={styles.row}>
             <Sparkles size={22} color={color.lime} />
             <Text style={[styles.heading, { fontSize: 18 }]}>
-              Create music with AI
+              Create audio with AI
             </Text>
           </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -579,6 +584,13 @@ function ScopedMusicWorkspace({
               }}
             />
             <Pill
+              title="AI Voice Narration"
+              active={createMode === "voice"}
+              onPress={() => {
+                if (!disabled) setCreateMode("voice");
+              }}
+            />
+            <Pill
               title="Offline fallback"
               active={createMode === "offline"}
               onPress={() => {
@@ -586,223 +598,241 @@ function ScopedMusicWorkspace({
               }}
             />
           </View>
-          {createMode === "ai" ? (
-            <View style={{ gap: 10 }}>
-              <Notice
-                text={`A language model composes the actual melody, harmony, rhythm and instrument events; Ziipa renders the score to WAV locally. ${aiConfig?.provider === "cloudflare" ? "Your description and controls are sent to Cloudflare Workers AI, a third-party inference service subject to its policies." : aiConfig?.provider === "private" ? "Your description and controls are sent to Ziipa's private configured inference service." : "Refresh status to identify the configured inference provider before consenting."} No uploaded audio or library context is sent. This is instrumental score synthesis, not a vocals or studio-audio model.`}
-              />
-              <Text style={styles.small}>
-                {!session
-                  ? "Sign in to use Ziipa's AI composer. The offline fallback remains available."
-                  : configLoading
-                    ? "Checking music model readiness..."
-                    : aiConfig?.available
-                      ? `Model ready: ${aiConfig.model || "configured model"}. Up to 48 notes / 30 seconds.`
-                      : aiConfig?.detail ||
-                        "AI model availability has not been verified. Refresh status or explicitly choose the offline fallback."}
-              </Text>
-              <Action
-                secondary
-                title="Refresh model status"
-                icon={RefreshCw}
-                busy={configLoading}
-                disabled={disabled || !session}
-                onPress={() => void loadAiConfig()}
-              />
-              <Consent
-                checked={aiConsent}
-                disabled={disabled}
-                onChange={() => setAiConsent((value) => !value)}
-                label={
-                  aiConfig?.provider === "cloudflare"
-                    ? "Send my description and arrangement controls to Cloudflare Workers AI (third-party inference) to compose this instrumental."
-                    : aiConfig?.provider === "private"
-                      ? "Send my description and arrangement controls to Ziipa's private inference model to compose this instrumental."
-                      : "I will review the identified inference provider before generating music."
-                }
-              />
-            </View>
+          {createMode === "voice" ? (
+            <VoiceNarrationWorkspace
+              key={`${session?.access_token || "guest"}:${purpose}`}
+              purpose={purpose}
+              busy={busy || generating}
+              onBusyChange={setVoiceBusy}
+              onAuditionStart={pauseForVoiceCapture}
+              onUseGenerated={onUseGenerated}
+            />
           ) : (
-            <Notice text="Offline procedural composer: no AI model. Keyword rules suggest controls; mathematical synthesis creates a WAV on this device. No vocals, artist imitation, samples, paid API or external training. It is never used silently when AI is unavailable." />
-          )}
-
-          <Field
-            label="Describe your instrumental"
-            value={settings.prompt}
-            onChangeText={(prompt) =>
-              setSettings((value) => ({ ...value, prompt }))
-            }
-            maxLength={500}
-            multiline
-            editable={!disabled}
-            placeholder="Bright electronic instrumental, 120 BPM, for a travel video"
-          />
-          {createMode === "offline" && (
-            <Action
-              secondary
-              title="Plan from prompt"
-              disabled={disabled}
-              onPress={() => {
-                setSettings((value) => planMusicPrompt(value.prompt, value));
-                setNotice(
-                  "Arrangement updated from recognized keywords. Review the controls before creating audio.",
-                );
-              }}
-            />
-          )}
-          <Text style={styles.label}>Arrangement</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {musicStyles.map((style) => (
-              <Pill
-                key={style}
-                title={style}
-                active={settings.style === style}
-                onPress={() => {
-                  if (!disabled) setSettings((value) => ({ ...value, style }));
-                }}
-              />
-            ))}
-          </View>
-          <Text style={styles.label}>Mood</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {musicMoods.map((mood) => (
-              <Pill
-                key={mood}
-                title={mood}
-                active={settings.mood === mood}
-                onPress={() => {
-                  if (!disabled) setSettings((value) => ({ ...value, mood }));
-                }}
-              />
-            ))}
-          </View>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {[70, 90, 110, 130, 150].map((bpm) => (
-              <Pill
-                key={bpm}
-                title={`${bpm} BPM`}
-                active={settings.bpm === bpm}
-                onPress={() => {
-                  if (!disabled) setSettings((value) => ({ ...value, bpm }));
-                }}
-              />
-            ))}
-          </View>
-          <Text style={styles.label}>Duration</Text>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            {[10, 20, 30].map((duration) => (
-              <Pill
-                key={duration}
-                title={`${duration} seconds`}
-                active={settings.duration === duration}
-                onPress={() => {
-                  if (!disabled)
-                    setSettings((value) => ({ ...value, duration }));
-                }}
-              />
-            ))}
-          </View>
-          <Text style={styles.small}>
-            {createMode === "offline"
-              ? `${plan.summary} · ${plan.voices.join(", ")}`
-              : `${settings.duration}s / ${settings.bpm} BPM / ${settings.style} / ${settings.mood}. The AI chooses the actual notes and voices.`}
-          </Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            <Action
-              title={
-                createMode === "ai"
-                  ? "Generate AI Music"
-                  : generated
-                    ? "Create another offline version"
-                    : "Create offline instrumental"
-              }
-              icon={Sparkles}
-              busy={generating}
-              disabled={
-                busy ||
-                (createMode === "ai" &&
-                  (!session ||
-                    !aiConfig?.available ||
-                    !aiConsent ||
-                    !settings.prompt.trim()))
-              }
-              onPress={() => void generate()}
-            />
-            {createMode === "offline" && (
-              <Action
-                secondary
-                title="New variation"
-                disabled={disabled}
-                onPress={() =>
-                  setSettings((value) => ({
-                    ...value,
-                    variation: (value.variation + 1) % 10000,
-                  }))
-                }
-              />
-            )}
-          </View>
-          <Text style={styles.small}>
-            {createMode === "offline"
-              ? `Variation ${settings.variation + 1}. `
-              : "AI score rendered locally. "}{" "}
-            PCM WAV, mono 22.05 kHz, up to 30 seconds. Changing controls does
-            not alter an already generated version.
-          </Text>
-          {generated && (
-            <View
-              style={{
-                gap: 10,
-                paddingTop: 10,
-                borderTopWidth: 1,
-                borderColor: color.border,
-              }}
-            >
-              <Text style={styles.label}>
-                Generated version · {generated.plan.summary}
-              </Text>
-              {"model" in generated.plan && (
-                <Text style={styles.small}>
-                  AI model: {generated.plan.model}. Score{" "}
-                  {generated.plan.fingerprint.slice(0, 12)}
-                </Text>
+            <>
+              {createMode === "ai" ? (
+                <View style={{ gap: 10 }}>
+                  <Notice
+                    text={`A language model composes the actual melody, harmony, rhythm and instrument events; Ziipa renders the score to WAV locally. ${aiConfig?.provider === "cloudflare" ? "Your description and controls are sent to Cloudflare Workers AI, a third-party inference service subject to its policies." : aiConfig?.provider === "private" ? "Your description and controls are sent to Ziipa's private configured inference service." : "Refresh status to identify the configured inference provider before consenting."} No uploaded audio or library context is sent. This is instrumental score synthesis, not a vocals or studio-audio model.`}
+                  />
+                  <Text style={styles.small}>
+                    {!session
+                      ? "Sign in to use Ziipa's AI composer. The offline fallback remains available."
+                      : configLoading
+                        ? "Checking music model readiness..."
+                        : aiConfig?.available
+                          ? `Model ready: ${aiConfig.model || "configured model"}. Up to 48 notes / 30 seconds.`
+                          : aiConfig?.detail ||
+                            "AI model availability has not been verified. Refresh status or explicitly choose the offline fallback."}
+                  </Text>
+                  <Action
+                    secondary
+                    title="Refresh model status"
+                    icon={RefreshCw}
+                    busy={configLoading}
+                    disabled={disabled || !session}
+                    onPress={() => void loadAiConfig()}
+                  />
+                  <Consent
+                    checked={aiConsent}
+                    disabled={disabled}
+                    onChange={() => setAiConsent((value) => !value)}
+                    label={
+                      aiConfig?.provider === "cloudflare"
+                        ? "Send my description and arrangement controls to Cloudflare Workers AI (third-party inference) to compose this instrumental."
+                        : aiConfig?.provider === "private"
+                          ? "Send my description and arrangement controls to Ziipa's private inference model to compose this instrumental."
+                          : "I will review the identified inference provider before generating music."
+                    }
+                  />
+                </View>
+              ) : (
+                <Notice text="Offline procedural composer: no AI model. Keyword rules suggest controls; mathematical synthesis creates a WAV on this device. No vocals, artist imitation, samples, paid API or external training. It is never used silently when AI is unavailable." />
               )}
+
+              <Field
+                label="Describe your instrumental"
+                value={settings.prompt}
+                onChangeText={(prompt) =>
+                  setSettings((value) => ({ ...value, prompt }))
+                }
+                maxLength={500}
+                multiline
+                editable={!disabled}
+                placeholder="Bright electronic instrumental, 120 BPM, for a travel video"
+              />
+              {createMode === "offline" && (
+                <Action
+                  secondary
+                  title="Plan from prompt"
+                  disabled={disabled}
+                  onPress={() => {
+                    setSettings((value) =>
+                      planMusicPrompt(value.prompt, value),
+                    );
+                    setNotice(
+                      "Arrangement updated from recognized keywords. Review the controls before creating audio.",
+                    );
+                  }}
+                />
+              )}
+              <Text style={styles.label}>Arrangement</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {musicStyles.map((style) => (
+                  <Pill
+                    key={style}
+                    title={style}
+                    active={settings.style === style}
+                    onPress={() => {
+                      if (!disabled)
+                        setSettings((value) => ({ ...value, style }));
+                    }}
+                  />
+                ))}
+              </View>
+              <Text style={styles.label}>Mood</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {musicMoods.map((mood) => (
+                  <Pill
+                    key={mood}
+                    title={mood}
+                    active={settings.mood === mood}
+                    onPress={() => {
+                      if (!disabled)
+                        setSettings((value) => ({ ...value, mood }));
+                    }}
+                  />
+                ))}
+              </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {[70, 90, 110, 130, 150].map((bpm) => (
+                  <Pill
+                    key={bpm}
+                    title={`${bpm} BPM`}
+                    active={settings.bpm === bpm}
+                    onPress={() => {
+                      if (!disabled)
+                        setSettings((value) => ({ ...value, bpm }));
+                    }}
+                  />
+                ))}
+              </View>
+              <Text style={styles.label}>Duration</Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {[10, 20, 30].map((duration) => (
+                  <Pill
+                    key={duration}
+                    title={`${duration} seconds`}
+                    active={settings.duration === duration}
+                    onPress={() => {
+                      if (!disabled)
+                        setSettings((value) => ({ ...value, duration }));
+                    }}
+                  />
+                ))}
+              </View>
               <Text style={styles.small}>
-                {generated.plan.engine === "ziipa-llm-composer-v1"
-                  ? "AI-composed. "
-                  : "Offline procedural. "}
-                {(generated.file.size / 1024 / 1024).toFixed(1)} MB ·
-                synthesized audio. Review the source and musical rights before
-                sharing or minting. AI generation does not establish ownership
-                or copyright exclusivity.
+                {createMode === "offline"
+                  ? `${plan.summary} · ${plan.voices.join(", ")}`
+                  : `${settings.duration}s / ${settings.bpm} BPM / ${settings.style} / ${settings.mood}. The AI chooses the actual notes and voices.`}
               </Text>
-              <Action
-                secondary
-                title="Audition generated version"
-                icon={Play}
-                disabled={disabled}
-                onPress={() =>
-                  setAudition({
-                    name: generatedName(generated.plan),
-                    uri: generated.file.uri,
-                  })
-                }
-              />
-              <Action
-                title={
-                  purpose === "creation"
-                    ? attached
-                      ? "Selected as audio creation"
-                      : "Use as audio creation"
-                    : attached
-                      ? "Attached to this edit"
-                      : "Attach generated music"
-                }
-                icon={Check}
-                disabled={disabled || attached}
-                onPress={attachGenerated}
-              />
-            </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                <Action
+                  title={
+                    createMode === "ai"
+                      ? "Generate AI Music"
+                      : generated
+                        ? "Create another offline version"
+                        : "Create offline instrumental"
+                  }
+                  icon={Sparkles}
+                  busy={generating}
+                  disabled={
+                    busy ||
+                    (createMode === "ai" &&
+                      (!session ||
+                        !aiConfig?.available ||
+                        !aiConsent ||
+                        !settings.prompt.trim()))
+                  }
+                  onPress={() => void generate()}
+                />
+                {createMode === "offline" && (
+                  <Action
+                    secondary
+                    title="New variation"
+                    disabled={disabled}
+                    onPress={() =>
+                      setSettings((value) => ({
+                        ...value,
+                        variation: (value.variation + 1) % 10000,
+                      }))
+                    }
+                  />
+                )}
+              </View>
+              <Text style={styles.small}>
+                {createMode === "offline"
+                  ? `Variation ${settings.variation + 1}. `
+                  : "AI score rendered locally. "}{" "}
+                PCM WAV, mono 22.05 kHz, up to 30 seconds. Changing controls
+                does not alter an already generated version.
+              </Text>
+              {generated && (
+                <View
+                  style={{
+                    gap: 10,
+                    paddingTop: 10,
+                    borderTopWidth: 1,
+                    borderColor: color.border,
+                  }}
+                >
+                  <Text style={styles.label}>
+                    Generated version · {generated.plan.summary}
+                  </Text>
+                  {"model" in generated.plan && (
+                    <Text style={styles.small}>
+                      AI model: {generated.plan.model}. Score{" "}
+                      {generated.plan.fingerprint.slice(0, 12)}
+                    </Text>
+                  )}
+                  <Text style={styles.small}>
+                    {generated.plan.engine === "ziipa-llm-composer-v1"
+                      ? "AI-composed. "
+                      : "Offline procedural. "}
+                    {(generated.file.size / 1024 / 1024).toFixed(1)} MB ·
+                    synthesized audio. Review the source and musical rights
+                    before sharing or minting. AI generation does not establish
+                    ownership or copyright exclusivity.
+                  </Text>
+                  <Action
+                    secondary
+                    title="Audition generated version"
+                    icon={Play}
+                    disabled={disabled}
+                    onPress={() =>
+                      setAudition({
+                        name: generatedName(generated.plan),
+                        uri: generated.file.uri,
+                      })
+                    }
+                  />
+                  <Action
+                    title={
+                      purpose === "creation"
+                        ? attached
+                          ? "Selected as audio creation"
+                          : "Use as audio creation"
+                        : attached
+                          ? "Attached to this edit"
+                          : "Attach generated music"
+                    }
+                    icon={Check}
+                    disabled={disabled || attached}
+                    onPress={attachGenerated}
+                  />
+                </View>
+              )}
+            </>
           )}
         </View>
       )}
@@ -848,87 +878,5 @@ function Consent({
       </View>
       <Text style={[styles.small, { flex: 1 }]}>{label}</Text>
     </Pressable>
-  );
-}
-
-function MusicAudition({
-  audition,
-  volume,
-  onAuditionStart,
-}: {
-  audition: Audition;
-  volume: number;
-  onAuditionStart?: () => void;
-}) {
-  const { session } = useZiipa();
-  const focused = useIsFocused();
-  const { source, loading, error } = usePlaybackSource(
-    audition.path || null,
-    session?.access_token,
-    false,
-    focused,
-    audition.uri,
-  );
-  if (!source)
-    return (
-      <Text style={error ? styles.error : styles.small}>
-        {error ||
-          (loading
-            ? "Loading private audio…"
-            : "Audio preview is unavailable. Choose or upload the audio again.")}
-      </Text>
-    );
-  return (
-    <AuditionPlayer
-      source={source}
-      volume={volume}
-      onAuditionStart={onAuditionStart}
-    />
-  );
-}
-
-function AuditionPlayer({
-  source,
-  volume,
-  onAuditionStart,
-}: {
-  source: AudioSource;
-  volume: number;
-  onAuditionStart?: () => void;
-}) {
-  const player = useAudioPlayer(source, { updateInterval: 250 });
-  const status = useAudioPlayerStatus(player);
-  const focused = useIsFocused();
-  useEffect(() => {
-    player.volume = Math.max(0, Math.min(1, volume / 100));
-  }, [player, volume]);
-  useEffect(() => {
-    if (!focused) player.pause();
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state !== "active") player.pause();
-    });
-    return () => subscription.remove();
-  }, [player, focused]);
-  return (
-    <View style={{ gap: 8 }}>
-      <Action
-        secondary
-        title={status.playing ? "Pause audio" : "Play audio preview"}
-        icon={status.playing ? Pause : Play}
-        disabled={!status.isLoaded}
-        onPress={() => {
-          if (status.playing) player.pause();
-          else {
-            onAuditionStart?.();
-            if (status.didJustFinish) void player.seekTo(0);
-            player.play();
-          }
-        }}
-      />
-      <Text style={styles.small}>
-        {Math.floor(status.currentTime)}s / {Math.floor(status.duration)}s ·
-        explicit preview, no autoplay
-      </Text>
-    </View>
   );
 }

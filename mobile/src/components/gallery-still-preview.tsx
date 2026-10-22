@@ -6,20 +6,31 @@ import {
   View,
   type ImageSourcePropType,
 } from "react-native";
-import { Image } from "expo-image";
+import { Image, type ImageProps } from "expo-image";
 import { Asset } from "expo-asset";
-import { useEvent } from "expo";
-import { useVideoPlayer, VideoView, type VideoSource } from "expo-video";
+import {
+  useVideoPlayer,
+  type VideoSource,
+  type VideoThumbnail,
+} from "expo-video";
 import { ImageIcon, Music2, Video } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { background, coverSource, playbackSource } from "../lib/assets";
 import { portalMode } from "../lib/config";
 import { profilePreviewRange } from "../lib/profile-preview";
+import {
+  galleryFrameHasPicture,
+  galleryStillSize,
+  galleryStillTimes,
+  galleryStillTimeoutMs,
+} from "../lib/gallery-preview";
 import type { Item } from "../lib/types";
 import { useZiipa } from "../provider";
 import { font } from "../theme";
 
-/** A neighboring creation is a still: no audio player and no call to play(). */
+type StillSource = NonNullable<ImageProps["source"]>;
+
+/** Neighboring video is decoded offscreen into an image, never a painted player. */
 export function GalleryStillPreview({
   item,
   enabled,
@@ -30,9 +41,38 @@ export function GalleryStillPreview({
   const { session } = useZiipa();
   const identity = useMemo(
     () => ({}),
-    [item.id, item.media_url, item.cover, session?.access_token],
+    [
+      item.id,
+      item.media_url,
+      item.cover,
+      item.trim_start,
+      item.trim_end,
+      item.timeline,
+      session?.access_token,
+    ],
   );
   const [failure, setFailure] = useState<object | null>(null);
+  const [frame, setFrame] = useState<{
+    identity: object;
+    source: StillSource | null;
+    dark: boolean;
+    ownedThumbnail?: VideoThumbnail;
+  } | null>(null);
+  const currentJob = useRef({ identity, enabled });
+  currentJob.current = { identity, enabled };
+  const currentFrame = frame?.identity === identity ? frame : null;
+  // Passive cleanup runs after the old Image has left the committed tree. The
+  // decoder must not release a selected SharedRef while that Image still uses it.
+  useEffect(
+    () => () => {
+      if (frame?.ownedThumbnail) releaseThumbnail(frame.ownedThumbnail);
+    },
+    [frame],
+  );
+  useEffect(() => {
+    setFrame(null);
+    setFailure(null);
+  }, [identity, enabled]);
   const transport = Platform.OS !== "web" || portalMode || !!item.demo;
   const cover = useMemo(
     () => coverSource(item.cover, session?.access_token),
@@ -53,7 +93,13 @@ export function GalleryStillPreview({
   const failed = failure === identity;
   const showPoster = enabled && transport && poster && !failed;
   const showVideo =
-    enabled && transport && video && !!source && !poster && !failed;
+    enabled &&
+    transport &&
+    video &&
+    !!source &&
+    !poster &&
+    !failed &&
+    !currentFrame;
   const Icon = item.content_type?.startsWith("audio/")
     ? Music2
     : video
@@ -69,50 +115,92 @@ export function GalleryStillPreview({
         <StillImage
           key={item.id}
           source={cover}
-          onError={() => setFailure(identity)}
+          onError={() => {
+            if (
+              currentJob.current.identity === identity &&
+              currentJob.current.enabled
+            )
+              setFailure(identity);
+          }}
         />
       )}
       {showVideo && (
-        <StillVideo
-          key={item.id}
+        <VideoThumbnailJob
           source={source!}
           item={item}
-          onError={() => setFailure(identity)}
+          identity={identity}
+          onReady={(source, dark = false, ownedThumbnail) => {
+            if (
+              currentJob.current.identity !== identity ||
+              !currentJob.current.enabled
+            ) {
+              if (ownedThumbnail) releaseThumbnail(ownedThumbnail);
+              return;
+            }
+            setFrame({ identity, source, dark, ownedThumbnail });
+          }}
+          onError={() => {
+            if (
+              currentJob.current.identity === identity &&
+              currentJob.current.enabled
+            )
+              setFailure(identity);
+          }}
         />
       )}
-      {!showPoster && !showVideo && (
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 9,
-              padding: 12,
-            },
-          ]}
-        >
-          <Icon color="#EEE6FC" size={27} />
-          <Text
-            style={{
-              color: "white",
-              fontFamily: font.medium,
-              fontSize: 11,
-              textAlign: "center",
-            }}
-          >
-            {failed
-              ? "Still preview unavailable"
-              : !enabled
-                ? "Preview paused"
-                : !transport
-                  ? "Open to view"
-                  : item.content_type?.startsWith("audio/")
-                    ? "Audio creation"
-                    : "No still preview"}
-          </Text>
-        </View>
+      {enabled && currentFrame?.source && !failed && (
+        <Image
+          source={currentFrame.source}
+          autoplay={false}
+          contentFit="cover"
+          cachePolicy="none"
+          accessibilityLabel={`${item.title} representative still`}
+          style={StyleSheet.absoluteFill}
+          onError={() => {
+            if (currentJob.current.identity === identity) {
+              setFailure(identity);
+              setFrame(null);
+            }
+          }}
+        />
       )}
+      {!showPoster &&
+        !showVideo &&
+        !(enabled && currentFrame?.source && !failed) && (
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 9,
+                padding: 12,
+              },
+            ]}
+          >
+            <Icon color="#EEE6FC" size={27} />
+            <Text
+              style={{
+                color: "white",
+                fontFamily: font.medium,
+                fontSize: 11,
+                textAlign: "center",
+              }}
+            >
+              {failed
+                ? "Still preview unavailable"
+                : currentFrame?.dark
+                  ? "Dark video · Open to watch"
+                  : !enabled
+                    ? "Preview paused"
+                    : !transport
+                      ? "Open to view"
+                      : item.content_type?.startsWith("audio/")
+                        ? "Audio creation"
+                        : "No still preview"}
+            </Text>
+          </View>
+        )}
     </View>
   );
 }
@@ -131,9 +219,12 @@ function StillImage({
   } | null>(null);
   const latest = useRef(onError);
   latest.current = onError;
+  const activeSource = useRef(source);
+  activeSource.current = source;
   useEffect(() => {
     if (Platform.OS !== "web") return;
     let live = true;
+    const current = () => live && activeSource.current === source;
     let uri: string | undefined;
     try {
       uri =
@@ -155,7 +246,7 @@ function StillImage({
     // redirect needs anonymous CORS so its pixels remain readable by the canvas.
     image.crossOrigin = "anonymous";
     image.onload = () => {
-      if (!live) return;
+      if (!current()) return;
       try {
         if (!image.naturalWidth || !image.naturalHeight)
           throw new Error("No image dimensions");
@@ -177,7 +268,7 @@ function StillImage({
       }
     };
     image.onerror = () => {
-      if (live) latest.current();
+      if (current()) latest.current();
     };
     image.src = uri;
     return () => {
@@ -205,30 +296,65 @@ function StillImage({
   ) : null;
 }
 
-function StillVideo({
-  source,
-  item,
-  onError,
-}: {
+type ThumbnailProps = {
   source: VideoSource;
   item: Item;
+  identity: object;
+  onReady: (
+    source: StillSource | null,
+    dark?: boolean,
+    ownedThumbnail?: VideoThumbnail,
+  ) => void;
   onError: () => void;
-}) {
-  const [rendered, setRendered] = useState(false);
-  const latest = useRef(onError);
-  latest.current = onError;
-  const player = useVideoPlayer(source, (p) => {
-    p.pause();
+};
+
+function VideoThumbnailJob(props: ThumbnailProps) {
+  return Platform.OS === "web" ? (
+    <WebThumbnailJob {...props} />
+  ) : (
+    <NativeThumbnailJob {...props} />
+  );
+}
+
+function LoadingStill() {
+  return (
+    <Text
+      style={{
+        position: "absolute",
+        bottom: 22,
+        left: 5,
+        right: 5,
+        color: "white",
+        fontFamily: font.regular,
+        fontSize: 10,
+        textAlign: "center",
+      }}
+    >
+      Loading still…
+    </Text>
+  );
+}
+
+function releaseThumbnail(frame: VideoThumbnail) {
+  try {
+    frame.release();
+  } catch {
+    /* A stale, undisplayed image may already be released. */
+  }
+}
+
+/** Native exposes no image pixels. Its valid interior timestamp is best effort. */
+function NativeThumbnailJob(props: ThumbnailProps) {
+  const latest = useRef(props);
+  latest.current = props;
+  const player = useVideoPlayer(props.source, (p) => {
     p.muted = true;
     p.volume = 0;
+    p.pause();
     p.loop = false;
     p.staysActiveInBackground = false;
     p.showNowPlayingNotification = false;
     p.audioMixingMode = "mixWithOthers";
-    const start = item.timeline?.clips[0]?.start ?? item.trim_start ?? 0;
-    if (Number.isFinite(start) && start >= 0) p.currentTime = start;
-    // Android has a byte cap; iOS honors the forward duration. Web buffering is
-    // browser managed. These decoders never call play or enable native controls.
     p.bufferOptions = {
       preferredForwardBufferDuration: 0.5,
       minBufferForPlayback: 0.1,
@@ -236,70 +362,183 @@ function StillVideo({
       prioritizeTimeOverSizeThreshold: false,
     };
   });
-  const { status } = useEvent(player, "statusChange", {
-    status: player.status,
-  });
   useEffect(() => {
-    player.pause();
-    if (status === "error") {
-      latest.current();
-      return;
-    }
-    if (status !== "readyToPlay") return;
-    try {
-      const range = profilePreviewRange(item, player.duration);
-      // Seek slightly inside the retained range so web also renders a first frame.
-      player.currentTime =
-        range.start + Math.min(0.05, (range.end - range.start) / 2);
-    } catch {
-      latest.current();
-    }
-  }, [player, status, item]);
-  useEffect(() => {
-    const guard = player.addListener("playingChange", ({ isPlaying }) => {
-      if (isPlaying) player.pause();
+    let live = true,
+      started = false,
+      settled = false;
+    const current = () => live && latest.current.identity === props.identity;
+    const fail = () => {
+      if (!current() || settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      player.pause();
+      latest.current.onError();
+    };
+    const deadline = setTimeout(fail, galleryStillTimeoutMs);
+    const generate = async () => {
+      if (!current() || started || settled) return;
+      started = true;
+      try {
+        const range = profilePreviewRange(props.item, player.duration);
+        const times = galleryStillTimes(props.item, player.duration);
+        for (const time of times) {
+          if (!current() || settled) return;
+          // Sequential, one small bitmap at a time. The API cannot cancel an
+          // in-flight native call; the guard prevents later work or stale images.
+          const frames = await player.generateThumbnailsAsync([time], {
+            maxWidth: galleryStillSize,
+            maxHeight: galleryStillSize,
+          });
+          const selected = frames.find(
+            (frame) =>
+              frame.width > 0 &&
+              frame.height > 0 &&
+              (frame.actualTime == null ||
+                (Number.isFinite(frame.actualTime) &&
+                  frame.actualTime >= range.start &&
+                  frame.actualTime < range.end)),
+          );
+          if (!current() || settled) {
+            frames.forEach(releaseThumbnail);
+            return;
+          }
+          frames
+            .filter((frame) => frame !== selected)
+            .forEach(releaseThumbnail);
+          if (!selected) continue;
+          settled = true;
+          clearTimeout(deadline);
+          player.pause();
+          latest.current.onReady(selected, false, selected);
+          return;
+        }
+        fail();
+      } catch {
+        fail();
+      }
+    };
+    const status = player.addListener("statusChange", (event) => {
+      if (event.status === "readyToPlay") void generate();
+      else if (event.status === "error") fail();
     });
+    const playing = player.addListener("playingChange", (event) => {
+      if (event.isPlaying) player.pause();
+    });
+    if (player.status === "readyToPlay") void generate();
+    else if (player.status === "error") fail();
     return () => {
-      guard.remove();
+      live = false;
+      clearTimeout(deadline);
+      status.remove();
+      playing.remove();
       try {
         player.pause();
       } catch {
-        /* Expo may already have released it. */
+        /* Hook-owned player may already be released. */
       }
     };
-  }, [player]);
-  return (
-    <View style={StyleSheet.absoluteFill}>
-      <VideoView
-        player={player}
-        style={
-          Platform.OS === "web"
-            ? [StyleSheet.absoluteFill, { width: "100%", height: "100%" }]
-            : StyleSheet.absoluteFill
+  }, [player, props.identity]);
+  return <LoadingStill />;
+}
+
+/** A detached decoder avoids browser video compositing inside the 3D cards. */
+function WebThumbnailJob(props: ThumbnailProps) {
+  const latest = useRef(props);
+  latest.current = props;
+  useEffect(() => {
+    let live = true,
+      settled = false,
+      position = 0;
+    let times: number[] = [];
+    const current = () => live && latest.current.identity === props.identity;
+    const decoder = document.createElement("video");
+    const canvas = document.createElement("canvas");
+    const stop = () => {
+      decoder.onloadedmetadata = null;
+      decoder.onseeked = null;
+      decoder.onerror = null;
+      decoder.pause();
+      decoder.removeAttribute("src");
+      decoder.load();
+    };
+    const fail = () => {
+      if (!current() || settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      stop();
+      latest.current.onError();
+    };
+    const deadline = setTimeout(fail, galleryStillTimeoutMs);
+    decoder.muted = true;
+    decoder.volume = 0;
+    decoder.playsInline = true;
+    decoder.preload = "metadata";
+    decoder.crossOrigin = "anonymous";
+    decoder.onloadedmetadata = () => {
+      if (!current() || settled) return;
+      try {
+        times = galleryStillTimes(props.item, decoder.duration);
+        if (!times.length || !decoder.videoWidth || !decoder.videoHeight)
+          throw new Error("No frame geometry");
+        const scale = Math.min(
+          1,
+          galleryStillSize / Math.max(decoder.videoWidth, decoder.videoHeight),
+        );
+        canvas.width = Math.max(1, Math.round(decoder.videoWidth * scale));
+        canvas.height = Math.max(1, Math.round(decoder.videoHeight * scale));
+        decoder.currentTime = times[0];
+      } catch {
+        fail();
+      }
+    };
+    decoder.onseeked = () => {
+      if (!current() || settled) return;
+      try {
+        if (decoder.readyState < 2) throw new Error("No decoded frame");
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) throw new Error("No canvas");
+        context.drawImage(decoder, 0, 0, canvas.width, canvas.height);
+        if (
+          galleryFrameHasPicture(
+            context.getImageData(0, 0, canvas.width, canvas.height).data,
+          )
+        ) {
+          const source = { uri: canvas.toDataURL("image/png") };
+          settled = true;
+          clearTimeout(deadline);
+          stop();
+          latest.current.onReady(source);
+        } else if (++position < times.length) {
+          decoder.currentTime = times[position];
+        } else {
+          settled = true;
+          clearTimeout(deadline);
+          stop();
+          latest.current.onReady(null, true);
         }
-        contentFit="cover"
-        nativeControls={false}
-        playsInline
-        allowsPictureInPicture={false}
-        surfaceType="textureView"
-        onFirstFrameRender={() => setRendered(true)}
-      />
-      {!rendered && (
-        <Text
-          style={{
-            position: "absolute",
-            bottom: 22,
-            left: 5,
-            right: 5,
-            color: "white",
-            fontFamily: font.regular,
-            fontSize: 10,
-            textAlign: "center",
-          }}
-        >
-          Loading still…
-        </Text>
-      )}
-    </View>
-  );
+      } catch {
+        fail();
+      }
+    };
+    decoder.onerror = fail;
+    try {
+      const source = props.source;
+      const uri =
+        typeof source === "number"
+          ? Asset.fromModule(source).uri
+          : typeof source === "string"
+            ? source
+            : source?.uri;
+      if (!uri) throw new Error("No trusted source");
+      decoder.src = uri;
+    } catch {
+      fail();
+    }
+    return () => {
+      live = false;
+      clearTimeout(deadline);
+      stop();
+    };
+  }, [props.source, props.identity]);
+  return <LoadingStill />;
 }

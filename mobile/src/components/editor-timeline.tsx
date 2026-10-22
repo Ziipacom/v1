@@ -599,7 +599,7 @@ export function EditorTimeline(props: EditorTimelineProps) {
               {props.musicLabel && (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Edit music track: ${props.musicLabel}`}
+                  accessibilityLabel={`Edit audio track: ${props.musicLabel}`}
                   accessibilityState={{ disabled: disabled || !props.onMusic }}
                   disabled={disabled || !props.onMusic}
                   onPress={props.onMusic}
@@ -622,7 +622,7 @@ export function EditorTimeline(props: EditorTimelineProps) {
                   >
                     {props.musicLabel}
                   </Text>
-                  <Text style={s.tick}>Music</Text>
+                  <Text style={s.tick}>Audio</Text>
                 </Pressable>
               )}
             </View>
@@ -862,7 +862,11 @@ const s = themedStyles(() => ({
     fontSize: 11,
     fontVariant: ["tabular-nums"],
   },
-  ruler: { height: 36, borderBottomWidth: 1, borderColor: themeValue("#493654", color.border) },
+  ruler: {
+    height: 36,
+    borderBottomWidth: 1,
+    borderColor: themeValue("#493654", color.border),
+  },
   tick: {
     color: color.faint,
     fontFamily: font.medium,

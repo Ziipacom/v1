@@ -206,6 +206,7 @@ function previewHarness(
     status?: string;
     autoplay?: boolean;
     failed?: boolean;
+    stillStatus?: "loading" | "error" | "dark";
   } = {},
 ) {
   const source = readFileSync(
@@ -304,6 +305,27 @@ function previewHarness(
     if (name === "lucide-react-native")
       return new Proxy({}, { get: (_, key) => key });
     if (name === "./ui") return { Cover: "Cover" };
+    if (name === "./gallery-still-preview")
+      return {
+        GalleryStillPreview: (props: Node["props"]) => ({
+          type: "GalleryStillPreview",
+          props: {
+            ...props,
+            children: options.stillStatus
+              ? {
+                  type: "Text",
+                  props: {
+                    children: {
+                      loading: "Loading still…",
+                      error: "Still preview unavailable",
+                      dark: "Dark video · Open to watch",
+                    }[options.stillStatus],
+                  },
+                }
+              : null,
+          },
+        }),
+      };
     if (name === "./device-preferences")
       return {
         useDevicePreferences: () => ({
@@ -356,6 +378,7 @@ function previewHarness(
             visible: true,
             videoActive: true,
             autoplay: options.autoplay ?? true,
+            allowVideoStill: true,
             ...props,
           }),
         ),
@@ -408,6 +431,103 @@ test("only an active card mounts a muted bounded player and unmount pauses/relea
   assert.ok(active.counts().pauses >= 1);
   assert.equal(active.counts().releases, 1);
   assert.equal(active.events.size, 0);
+});
+
+test("visible inactive Profile videos use their own still and play affordance without mounting a playback view", () => {
+  for (const options of [
+    { platform: "android" },
+    { platform: "web", portal: true },
+  ]) {
+    const ui = previewHarness(options);
+    const creation = item("inactive", {
+      trim_start: 6,
+      trim_end: 12,
+      timeline: { version: 1, clips: [{ id: "retained", start: 8, end: 10 }] },
+    });
+    const nodes = ui.render({ item: creation, videoActive: false });
+    const still = nodes.find((node) => node.type === "GalleryStillPreview")!;
+    assert.ok(still);
+    assert.equal(still.props.item, creation);
+    assert.equal(still.props.enabled, true);
+    assert.ok(nodes.some((node) => node.type === "Play"));
+    assert.ok(nodes.some((node) => node.props.children === "Open to play"));
+    assert.equal(nodes.some((node) => node.type === "VideoView"), false);
+    ui.flush();
+    assert.equal(ui.counts().plays, 0);
+    assert.equal(ui.counts().instances, 0);
+    ui.unmount();
+  }
+});
+
+test("Profile still loading, failure and dark feedback stays separate from the corner play affordance", () => {
+  for (const [stillStatus, expected] of [
+    ["loading", "Loading still…"],
+    ["error", "Still preview unavailable"],
+    ["dark", "Dark video · Open to watch"],
+  ] as const) {
+    const ui = previewHarness({ stillStatus });
+    const nodes = ui.render({ videoActive: false });
+    const badge = nodes.find((node) => node.props.testID === "profile-video-still-play")!;
+    assert.ok(badge);
+    assert.equal(badge.props.style.top, 8);
+    assert.equal(badge.props.style.right, 8);
+    assert.ok(nodes.some((node) => node.props.children === expected));
+    assert.equal(nodes.filter((node) => node.props.children === "Open to play").length, 1);
+    assert.equal(nodes.some((node) => node.props.children === "Video · Open to play"), false);
+    assert.equal(nodes.some((node) => node.type === "VideoView"), false);
+    ui.flush();
+    assert.equal(ui.counts().plays, 0);
+    ui.unmount();
+  }
+});
+
+test("Profile still jobs and playback views are absent offscreen or when the shared activity marks a card hidden", () => {
+  for (const videoActive of [true, false]) {
+    const ui = previewHarness();
+    const nodes = ui.render({ videoActive, visible: false });
+    assert.equal(nodes.some((node) => node.type === "GalleryStillPreview"), false);
+    assert.equal(nodes.some((node) => node.type === "VideoView"), false);
+    ui.flush();
+    assert.equal(ui.counts().instances, 0);
+    assert.equal(ui.counts().plays, 0);
+    ui.unmount();
+  }
+});
+
+test("Profile inactive video stills require the shared readiness and Save Data permission independently of static image visibility", () => {
+  const ui = previewHarness();
+  const nodes = ui.render({ videoActive: false, allowVideoStill: false });
+  assert.equal(nodes.some((node) => node.type === "GalleryStillPreview"), false);
+  assert.equal(ui.counts().instances, 0);
+  const photo = ui.render({
+    item: item("photo", {
+      content_type: "image/jpeg",
+      media_url: null,
+      cover: "/api/creator/media/photo",
+    }),
+    videoActive: false,
+    allowVideoStill: false,
+  });
+  assert.ok(photo.some((node) => node.type === "Image"));
+});
+
+test("a visible active Profile video never also starts a still job; untrusted bearer-web and audio do not create video stills", () => {
+  const active = previewHarness();
+  const activeNodes = active.render({});
+  assert.ok(activeNodes.some((node) => node.type === "VideoView"));
+  assert.equal(activeNodes.some((node) => node.type === "GalleryStillPreview"), false);
+  active.unmount();
+  const bearer = previewHarness({ platform: "web", portal: false });
+  const bearerNodes = bearer.render({ videoActive: false });
+  assert.equal(bearerNodes.some((node) => node.type === "GalleryStillPreview"), false);
+  assert.equal(bearer.counts().instances, 0);
+  const audio = previewHarness();
+  const audioNodes = audio.render({
+    item: item("song", { content_type: "audio/wav" }),
+    videoActive: false,
+  });
+  assert.equal(audioNodes.some((node) => node.type === "GalleryStillPreview"), false);
+  assert.equal(audio.counts().instances, 0);
 });
 
 test("reduced-motion/autoplay-off previews load a retained still frame without starting playback", () => {
@@ -655,6 +775,7 @@ function profileScreenHarness(desktop = false) {
     item("private", { visibility: "draft" }),
   ];
   const preferences = { saved: ["game"], autoplay: true, startMuted: false };
+  const activity = { mountVideo: true, visible: true, autoplay: true };
   const jsx = (
     type: unknown,
     props: Record<string, unknown>,
@@ -737,11 +858,7 @@ function profileScreenHarness(desktop = false) {
     if (name.endsWith("/profile-media-preview"))
       return {
         ProfileMediaPreview: "ProfileMediaPreview",
-        useProfilePreviewActivity: () => ({
-          mountVideo: true,
-          visible: true,
-          autoplay: true,
-        }),
+        useProfilePreviewActivity: () => activity,
       };
     if (name.endsWith("/assets"))
       return { coverSource: (uri: string) => ({ uri }) };
@@ -795,6 +912,7 @@ function profileScreenHarness(desktop = false) {
   const layoutEvents: { key: string; top: number; height: number }[] = [];
   return {
     preferences,
+    activity,
     creations,
     navigations,
     layoutEvents,
@@ -830,6 +948,20 @@ function profileScreenHarness(desktop = false) {
     },
   };
 }
+
+test("Profile forwards the shared video-loading gate to stills while keeping ordinary card visibility separate", () => {
+  const ui = profileScreenHarness();
+  let nodes = ui.renderWithLayout();
+  const previews = () => nodes.filter((node) => node.type === "ProfileMediaPreview");
+  assert.ok(previews().every((node) => node.props.allowVideoStill === true));
+  assert.equal(previews().filter((node) => node.props.videoActive).length, 1);
+  ui.activity.mountVideo = false;
+  nodes = ui.renderWithLayout();
+  assert.ok(previews().every((node) => node.props.allowVideoStill === false));
+  assert.ok(previews().some((node) => node.props.visible));
+  assert.equal(previews().filter((node) => node.props.videoActive).length, 0);
+  assert.deepEqual(ui.counts(), { requests: 0, refreshes: 0, preferenceWrites: 0 });
+});
 
 test("unchanged leading Profile cards remeasure across category and Saved filters without replacing the ScrollView", () => {
   for (const desktop of [false, true]) {

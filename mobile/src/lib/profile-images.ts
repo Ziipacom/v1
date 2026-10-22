@@ -33,6 +33,40 @@ export type ProfileImageAsset = {
   size?: number | null;
 };
 
+/** One acknowledged write, then a readback. Never retry an uncertain mutation. */
+export async function confirmProfileImageSave(options: {
+  patch: ProfileImagePatch;
+  valid: () => boolean;
+  save: (patch: ProfileImagePatch) => Promise<ProfileImages>;
+  read: () => Promise<ProfileImages>;
+}): Promise<ProfileImages | null> {
+  if (!options.valid()) return null;
+  await options.save(options.patch);
+  if (!options.valid()) return null;
+  let stored: ProfileImages;
+  try {
+    stored = await options.read();
+  } catch {
+    if (!options.valid()) return null;
+    throw new Error(
+      "The image save could not be verified. Refresh saved images before trying again; the upload and save will not be repeated automatically.",
+    );
+  }
+  if (!options.valid()) return null;
+  const expected = { ...options.patch };
+  if (expected.cover_media_id != null) expected.cover_sample = null;
+  if (expected.cover_sample != null) expected.cover_media_id = null;
+  if (
+    Object.entries(expected).some(
+      ([key, value]) => stored[key as keyof ProfileImages] !== value,
+    )
+  )
+    throw new Error(
+      "Your image change could not be confirmed, or was changed on another device. Refresh saved images before trying again. Nothing will be uploaded or saved again automatically.",
+    );
+  return stored;
+}
+
 /** Android may resolve its picker before the Activity has emitted its resume. */
 export function waitForProfilePickerResume(options: {
   isForeground: () => boolean;
@@ -133,6 +167,7 @@ export async function uploadProfileImage(options: {
   refreshConfig: () => Promise<unknown>;
   upload: (file: UploadFile) => Promise<{ id: string }>;
   save: (patch: ProfileImagePatch) => Promise<ProfileImages>;
+  read: () => Promise<ProfileImages>;
 }): Promise<ProfileImages | null> {
   if (!options.config)
     throw new Error(
@@ -160,10 +195,13 @@ export async function uploadProfileImage(options: {
   profileImageFile(asset, size, current);
   const media = await options.upload(file);
   if (!options.valid()) return null;
-  const result = await options.save(
-    options.kind === "avatar"
-      ? { avatar_media_id: media.id }
-      : { cover_media_id: media.id },
-  );
-  return options.valid() ? result : null;
+  return confirmProfileImageSave({
+    patch:
+      options.kind === "avatar"
+        ? { avatar_media_id: media.id }
+        : { cover_media_id: media.id },
+    valid: options.valid,
+    save: options.save,
+    read: options.read,
+  });
 }

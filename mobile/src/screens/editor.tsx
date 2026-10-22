@@ -113,7 +113,7 @@ const steps = [
   { name: "Media", Icon: Film },
   { name: "Edit", Icon: SlidersHorizontal },
   { name: "Overlay", Icon: Layers },
-  { name: "Music", Icon: Music2 },
+  { name: "Audio", Icon: Music2 },
   { name: "Share", Icon: Share2 },
 ] as const;
 
@@ -1098,7 +1098,7 @@ export function ComposerScreen({
           accessibilityState={{ selected: tab === name }}
           onPress={() => {
             setPaused(true);
-            if (name === "Music") setMusicPurpose("soundtrack");
+            if (name === "Audio") setMusicPurpose("soundtrack");
             setTab(name);
           }}
           style={{ flex: 1, alignItems: "center", gap: 5 }}
@@ -1125,7 +1125,7 @@ export function ComposerScreen({
                     Media: "Upload",
                     Edit: "Edit",
                     Overlay: "Overlay",
-                    Music: "Music",
+                    Audio: "Audio",
                     Share: "Save & publish",
                   } as const
                 )[name]
@@ -1160,7 +1160,7 @@ export function ComposerScreen({
       onMusic={() => {
         setPaused(true);
         setMusicPurpose("soundtrack");
-        setTab("Music");
+        setTab("Audio");
       }}
       disabled={busy}
       onInteractionStart={() => setPaused(true)}
@@ -1360,13 +1360,13 @@ export function ComposerScreen({
               onPress={() => {
                 setPaused(true);
                 setMusicPurpose("creation");
-                setTab("Music");
+                setTab("Audio");
               }}
             />
             <Text style={styles.small}>
-              Create instrumental audio from a description, with no upload.
-              Review and choose the generated file before saving. This does not
-              generate video or vocals.
+              Create instrumental music or voice narration, then preview and
+              choose the audio before saving. Video generation and voice cloning
+              are not connected.
             </Text>
             <Pressable
               accessibilityRole="button"
@@ -1468,7 +1468,7 @@ export function ComposerScreen({
           />}
         />
       )}
-      {tab === "Music" && (
+      {tab === "Audio" && (
         <MusicWorkspace
           purpose={musicPurpose}
           busy={busy}
@@ -1892,7 +1892,7 @@ export function ComposerScreen({
           icon={ChevronRight}
           onPress={() => {
             const index = steps.findIndex((step) => step.name === tab);
-            if (steps[index + 1]?.name === "Music")
+            if (steps[index + 1]?.name === "Audio")
               setMusicPurpose("soundtrack");
             setTab(steps[Math.min(steps.length - 1, index + 1)].name);
           }}

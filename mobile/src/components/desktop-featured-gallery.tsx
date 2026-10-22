@@ -299,7 +299,8 @@ export function DesktopFeaturedGallery({
             },
           ]}
         >
-          <Animated.View style={[g.media, { opacity }]}>
+          {/* Animate copy only; the live video keeps an ordinary opaque surface. */}
+          <View style={g.media}>
             {current.content_type?.startsWith("image/") ? (
               <ProfileMediaPreview
                 key={current.id}
@@ -334,8 +335,11 @@ export function DesktopFeaturedGallery({
                   : "CREATION PREVIEW"}
               </Text>
             </View>
-          </Animated.View>
-          <View style={[g.copy, { width: compact ? 240 : 300 }]}>
+          </View>
+          <Animated.View
+            testID="desktop-gallery-animated-copy"
+            style={[g.copy, { width: compact ? 240 : 300, opacity }]}
+          >
             <Text style={styles.eyebrow}>
               {categories.find((entry) => entry.id === current.category)
                 ?.title || "Creation"}
@@ -365,7 +369,7 @@ export function DesktopFeaturedGallery({
                     : "Preview enabled · automatic gallery motion paused."}
               </Text>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </View>
       <View style={g.controls}>

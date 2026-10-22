@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 import { profilePreviewRange } from "../src/lib/profile-preview.ts";
+import * as galleryPreview from "../src/lib/gallery-preview.ts";
 import type { Item } from "../src/lib/types.ts";
 
 type Node = { type: any; props: Record<string, any> };
@@ -26,7 +27,12 @@ const item = (changes: Partial<Item> = {}): Item => ({
 });
 
 function stillUI(
-  options: { platform?: string; portal?: boolean; status?: string } = {},
+  options: {
+    platform?: string;
+    portal?: boolean;
+    status?: string;
+    generate?: (times: number[], size: unknown) => Promise<any[]>;
+  } = {},
 ) {
   const code = ts.transpileModule(
     readFileSync(
@@ -51,10 +57,18 @@ function stillUI(
     plays = 0,
     pauses = 0,
     releases = 0;
+  const samples: { times: number[]; size: unknown }[] = [];
+  const bitmap = { width: 360, height: 203, release() {} };
   const player: Record<string, any> = {
     duration: 20,
     status: options.status || "readyToPlay",
     currentTime: 0,
+    generateThumbnailsAsync(times: number[], size: unknown) {
+      samples.push({ times, size });
+      return options.generate
+        ? options.generate(times, size)
+        : Promise.resolve([bitmap]);
+    },
     play() {
       plays++;
     },
@@ -100,9 +114,20 @@ function stillUI(
         },
         useEffect(effect: () => void | (() => void), deps: unknown[]) {
           const slot = cursor++;
-          if (!hooks[slot] || deps.some((dep, n) => dep !== hooks[slot][n])) {
-            hooks[slot] = deps;
-            effects.push(effect);
+          const previous = hooks[slot];
+          if (!previous || deps.some((dep, n) => dep !== previous.deps[n])) {
+            const next: { deps: unknown[]; cleanup?: () => void } = { deps };
+            hooks[slot] = next;
+            effects.push(() => {
+              previous?.cleanup?.();
+              if (previous) previous.cleanup = undefined;
+              const cleanup = effect();
+              if (cleanup) next.cleanup = cleanup;
+            });
+            cleanups.push(() => {
+              next.cleanup?.();
+              next.cleanup = undefined;
+            });
           }
         },
       };
@@ -123,11 +148,15 @@ function stillUI(
       return {
         VideoView: "VideoView",
         useVideoPlayer: (_: unknown, setup: (player: unknown) => void) => {
-          instances++;
-          setup(player);
-          effects.push(() => () => {
-            releases++;
-          });
+          const slot = cursor++;
+          if (!hooks[slot]) {
+            hooks[slot] = player;
+            instances++;
+            setup(player);
+            cleanups.push(() => {
+              releases++;
+            });
+          }
           return player;
         },
       };
@@ -152,6 +181,7 @@ function stillUI(
     if (name === "../lib/config")
       return { portalMode: options.portal ?? false };
     if (name === "../lib/profile-preview") return { profilePreviewRange };
+    if (name === "../lib/gallery-preview") return galleryPreview;
     if (name === "../provider")
       return { useZiipa: () => ({ session: { access_token: "fixture" } }) };
     if (name === "../theme") return { font: {} };
@@ -175,6 +205,8 @@ function stillUI(
   }
   return {
     player,
+    samples,
+    bitmap,
     events,
     render(props: Record<string, unknown> = {}) {
       cursor = 0;
@@ -201,26 +233,33 @@ function stillUI(
   };
 }
 
-test("Side video loads only a retained muted still, never plays, and releases its decoder", () => {
+test("Native side video generates a bounded retained image, never paints or plays a video, and releases its decoder", async () => {
   const ui = stillUI();
   const nodes = ui.render();
   ui.flush();
   assert.equal(ui.counts().instances, 1);
   assert.equal(ui.counts().plays, 0);
-  assert.equal(ui.player.currentTime, 5.05);
+  assert.deepEqual(ui.samples, [
+    { times: [6.05], size: { maxWidth: 360, maxHeight: 360 } },
+  ]);
   assert.equal(ui.player.muted, true);
   assert.equal(ui.player.volume, 0);
   assert.equal(ui.player.staysActiveInBackground, false);
   assert.equal(ui.player.showNowPlayingNotification, false);
   assert.equal(ui.player.bufferOptions.maxBufferBytes, 1024 * 1024);
   assert.equal(ui.player.bufferOptions.preferredForwardBufferDuration, 0.5);
-  const video = nodes.find((node) => node.type === "VideoView")!;
-  assert.equal(video.props.nativeControls, false);
-  assert.equal(video.props.allowsPictureInPicture, false);
-  assert.equal(video.props.surfaceType, "textureView");
+  assert.equal(
+    nodes.some((node) => node.type === "VideoView"),
+    false,
+  );
   const paused = ui.counts().pauses;
   ui.events.get("playingChange")!({ isPlaying: true });
   assert.equal(ui.counts().pauses, paused + 1);
+  await Promise.resolve();
+  const image = ui.render().find((node) => node.type === "Image")!;
+  assert.equal(image.props.source, ui.bitmap);
+  assert.equal(image.props.autoplay, false);
+  assert.equal(image.props.cachePolicy, "none");
   ui.unmount();
   assert.equal(ui.counts().releases, 1);
   assert.equal(ui.events.size, 0);
@@ -241,36 +280,172 @@ test("Disabled side previews and bearer-web transport do not mount private video
       false,
     );
   }
-  const portal = stillUI({ platform: "web", portal: true });
-  portal.render();
-  portal.flush();
-  assert.equal(portal.counts().instances, 1);
-  assert.equal(portal.counts().plays, 0);
-  portal.unmount();
 });
 
-test("Web side video uses explicit container dimensions while native inset sizing stays unchanged", () => {
-  const web = stillUI({ platform: "web", portal: true });
-  const webNodes = web.render();
-  const webVideo = webNodes.find((node) => node.type === "VideoView")!;
-  const webStyle = Object.assign({}, ...webVideo.props.style);
-  assert.equal(webStyle.width, "100%");
-  assert.equal(webStyle.height, "100%");
-  assert.equal(webVideo.props.style[0], webNodes[0].props.style);
-  web.flush();
-  assert.equal(web.counts().plays, 0);
-  web.unmount();
+test("Native thumbnail candidates stay sequential and reject a returned frame outside the retained range", async () => {
+  let discarded = 0;
+  const invalid = {
+    width: 360,
+    height: 200,
+    actualTime: 0,
+    release() {
+      discarded++;
+    },
+  };
+  const valid = {
+    width: 360,
+    height: 200,
+    actualTime: 7,
+    release() {
+      throw new Error("Displayed ref must not be manually released");
+    },
+  };
+  const ui = stillUI({
+    generate: async (_times) => [ui.samples.length === 1 ? invalid : valid],
+  });
+  ui.render();
+  ui.flush();
+  assert.equal(ui.samples.length, 1);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(
+    ui.samples.map((sample) => sample.times),
+    [[6.05], [6.95]],
+  );
+  assert.equal(discarded, 1);
+  assert.equal(
+    ui.render().find((node) => node.type === "Image")!.props.source,
+    valid,
+  );
+  assert.equal(ui.counts().plays, 0);
+  ui.unmount();
+});
 
-  const native = stillUI();
-  const nativeNodes = native.render();
-  const nativeVideo = nativeNodes.find((node) => node.type === "VideoView")!;
-  assert.equal(nativeVideo.props.style, nativeNodes[0].props.style);
-  assert.equal(Array.isArray(nativeVideo.props.style), false);
-  assert.equal(nativeVideo.props.style.width, undefined);
-  assert.equal(nativeVideo.props.style.height, undefined);
-  native.flush();
-  assert.equal(native.counts().plays, 0);
-  native.unmount();
+test("Unmounted native generation discards its late bitmap without starting another sample", async () => {
+  let complete!: (frames: any[]) => void;
+  let discarded = 0;
+  const ui = stillUI({
+    generate: () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  });
+  ui.render();
+  ui.flush();
+  ui.unmount();
+  complete([
+    {
+      width: 360,
+      height: 203,
+      release() {
+        discarded++;
+      },
+    },
+  ]);
+  await Promise.resolve();
+  assert.equal(discarded, 1);
+  assert.equal(ui.samples.length, 1);
+  assert.equal(ui.counts().plays, 0);
+});
+
+test("Accepted native images release exactly once after removal or unmount, never while displayed", async () => {
+  for (const removeBeforeUnmount of [false, true]) {
+    let released = 0;
+    const bitmap = {
+      width: 360,
+      height: 200,
+      release() {
+        released++;
+      },
+    };
+    const ui = stillUI({ generate: async () => [bitmap] });
+    ui.render();
+    ui.flush();
+    await Promise.resolve();
+    assert.equal(
+      ui.render().find((node) => node.type === "Image")!.props.source,
+      bitmap,
+    );
+    ui.flush();
+    assert.equal(released, 0);
+    if (removeBeforeUnmount) {
+      assert.equal(
+        ui.render({ enabled: false }).some((node) => node.type === "Image"),
+        false,
+      );
+      assert.equal(
+        released,
+        0,
+        "release belongs to passive cleanup after the old Image is removed",
+      );
+      ui.flush();
+      ui.render({ enabled: false });
+      ui.flush();
+      assert.equal(released, 1);
+    }
+    ui.unmount();
+    assert.equal(released, 1);
+  }
+});
+
+test("A native result resolving between identity render and prior cleanup cannot stamp old pixels onto the new creation", async () => {
+  let complete!: (frames: any[]) => void;
+  let released = 0;
+  const ui = stillUI({
+    generate: () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  });
+  try {
+    ui.render();
+    ui.flush();
+    const replacement = item({
+      id: "other-account-creation",
+      media_url: "/api/creator/media/other-source",
+    });
+    ui.render({ item: replacement }); // New render has happened, old passive cleanup has not.
+    complete([
+      {
+        width: 360,
+        height: 200,
+        release() {
+          released++;
+        },
+      },
+    ]);
+    await Promise.resolve();
+    assert.equal(released, 1);
+    assert.equal(
+      ui.render({ item: replacement }).some((node) => node.type === "Image"),
+      false,
+    );
+    assert.equal(ui.samples.length, 1);
+    assert.equal(ui.counts().plays, 0);
+  } finally {
+    ui.unmount();
+  }
+});
+
+test("Native generation stops after three unusable candidates rather than decoding indefinitely", async () => {
+  const ui = stillUI({ generate: async () => [] });
+  try {
+    ui.render();
+    ui.flush();
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    assert.deepEqual(
+      ui.samples.map((sample) => sample.times),
+      [[6.05], [6.95], [7.55]],
+    );
+    assert.ok(
+      ui
+        .render()
+        .some((node) => node.props.children === "Still preview unavailable"),
+    );
+    assert.equal(ui.counts().plays, 0);
+  } finally {
+    ui.unmount();
+  }
 });
 
 test("Usable artwork is shown as a non-animated image rather than a video; audio never creates a player", () => {
@@ -396,5 +571,225 @@ test("Web side artwork captures one bounded still in memory and discards the dec
   } finally {
     if (original) Object.defineProperty(globalThis, "document", original);
     else delete (globalThis as any).document;
+  }
+});
+
+function webDecoder(pictures: boolean[], brokenCanvas = false) {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const order: string[] = [],
+    seeks: number[] = [];
+  let stopped = 0,
+    plays = 0,
+    draws = 0;
+  const decoder: any = {
+    duration: 20,
+    videoWidth: 1920,
+    videoHeight: 1080,
+    readyState: 4,
+    onloadedmetadata: null,
+    onseeked: null,
+    onerror: null,
+    set crossOrigin(value: string) {
+      order.push(`cors:${value}`);
+    },
+    set src(value: string) {
+      order.push(`src:${value}`);
+    },
+    set currentTime(value: number) {
+      seeks.push(value);
+    },
+    pause() {
+      stopped++;
+    },
+    play() {
+      plays++;
+    },
+    load() {},
+    removeAttribute(name: string) {
+      assert.equal(name, "src");
+    },
+  };
+  const canvas: any = {
+    width: 0,
+    height: 0,
+    getContext() {
+      return {
+        drawImage() {
+          draws++;
+        },
+        getImageData() {
+          if (brokenCanvas) throw new Error("Tainted canvas");
+          const light = pictures[draws - 1] ? 80 : 0;
+          return { data: new Uint8ClampedArray([light, light, light, 255]) };
+        },
+      };
+    },
+    toDataURL() {
+      return "data:image/png;base64,representative-frame";
+    },
+  };
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      createElement(tag: string) {
+        assert.ok(tag === "video" || tag === "canvas");
+        return tag === "video" ? decoder : canvas;
+      },
+    },
+  });
+  return {
+    decoder,
+    canvas,
+    order,
+    seeks,
+    counts: () => ({ stopped, plays, draws }),
+    restore() {
+      if (original) Object.defineProperty(globalThis, "document", original);
+      else delete (globalThis as any).document;
+    },
+  };
+}
+
+test("Web video uses at most three paused interior samples and paints only a bounded nonblack static image", () => {
+  const web = webDecoder([false, true]);
+  const ui = stillUI({ platform: "web", portal: true });
+  try {
+    assert.equal(
+      ui.render().some((node) => node.type === "VideoView"),
+      false,
+    );
+    ui.flush();
+    assert.deepEqual(web.order, [
+      "cors:anonymous",
+      "src:/api/creator/media/source",
+    ]);
+    assert.equal(web.decoder.muted, true);
+    assert.equal(web.decoder.volume, 0);
+    web.decoder.onloadedmetadata();
+    web.decoder.onseeked();
+    assert.deepEqual(web.seeks, [6.05, 6.95]);
+    web.decoder.onseeked();
+    const image = ui.render().find((node) => node.type === "Image")!;
+    assert.equal(
+      image.props.source.uri,
+      "data:image/png;base64,representative-frame",
+    );
+    assert.equal(image.props.autoplay, false);
+    assert.equal(web.canvas.width, 360);
+    assert.equal(web.canvas.height, 203);
+    assert.equal(web.counts().plays, 0);
+    assert.equal(web.counts().draws, 2);
+    assert.equal(web.decoder.onseeked, null);
+    assert.equal(
+      ui.counts().instances,
+      0,
+      "Web must not call native thumbnail API",
+    );
+  } finally {
+    ui.unmount();
+    web.restore();
+  }
+});
+
+test("Three dark web samples and inaccessible canvas pixels produce honest nonvideo fallbacks", () => {
+  for (const brokenCanvas of [false, true]) {
+    const web = webDecoder([false, false, false], brokenCanvas);
+    const ui = stillUI({ platform: "web", portal: true });
+    try {
+      ui.render();
+      ui.flush();
+      web.decoder.onloadedmetadata();
+      while (web.decoder.onseeked) web.decoder.onseeked();
+      const nodes = ui.render();
+      assert.equal(
+        nodes.some(
+          (node) => node.type === "Image" || node.type === "VideoView",
+        ),
+        false,
+      );
+      assert.ok(
+        nodes.some(
+          (node) =>
+            node.props.children ===
+            (brokenCanvas
+              ? "Still preview unavailable"
+              : "Dark video · Open to watch"),
+        ),
+      );
+      assert.equal(web.counts().plays, 0);
+      assert.equal(web.seeks.length, brokenCanvas ? 1 : 3);
+      assert.ok(web.seeks.every((time) => time > 5 && time < 8));
+    } finally {
+      ui.unmount();
+      web.restore();
+    }
+  }
+});
+
+test("Web deadline and unmount detach handlers without accepting late work or playing sound", () => {
+  const timeout = globalThis.setTimeout,
+    clear = globalThis.clearTimeout;
+  let expire!: () => void;
+  globalThis.setTimeout = ((fn: () => void, duration: number) => {
+    assert.equal(duration, 10000);
+    expire = fn;
+    return 1;
+  }) as any;
+  globalThis.clearTimeout = (() => {}) as any;
+  const web = webDecoder([true]);
+  const ui = stillUI({ platform: "web", portal: true });
+  try {
+    ui.render();
+    ui.flush();
+    const lateMetadata = web.decoder.onloadedmetadata;
+    expire();
+    lateMetadata();
+    assert.equal(web.seeks.length, 0);
+    assert.equal(web.decoder.onseeked, null);
+    assert.equal(web.decoder.onloadedmetadata, null);
+    assert.equal(web.decoder.onerror, null);
+    assert.ok(
+      ui
+        .render()
+        .some((node) => node.props.children === "Still preview unavailable"),
+    );
+    assert.equal(web.counts().plays, 0);
+  } finally {
+    ui.unmount();
+    web.restore();
+    globalThis.setTimeout = timeout;
+    globalThis.clearTimeout = clear;
+  }
+});
+
+test("A stale web seek or error before passive cleanup cannot affect the replacement creation", () => {
+  const web = webDecoder([true]);
+  const ui = stillUI({ platform: "web", portal: true });
+  try {
+    ui.render();
+    ui.flush();
+    web.decoder.onloadedmetadata();
+    const oldSeek = web.decoder.onseeked,
+      oldError = web.decoder.onerror;
+    const replacement = item({
+      id: "replacement",
+      media_url: "/api/creator/media/replacement",
+    });
+    ui.render({ item: replacement }); // Do not flush the old effect cleanup yet.
+    oldSeek();
+    oldError();
+    const nodes = ui.render({ item: replacement });
+    assert.equal(web.counts().draws, 0);
+    assert.equal(
+      nodes.some((node) => node.type === "Image"),
+      false,
+    );
+    assert.equal(
+      nodes.some((node) => node.props.children === "Still preview unavailable"),
+      false,
+    );
+  } finally {
+    ui.unmount();
+    web.restore();
   }
 });

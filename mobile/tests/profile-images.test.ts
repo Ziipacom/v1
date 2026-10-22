@@ -8,6 +8,7 @@ import {
   profileImageFile,
   uploadProfileImage,
   waitForProfilePickerResume,
+  confirmProfileImageSave,
 } from "../src/lib/profile-images.ts";
 
 const advertised = {
@@ -20,7 +21,7 @@ const advertised = {
 };
 const supported = profileImageConfig(advertised)!;
 const saved = {
-  avatar_media_id: "avatar-id",
+  avatar_media_id: "owned-image",
   avatar_url: "/api/creator/profile-images/avatar-id",
   cover_media_id: null,
   cover_url: null,
@@ -36,6 +37,7 @@ const asset = {
 function scenario(overrides: Record<string, any> = {}) {
   const calls: string[] = [];
   const patches: unknown[] = [];
+  let stored = { ...saved };
   const options = {
     kind: "avatar" as const,
     config: supported,
@@ -59,7 +61,12 @@ function scenario(overrides: Record<string, any> = {}) {
     save: async (patch: unknown) => {
       calls.push("save");
       patches.push(patch);
-      return saved;
+      stored = { ...stored, ...(patch as any) };
+      return stored;
+    },
+    read: async () => {
+      calls.push("read");
+      return stored;
     },
     ...overrides,
   };
@@ -101,6 +108,7 @@ test("avatar saving preflights again before bytes and saves only the uploaded ow
     "config",
     "upload",
     "save",
+    "read",
   ]);
   assert.deepEqual(check.patches, [{ avatar_media_id: "owned-image" }]);
 });
@@ -267,7 +275,82 @@ test("Android result-before-resume waits for the Activity before uploading, with
   assert.deepEqual(await result, saved);
   assert.equal(picked, 1);
   assert.equal(unsubscribed, 1);
-  assert.deepEqual(check.calls, ["measure", "config", "upload", "save"]);
+  assert.deepEqual(check.calls, [
+    "measure",
+    "config",
+    "upload",
+    "save",
+    "read",
+  ]);
+});
+
+test("one write is read back before declaring success, and unrelated other-device fields are preserved", async () => {
+  let writes = 0,
+    reads = 0;
+  const elsewhere = {
+    ...saved,
+    cover_sample: "/media/ocean.jpg",
+    cover_url: "/media/ocean.jpg",
+  };
+  const result = await confirmProfileImageSave({
+    patch: { avatar_media_id: "owned-image" },
+    valid: () => true,
+    save: async () => {
+      writes++;
+      return saved;
+    },
+    read: async () => {
+      reads++;
+      return elsewhere;
+    },
+  });
+  assert.deepEqual(result, elsewhere);
+  assert.equal(writes, 1);
+  assert.equal(reads, 1);
+});
+
+test("a successful POST without durable matching readback is unconfirmed and never replayed", async () => {
+  for (const read of [
+    async () => ({ ...saved, avatar_media_id: null }),
+    async () => {
+      throw new Error("offline");
+    },
+  ]) {
+    let writes = 0,
+      reads = 0;
+    await assert.rejects(
+      confirmProfileImageSave({
+        patch: { avatar_media_id: "owned-image" },
+        valid: () => true,
+        save: async () => {
+          writes++;
+          return saved;
+        },
+        read: async () => {
+          reads++;
+          return read();
+        },
+      }),
+    );
+    assert.equal(writes, 1);
+    assert.equal(reads, 1);
+  }
+});
+
+test("cover readback verifies mutually exclusive uploaded-media and gallery-sample fields", async () => {
+  await assert.rejects(
+    confirmProfileImageSave({
+      patch: { cover_sample: "/media/ocean.jpg" },
+      valid: () => true,
+      save: async () => saved,
+      read: async () => ({
+        ...saved,
+        cover_sample: "/media/ocean.jpg",
+        cover_media_id: "old-upload",
+      }),
+    }),
+    /could not be confirmed/,
+  );
 });
 
 test("a canceled account or navigation scope cannot resume a completed picker", async () => {

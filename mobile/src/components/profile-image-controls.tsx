@@ -11,6 +11,7 @@ import { coverSource } from "../lib/assets";
 import {
   PROFILE_IMAGE_TYPES,
   PROFILE_SAMPLE_COVERS,
+  confirmProfileImageSave,
   profileImageConfig,
   uploadProfileImage,
   waitForProfilePickerResume,
@@ -200,6 +201,7 @@ export function ProfileImageControls({
           phase.current = "saving";
           return api<ProfileImages>("/api/creator/profile", patch);
         },
+        read: () => api<ProfileImages>("/api/creator/profile"),
       });
       if (saved && valid()) {
         onSaved(saved);
@@ -233,11 +235,12 @@ export function ProfileImageControls({
 
   async function sample(path: string) {
     if (operation.current) return;
-    if (!session || guest || !config || status !== "ready") {
+    if (!session || guest) {
       onPreviewSample?.(path);
       setMessage("Cover preview only. It is not saved to your account.");
       return;
     }
+    if (!config || status !== "ready") return;
     operation.current = true;
     phase.current = "saving";
     const valid = capture();
@@ -251,10 +254,13 @@ export function ProfileImageControls({
         throw new Error(
           "Refresh profile image support before saving this gallery cover.",
         );
-      const saved = await api<ProfileImages>("/api/creator/profile", {
-        cover_sample: path,
+      const saved = await confirmProfileImageSave({
+        patch: { cover_sample: path },
+        valid,
+        save: (patch) => api<ProfileImages>("/api/creator/profile", patch),
+        read: () => api<ProfileImages>("/api/creator/profile"),
       });
-      if (valid()) {
+      if (saved && valid()) {
         onSaved(saved);
         setMessage("Your gallery cover is saved to your Ziipa account.");
       }
@@ -268,6 +274,32 @@ export function ProfileImageControls({
     } finally {
       phase.current = "idle";
       operation.current = false;
+      if (state.current.mounted && state.current.token === session.access_token)
+        setBusy(false);
+    }
+  }
+  async function refreshSaved() {
+    if (!session || guest || operation.current) return;
+    const valid = capture();
+    operation.current = true;
+    phase.current = "saving";
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const saved = await api<ProfileImages>("/api/creator/profile");
+      if (valid()) {
+        onSaved(saved);
+        setMessage("Your saved account images are up to date.");
+      }
+    } catch {
+      if (valid())
+        setError(
+          "Saved images could not be refreshed. Check your connection before trying again; no image was uploaded or changed.",
+        );
+    } finally {
+      operation.current = false;
+      phase.current = "idle";
       if (state.current.mounted && state.current.token === session.access_token)
         setBusy(false);
     }
@@ -314,6 +346,13 @@ export function ProfileImageControls({
             busy={busy}
             onPress={() => void choose()}
           />
+          <Action
+            title="Refresh saved images"
+            icon={RefreshCw}
+            secondary
+            disabled={busy}
+            onPress={() => void refreshSaved()}
+          />
           <Text style={styles.small}>
             Choose a static JPG, PNG or WebP image up to 10 MB. Your original
             file stays unchanged.
@@ -347,8 +386,10 @@ export function ProfileImageControls({
             Cover gallery
           </Text>
           <Text style={styles.small}>
-            {session && !guest && status === "ready"
-              ? "Choose a gallery cover to save it to your account."
+            {session && !guest
+              ? status === "ready"
+                ? "Choose a gallery cover to save it to your account."
+                : "Confirm profile image support above before saving a gallery cover."
               : "Choose a gallery cover to preview it on this device."}
           </Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -358,10 +399,10 @@ export function ProfileImageControls({
                 accessibilityRole="button"
                 accessibilityLabel={`Use ${path.split("/").pop()?.split(".")[0]} gallery cover`}
                 accessibilityState={{
-                  disabled: busy,
+                  disabled: busy || (!!session && !guest && status !== "ready"),
                   selected: profile?.cover_sample === path,
                 }}
-                disabled={busy}
+                disabled={busy || (!!session && !guest && status !== "ready")}
                 onPress={() => void sample(path)}
                 style={{
                   borderRadius: 13,

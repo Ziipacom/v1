@@ -56,7 +56,8 @@ export function ProfileScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Profile">) {
   const { desktop } = useDesktopLayout();
-  const { session, guest, data, api, refresh } = useZiipa();
+  const { session, guest, data, recordProfileImages, refreshProfileImages } =
+    useZiipa();
   const [category, setCategory] = useState<ProfileCategory>("all");
   const [saved, setSaved] = useState(false);
   const [sheet, setSheet] = useState<"art" | "account" | "social" | null>(null);
@@ -68,16 +69,8 @@ export function ProfileScreen({
     values: Record<string, ProfileCardBounds>;
   }>({ key: "", values: {} });
   const [previewBanner, setPreviewBanner] = useState<string | null>(null);
-  const [profileOverride, setProfileOverride] = useState<{
-    token: string;
-    profile: ProfileImages;
-  } | null>(null);
   const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
-  const profileLoad = useRef(0);
-  const profile =
-    profileOverride?.token === session?.access_token
-      ? profileOverride?.profile
-      : data.profile;
+  const profile = data.profile;
   const banner = previewBanner || profile?.cover_url || "/media/studio.jpg";
   const bannerSource = useProfileImageSource(banner, session?.access_token);
   const avatarSource = useProfileImageSource(
@@ -85,34 +78,20 @@ export function ProfileScreen({
     session?.access_token,
   );
   useEffect(() => {
-    setProfileOverride(null);
     setPreviewBanner(null);
   }, [session?.access_token]);
   useFocusEffect(
     useCallback(() => {
       if (!session || guest) return;
-      let active = true;
-      const version = ++profileLoad.current;
-      void api<ProfileImages>("/api/creator/profile")
-        .then((profile) => {
-          if (active && version === profileLoad.current)
-            setProfileOverride({ token: session.access_token, profile });
-        })
-        .catch(() => {
-          /* Older APIs keep the initial avatar and local cover fallback. */
-        });
-      return () => {
-        active = false;
-        profileLoad.current++;
-      };
-    }, [api, guest, session?.access_token]),
+      void refreshProfileImages().catch(() => {
+        /* A failed read keeps the last confirmed account artwork. */
+      });
+    }, [refreshProfileImages, guest, session?.access_token]),
   );
   function savedProfile(images: ProfileImages) {
     if (!session) return;
-    profileLoad.current++;
-    setProfileOverride({ token: session.access_token, profile: images });
+    recordProfileImages(images, session.access_token);
     setPreviewBanner(null);
-    void refresh();
   }
   const insets = useSafeAreaInsets();
   const source = saved
@@ -481,6 +460,7 @@ export function ProfileScreen({
                   }
                   videoActive={activeVideo === item.id}
                   autoplay={activity.autoplay}
+                  allowVideoStill={activity.mountVideo}
                 />
                 <View
                   style={{

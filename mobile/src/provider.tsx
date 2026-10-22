@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import {
   ApiError,
   clearSession,
@@ -22,6 +22,7 @@ import {
   type Item,
   type FeedInput,
   type Preferences,
+  type ProfileImages,
   type Session,
   type User,
 } from "./lib/types";
@@ -29,6 +30,7 @@ import demo from "./lib/demo.json";
 import { disconnectWallet } from "./lib/wallet-connector";
 import { emptyNetworkHub, type NetworkHub } from "./lib/network-hub";
 import { applyConfirmedEditorItem } from "./lib/editor-save";
+import { createProfileImageSync } from "./lib/profile-sync";
 import { useTheme } from "./theme";
 
 const empty: Bootstrap = {
@@ -128,6 +130,8 @@ type State = {
   forgetSession: () => Promise<void>;
   refresh: (options?: { throwOnError?: boolean }) => Promise<void>;
   recordSavedItem: (item: Item, ownerToken: string) => void;
+  recordProfileImages: (profile: ProfileImages, ownerToken: string) => void;
+  refreshProfileImages: () => Promise<void>;
   api: <T>(path: string, data?: unknown) => Promise<T>;
   preferences: (patch: Partial<Preferences>) => Promise<void>;
   toggle: (key: "liked" | "saved", id: string) => Promise<void>;
@@ -158,15 +162,30 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
   const dataRef = useRef(data);
   const refreshEpoch = useRef(0);
   const activeToken = useRef<string | null>(null);
+  const profileOwnerToken = useRef<string | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const putData = useCallback((value: Bootstrap) => {
     dataRef.current = value;
     setData(value);
   }, []);
+  const profileSync = useRef<ReturnType<typeof createProfileImageSync> | null>(
+    null,
+  );
+  if (!profileSync.current)
+    profileSync.current = createProfileImageSync({
+      currentToken: () => activeToken.current,
+      read: (token) => request<ProfileImages>("/api/creator/profile", token),
+      apply: (profile) => {
+        profileOwnerToken.current = activeToken.current;
+        putData({ ...dataRef.current, profile });
+      },
+    });
   const forgetSession = useCallback(async () => {
     clearDraftMedia();
     void disconnectWallet().catch(() => {});
     activeToken.current = null;
+    profileOwnerToken.current = null;
+    profileSync.current?.invalidate();
     queue.current = Promise.resolve();
     try {
       await clearSession();
@@ -210,6 +229,8 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
           request<Bootstrap>("/api/creator/bootstrap", saved.access_token),
         ]);
         activeToken.current = saved.access_token;
+        profileOwnerToken.current = saved.access_token;
+        profileSync.current?.invalidate();
         setSession({ ...saved, user });
         putData(bootstrap);
       }
@@ -251,6 +272,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     async (options?: { throwOnError?: boolean }) => {
       if (!session) return;
       const epoch = ++refreshEpoch.current;
+      const profileRead = profileSync.current!.beginBootstrap();
       setRefreshing(true);
       setError("");
       try {
@@ -258,8 +280,20 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
         if (
           epoch === refreshEpoch.current &&
           activeToken.current === session.access_token
-        )
-          putData(bootstrap);
+        ) {
+          // Keep newer profile images without dropping unrelated refreshed data.
+          const profileIsCurrent =
+            profileSync.current!.acceptBootstrap(
+              profileRead,
+              session.access_token,
+            ) || profileOwnerToken.current !== session.access_token;
+          profileOwnerToken.current = session.access_token;
+          putData(
+            profileIsCurrent
+              ? bootstrap
+              : { ...bootstrap, profile: dataRef.current.profile },
+          );
+        }
       } catch (e) {
         if (
           epoch === refreshEpoch.current &&
@@ -273,6 +307,60 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     },
     [session, api, putData],
   );
+  const recordProfileImages = useCallback(
+    (profile: ProfileImages, ownerToken: string) => {
+      if (!session || guest || session.access_token !== ownerToken) return;
+      profileSync.current?.record(profile, ownerToken);
+    },
+    [session, guest],
+  );
+  const refreshProfileImages = useCallback(async () => {
+    if (!session || guest || activeToken.current !== session.access_token)
+      return;
+    try {
+      await profileSync.current?.refresh(session.access_token);
+    } catch (cause) {
+      if (
+        cause instanceof ApiError &&
+        cause.status === 401 &&
+        activeToken.current === session.access_token
+      )
+        await forgetSession();
+      throw cause;
+    }
+  }, [session, guest, forgetSession]);
+  useEffect(() => {
+    if (!session || guest) return;
+    let foreground = AppState.currentState === "active",
+      pending = false;
+    const sync = () => {
+      if (pending) return;
+      pending = true;
+      void refreshProfileImages()
+        .catch(() => {
+          // A failed read retains the last confirmed artwork; never replay a save.
+        })
+        .finally(() => {
+          pending = false;
+        });
+    };
+    const listener = AppState.addEventListener("change", (next) => {
+      const active = next === "active";
+      if (active && !foreground) sync();
+      foreground = active;
+    });
+    if (Platform.OS !== "web") return () => listener.remove();
+    const visible = () => {
+      if (document.visibilityState === "visible") sync();
+    };
+    window.addEventListener("focus", visible);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      listener.remove();
+      window.removeEventListener("focus", visible);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [session, guest, refreshProfileImages]);
   const recordSavedItem = useCallback(
     (item: Item, ownerToken: string) => {
       if (
@@ -318,6 +406,11 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     await writeSession(result);
     const user = await request<User>("/api/me", result.access_token);
     activeToken.current = result.access_token;
+    profileOwnerToken.current = null;
+    // Never present a prior account's private artwork during login hydration.
+    putData(empty);
+    profileSync.current?.invalidate();
+    const profileRead = profileSync.current!.beginBootstrap();
     clearDraftMedia();
     setSession({ ...result, user });
     setGuest(false);
@@ -327,10 +420,27 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
         "/api/creator/bootstrap",
         result.access_token,
       );
-      if (activeToken.current === result.access_token) putData(bootstrap);
+      if (activeToken.current === result.access_token) {
+        const profileIsCurrent =
+          profileSync.current!.acceptBootstrap(
+            profileRead,
+            result.access_token,
+          ) || profileOwnerToken.current !== result.access_token;
+        profileOwnerToken.current = result.access_token;
+        putData(
+          profileIsCurrent
+            ? bootstrap
+            : { ...bootstrap, profile: dataRef.current.profile },
+        );
+      }
     } catch (e) {
       if (activeToken.current === result.access_token) {
-        putData(empty);
+        putData(
+          !profileSync.current!.hasNewerThan(profileRead) ||
+            profileOwnerToken.current !== result.access_token
+            ? empty
+            : { ...empty, profile: dataRef.current.profile },
+        );
         setError((e as Error).message);
       }
     }
@@ -426,6 +536,8 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
         forgetSession,
         refresh,
         recordSavedItem,
+        recordProfileImages,
+        refreshProfileImages,
         preferences,
         toggle,
         savePreviewDraft,

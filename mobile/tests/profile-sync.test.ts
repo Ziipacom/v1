@@ -1,0 +1,410 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import ts from "typescript";
+import { createProfileImageSync } from "../src/lib/profile-sync.ts";
+import type { ProfileImages } from "../src/lib/types.ts";
+
+const images = (id: string): ProfileImages => ({
+  avatar_media_id: id,
+  avatar_url: `/api/creator/profile-images/${id}`,
+  cover_media_id: null,
+  cover_sample: "/media/ocean.jpg",
+  cover_url: "/media/ocean.jpg",
+});
+const tick = async () => {
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+};
+
+test("profile read failure retains confirmed images; late reads cannot replace a write receipt or a changed account", async () => {
+  let token: string | null = "owner",
+    latest = images("first");
+  const pending: ((profile: ProfileImages) => void)[] = [];
+  const sync = createProfileImageSync({
+    currentToken: () => token,
+    read: () => new Promise((resolve) => pending.push(resolve)),
+    apply: (value) => {
+      latest = value;
+    },
+  });
+  const read = sync.refresh("owner");
+  sync.record(images("written"), "owner");
+  pending[0](images("old"));
+  assert.equal(await read, false);
+  assert.equal(latest.avatar_media_id, "written");
+  const other = sync.refresh("owner");
+  token = "another";
+  pending[1](images("old-owner"));
+  assert.equal(await other, false);
+  assert.equal(sync.record(images("forbidden"), "owner"), false);
+  assert.equal(latest.avatar_media_id, "written");
+  sync.invalidate();
+  token = "owner";
+  assert.equal(latest.avatar_media_id, "written");
+});
+
+/** Execute the actual provider with an in-memory account server and Activity events. */
+function providerUI() {
+  const code = ts.transpileModule(
+    readFileSync(new URL("../src/provider.tsx", import.meta.url), "utf8"),
+    {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.CommonJS,
+        jsx: ts.JsxEmit.ReactJSX,
+      },
+    },
+  ).outputText;
+  const exported: Record<string, any> = {},
+    hooks: any[] = [],
+    effects: (() => void)[] = [];
+  const cleanups = new Set<{ cleanup?: () => void }>();
+  const listeners = new Set<(state: string) => void>();
+  let cursor = 0;
+  let serverProfile = images("initial"),
+    background = "active";
+  const session = {
+    access_token: "owner",
+    expires_at: "2030-01-01T00:00:00Z",
+    user: { id: 1, name: "Owner" },
+  };
+  const calls: { path: string; body?: unknown }[] = [];
+  let bootstrapRead: (() => Promise<any>) | null = null;
+  let profileRead: (() => Promise<ProfileImages>) | null = null;
+  const bootstrap = () => ({
+    items: [],
+    drafts: [],
+    preferences: { saved: [] },
+    feeds: [],
+    community_feeds: [],
+    connections: [],
+    distributions: [],
+    profile: serverProfile,
+  });
+  class ApiError extends Error {
+    status: number;
+    constructor(status: number) {
+      super("API error");
+      this.status = status;
+    }
+  }
+  const react = {
+    createContext: () => ({ Provider: "Provider" }),
+    useContext() {},
+    useState(initial: any) {
+      const slot = cursor++;
+      if (!(slot in hooks))
+        hooks[slot] = typeof initial === "function" ? initial() : initial;
+      return [
+        hooks[slot],
+        (value: any) => {
+          hooks[slot] =
+            typeof value === "function" ? value(hooks[slot]) : value;
+        },
+      ];
+    },
+    useRef(current: any) {
+      const slot = cursor++;
+      return (hooks[slot] ||= { current });
+    },
+    useCallback(fn: any, deps: any[]) {
+      const slot = cursor++;
+      if (
+        !hooks[slot] ||
+        deps.some((value, n) => value !== hooks[slot].deps[n])
+      )
+        hooks[slot] = { deps, fn };
+      return hooks[slot].fn;
+    },
+    useEffect(fn: any, deps: any[]) {
+      const slot = cursor++,
+        previous = hooks[slot];
+      if (!previous || deps.some((value, n) => value !== previous.deps[n])) {
+        const next = { deps, cleanup: undefined as any };
+        hooks[slot] = next;
+        cleanups.add(next);
+        effects.push(() => {
+          previous?.cleanup?.();
+          if (previous) previous.cleanup = undefined;
+          next.cleanup = fn();
+        });
+      }
+    },
+  };
+  new Function("exports", "require", code)(exported, (name: string) => {
+    if (name === "react") return react;
+    if (name === "react/jsx-runtime")
+      return { jsx: (type: any, props: any) => ({ type, props }) };
+    if (name === "react-native")
+      return {
+        Platform: { OS: "android" },
+        AppState: {
+          get currentState() {
+            return background;
+          },
+          addEventListener(_name: string, fn: (state: string) => void) {
+            listeners.add(fn);
+            return {
+              remove() {
+                listeners.delete(fn);
+              },
+            };
+          },
+        },
+      };
+    if (name === "./lib/api")
+      return {
+        ApiError,
+        readSession: async () => session,
+        clearSession: async () => {},
+        writeSession: async () => {},
+        request: async (path: string, _token: string, body?: unknown) => {
+          calls.push({ path, body });
+          if (path === "/api/me") return session.user;
+          if (path === "/api/creator/bootstrap")
+            return bootstrapRead ? bootstrapRead() : bootstrap();
+          if (path === "/api/creator/profile")
+            return profileRead ? profileRead() : serverProfile;
+          if (path === "/api/mobile/auth/login") return session;
+          throw new Error(`Unexpected account request ${path}`);
+        },
+      };
+    if (name === "./lib/config")
+      return {
+        demoEnabled: false,
+        portalMode: false,
+        policyVersion: "fixture",
+      };
+    if (name === "./lib/local-media") return { clearDraftMedia() {} };
+    if (name === "./lib/types") return { emptyPreferences: { saved: [] } };
+    if (name === "./lib/demo.json") return { default: { items: [] } };
+    if (name === "./lib/wallet-connector")
+      return { disconnectWallet: async () => {} };
+    if (name === "./lib/network-hub")
+      return { emptyNetworkHub: () => ({ providers: [] }) };
+    if (name === "./lib/editor-save")
+      return { applyConfirmedEditorItem: (state: any) => state };
+    if (name === "./lib/profile-sync") return { createProfileImageSync };
+    if (name === "./theme") return { useTheme() {} };
+    throw new Error(`Unexpected provider dependency ${name}`);
+  });
+  return {
+    calls,
+    bootstrap,
+    session,
+    render() {
+      cursor = 0;
+      return exported.ZiipaProvider({ children: null }).props.value;
+    },
+    flush() {
+      while (effects.length) effects.shift()!();
+    },
+    unmount() {
+      cleanups.forEach((value) => {
+        value.cleanup?.();
+        value.cleanup = undefined;
+      });
+    },
+    server(profile: ProfileImages) {
+      serverProfile = profile;
+    },
+    deferBootstrap(read: (() => Promise<any>) | null) {
+      bootstrapRead = read;
+    },
+    deferProfile(read: (() => Promise<ProfileImages>) | null) {
+      profileRead = read;
+    },
+    activity(state: string) {
+      background = state;
+      listeners.forEach((fn) => fn(state));
+    },
+  };
+}
+
+async function restored(ui: ReturnType<typeof providerUI>) {
+  ui.render();
+  ui.flush();
+  await tick();
+  const value = ui.render();
+  ui.flush();
+  return value;
+}
+
+test("cold app/update hydration and background resume use saved server artwork from another device", async () => {
+  const ui = providerUI();
+  try {
+    ui.server(images("changed-on-web"));
+    assert.equal(
+      (await restored(ui)).data.profile.avatar_media_id,
+      "changed-on-web",
+    );
+    ui.server(images("later-web-change"));
+    ui.activity("background");
+    ui.activity("active");
+    await tick();
+    assert.equal(ui.render().data.profile.avatar_media_id, "later-web-change");
+    assert.equal(
+      ui.calls.filter((call) => call.path === "/api/creator/profile").length,
+      1,
+    );
+    assert.ok(ui.calls.every((call) => call.body === undefined));
+  } finally {
+    ui.unmount();
+  }
+});
+
+test("profile receipts update shared headers immediately while stale bootstrap still refreshes other fields", async () => {
+  const ui = providerUI();
+  try {
+    const value = await restored(ui);
+    let finish!: (value: any) => void;
+    ui.deferBootstrap(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const refresh = value.refresh();
+    value.recordProfileImages(images("confirmed-save"), "owner");
+    assert.equal(ui.render().data.profile.avatar_media_id, "confirmed-save");
+    assert.equal(
+      ui.render().refreshing,
+      true,
+      "lightweight image updates must not end unrelated refresh UI",
+    );
+    finish({
+      ...ui.bootstrap(),
+      profile: images("old-snapshot"),
+      items: [{ id: "new-creation" }],
+      preferences: { saved: ["new-creation"] },
+    });
+    await refresh;
+    const next = ui.render();
+    assert.equal(next.data.profile.avatar_media_id, "confirmed-save");
+    assert.equal(next.data.items[0].id, "new-creation");
+    assert.deepEqual(next.data.preferences.saved, ["new-creation"]);
+    assert.equal(next.refreshing, false);
+  } finally {
+    ui.unmount();
+  }
+});
+
+test("late login bootstrap success or failure cannot erase a newer same-account profile receipt", async () => {
+  for (const fails of [false, true]) {
+    const ui = providerUI();
+    try {
+      const value = await restored(ui);
+      let finish!: (value: any) => void, reject!: (cause: Error) => void;
+      ui.deferBootstrap(
+        () =>
+          new Promise((resolve, fail) => {
+            finish = resolve;
+            reject = fail;
+          }),
+      );
+      const login = value.authenticate(
+        "owner@example.test",
+        "fixture-not-a-password",
+      );
+      await tick();
+      ui.render().recordProfileImages(images("new-during-login"), "owner");
+      if (fails) reject(new Error("bootstrap unavailable"));
+      else
+        finish({
+          ...ui.bootstrap(),
+          items: [{ id: "fresh" }],
+          profile: images("stale-login-snapshot"),
+        });
+      await login;
+      assert.equal(
+        ui.render().data.profile.avatar_media_id,
+        "new-during-login",
+      );
+      if (!fails) assert.equal(ui.render().data.items[0].id, "fresh");
+    } finally {
+      ui.unmount();
+    }
+  }
+});
+
+test("both read start orders and both completion orders retain the latest requested profile while refreshing other data", async () => {
+  for (const profileStartsLater of [false, true])
+    for (const profileFinishesFirst of [false, true]) {
+      const ui = providerUI();
+      try {
+        const value = await restored(ui);
+        let finishBootstrap!: (value: any) => void,
+          finishProfile!: (value: ProfileImages) => void;
+        ui.deferBootstrap(
+          () =>
+            new Promise((resolve) => {
+              finishBootstrap = resolve;
+            }),
+        );
+        ui.deferProfile(
+          () =>
+            new Promise((resolve) => {
+              finishProfile = resolve;
+            }),
+        );
+        let bootstrap: Promise<void>, profile: Promise<void>;
+        if (profileStartsLater) {
+          bootstrap = value.refresh();
+          profile = value.refreshProfileImages();
+        } else {
+          profile = value.refreshProfileImages();
+          bootstrap = value.refresh();
+        }
+        if (profileFinishesFirst) {
+          finishProfile(images("other-device"));
+          await profile;
+        }
+        finishBootstrap({
+          ...ui.bootstrap(),
+          profile: images("bootstrap"),
+          items: [{ id: "fresh-content" }],
+        });
+        await bootstrap;
+        if (!profileFinishesFirst) {
+          finishProfile(images("other-device"));
+          await profile;
+        }
+        const current = ui.render().data;
+        assert.equal(
+          current.profile.avatar_media_id,
+          profileStartsLater ? "other-device" : "bootstrap",
+        );
+        assert.equal(current.items[0].id, "fresh-content");
+      } finally {
+        ui.unmount();
+      }
+    }
+});
+
+test("logout blocks late reads and receipts and a transient refresh error retains confirmed artwork", async () => {
+  const ui = providerUI();
+  try {
+    const value = await restored(ui);
+    ui.deferProfile(async () => {
+      throw new Error("offline");
+    });
+    await assert.rejects(value.refreshProfileImages());
+    assert.equal(ui.render().data.profile.avatar_media_id, "initial");
+    let complete!: (profile: ProfileImages) => void;
+    ui.deferProfile(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const pending = value.refreshProfileImages();
+    await value.forgetSession();
+    complete(images("late-owner"));
+    await pending;
+    value.recordProfileImages(images("late-receipt"), "owner");
+    assert.equal(ui.render().data.profile, undefined);
+    assert.equal(ui.render().session, null);
+  } finally {
+    ui.unmount();
+  }
+});

@@ -400,6 +400,8 @@ from assistant_api import router as assistant_router
 app.include_router(assistant_router)
 from music_api import router as music_router
 app.include_router(music_router)
+from narration_api import router as narration_router
+app.include_router(narration_router)
 from caption_api import router as caption_router
 app.include_router(caption_router)
 from agent_api import router as agent_router

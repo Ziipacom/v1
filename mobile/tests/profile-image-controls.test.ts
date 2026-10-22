@@ -46,6 +46,7 @@ function controls(
   const saved: unknown[] = [];
   const previews: string[] = [];
   const updates: { index: number; value: unknown }[] = [];
+  let stored = { ...profile };
   let stateIndex = 0;
   const exported: Record<string, any> = {};
   new Function("exports", "require", compiled)(exported, (name: string) => {
@@ -126,12 +127,20 @@ function controls(
           session: options.guest ? null : { access_token: "fixture-token" },
           guest: options.guest ?? false,
           api: async (path: string, body?: unknown) => {
-            calls.push(path === "/api/creator/config" ? "config" : "save");
+            calls.push(
+              path === "/api/creator/config"
+                ? "config"
+                : body === undefined
+                  ? "read"
+                  : "save",
+            );
+            if (path === "/api/creator/profile" && body)
+              stored = { ...stored, ...(body as any) };
             return options.api
               ? options.api(path, body)
               : path === "/api/creator/config"
                 ? advertised
-                : profile;
+                : stored;
           },
         }),
       };
@@ -193,13 +202,25 @@ test("a verified upload opens the picker directly, saves the account image and c
     "config",
     "upload",
     "save",
+    "read",
     "cleanup",
   ]);
   assert.deepEqual(ui.saved, [profile]);
 });
 
-test("gallery remains a clearly labeled local preview when account persistence is unavailable", async () => {
+test("signed-in gallery choices cannot silently become local previews when persistence is unverified", async () => {
   const ui = controls({ kind: "cover", status: "unsupported" });
+  const choice = ui.nodes.find(
+    (node) => node.props.accessibilityLabel === "Use studio gallery cover",
+  )!;
+  assert.equal(choice.props.disabled, true);
+  choice.props.onPress();
+  assert.deepEqual(ui.previews, []);
+  assert.deepEqual(ui.calls, []);
+});
+
+test("guest gallery choices remain clearly labeled previews and never reach a server", () => {
+  const ui = controls({ kind: "cover", guest: true });
   ui.nodes
     .find(
       (node) => node.props.accessibilityLabel === "Use studio gallery cover",
@@ -217,12 +238,17 @@ test("gallery remains a clearly labeled local preview when account persistence i
 
 test("a supported gallery selection persists a safe sample without uploading a file", async () => {
   let patch: unknown;
+  const savedCover = {
+    ...profile,
+    cover_sample: "/media/studio.jpg",
+    cover_url: "/media/studio.jpg",
+  };
   const ui = controls({
     kind: "cover",
     api: async (path, body) => {
       if (path === "/api/creator/config") return advertised;
-      patch = body;
-      return profile;
+      if (body) patch = body;
+      return savedCover;
     },
   });
   ui.nodes
@@ -231,8 +257,18 @@ test("a supported gallery selection persists a safe sample without uploading a f
     )!
     .props.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(ui.calls, ["config", "save"]);
+  assert.deepEqual(ui.calls, ["config", "save", "read"]);
   assert.deepEqual(patch, { cover_sample: "/media/studio.jpg" });
+  assert.deepEqual(ui.saved, [savedCover]);
+});
+
+test("refresh saved images reads the account once without opening a picker, uploading or saving", async () => {
+  const ui = controls();
+  ui.nodes
+    .find((node) => node.props.title === "Refresh saved images")!
+    .props.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(ui.calls, ["read"]);
   assert.deepEqual(ui.saved, [profile]);
 });
 
