@@ -4,12 +4,16 @@ import type { Item } from "./types";
 export const galleryStillSize = 360;
 export const galleryStillTimeoutMs = 10000;
 
-/** Request at most three frames inside the first retained clip, not its intro. */
+/** Prefer nearby retained frames before paying for a distant range/decode seek. */
 export function galleryStillTimes(item: Item, duration: number) {
   const { start, end } = profilePreviewRange(item, duration);
   const span = end - start;
   return [
-    ...new Set([0.35, 0.65, 0.85].map((fraction) => start + span * fraction)),
+    ...new Set(
+      [Math.min(span * 0.35, 1), Math.min(span * 0.65, 3), span * 0.85].map(
+        (offset) => start + offset,
+      ),
+    ),
   ].filter((time) => Number.isFinite(time) && time >= start && time < end);
 }
 

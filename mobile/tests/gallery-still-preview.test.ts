@@ -260,7 +260,7 @@ test("Native side video generates a bounded retained image, never paints or play
   assert.equal(ui.counts().instances, 1);
   assert.equal(ui.counts().plays, 0);
   assert.deepEqual(ui.samples, [
-    { times: [6.05], size: { maxWidth: 360, maxHeight: 360 } },
+    { times: [6], size: { maxWidth: 360, maxHeight: 360 } },
   ]);
   assert.equal(ui.player.muted, true);
   assert.equal(ui.player.volume, 0);
@@ -330,7 +330,7 @@ test("Native thumbnail candidates stay sequential and reject a returned frame ou
   await Promise.resolve();
   assert.deepEqual(
     ui.samples.map((sample) => sample.times),
-    [[6.05], [6.95]],
+    [[6], [6.95]],
   );
   assert.equal(discarded, 1);
   assert.equal(
@@ -455,7 +455,7 @@ test("Each native attempt stops after three unusable candidates before its bound
     for (let i = 0; i < 4; i++) await Promise.resolve();
     assert.deepEqual(
       ui.samples.map((sample) => sample.times),
-      [[6.05], [6.95], [7.55]],
+      [[6], [6.95], [7.55]],
     );
     assert.ok(
       ui.render().some((node) => node.props.children === "Retrying still…"),
@@ -771,7 +771,13 @@ function webDecoder(pictures: boolean[], brokenCanvas = false) {
           draws++;
         },
         getImageData() {
-          if (brokenCanvas) throw new Error("Tainted canvas");
+          if (brokenCanvas)
+            throw Object.assign(
+              new Error("Never expose signed-source details"),
+              {
+                name: "SecurityError",
+              },
+            );
           const light = pictures[draws - 1] ? 80 : 0;
           return { data: new Uint8ClampedArray([light, light, light, 255]) };
         },
@@ -827,7 +833,7 @@ test("Web video uses at most three paused interior samples and paints only a bou
     );
     web.decoder.onloadedmetadata();
     web.decoder.onseeked();
-    assert.deepEqual(web.seeks, [6.05, 6.95]);
+    assert.deepEqual(web.seeks, [6, 6.95]);
     web.decoder.onseeked();
     const image = ui.render().find((node) => node.type === "Image")!;
     assert.equal(
@@ -871,7 +877,7 @@ test("Metadata without decoded pixels still requests a retained frame before geo
     assert.equal(web.counts().loads, 1);
     assert.deepEqual(
       web.seeks,
-      [6.05],
+      [6],
       "metadata alone must initiate a retained seek, not wait for pixels it has not requested",
     );
     web.decoder.onseeked();
@@ -890,7 +896,7 @@ test("Metadata without decoded pixels still requests a retained frame before geo
     web.decoder.videoHeight = 1080;
     web.decoder.readyState = 4;
     web.decoder.onloadeddata();
-    assert.deepEqual(web.seeks, [6.05]);
+    assert.deepEqual(web.seeks, [6]);
     assert.equal(web.counts().draws, 1);
     assert.ok(ui.render().some((node) => node.type === "Image"));
     assert.equal(web.counts().plays, 0);
@@ -958,6 +964,13 @@ test("Three dark web samples and inaccessible canvas pixels produce honest nonvi
       assert.equal(web.counts().plays, 0);
       assert.equal(web.seeks.length, brokenCanvas ? 1 : 3);
       assert.ok(web.seeks.every((time) => time > 5 && time < 8));
+      if (brokenCanvas)
+        assert.ok(
+          nodes.some(
+            (node) =>
+              node.props.testID === "gallery-still-failure-canvas-security",
+          ),
+        );
     } finally {
       ui.unmount();
       web.restore();
@@ -992,12 +1005,98 @@ test("Web deadline and unmount detach handlers without accepting late work or pl
     assert.ok(
       ui.render().some((node) => node.props.children === "Retrying still…"),
     );
+    assert.ok(
+      ui
+        .render()
+        .some(
+          (node) =>
+            node.props.testID === "gallery-still-failure-metadata-timeout",
+        ),
+    );
     assert.equal(web.counts().plays, 0);
   } finally {
     ui.unmount();
     web.restore();
     globalThis.setTimeout = timeout;
     globalThis.clearTimeout = clear;
+  }
+});
+
+test("a cold long source returns nearby retained pixels before a distant seek would exhaust the deadline", () => {
+  const timers = thumbnailTimers();
+  const web = webDecoder([true]);
+  const ui = stillUI({ platform: "web", portal: true });
+  const clip = item({ trim_start: 0, trim_end: null });
+  const seek = Object.getOwnPropertyDescriptor(
+    web.decoder,
+    "currentTime",
+  )!.set!;
+  Object.defineProperty(web.decoder, "currentTime", {
+    set(time: number) {
+      seek.call(web.decoder, time);
+      // The cold source has its short prefix available; a distant range takes
+      // longer than the unchanged whole-job budget. This is a transport model,
+      // not a claim that an actual production R2 request has this latency.
+      setTimeout(
+        () => {
+          web.decoder.readyState = 4;
+          web.decoder.onseeked?.();
+        },
+        time <= 3 ? 100 : galleryPreview.galleryStillTimeoutMs + 1,
+      );
+    },
+  });
+  try {
+    web.decoder.duration = 240;
+    web.decoder.readyState = 1;
+    ui.render({ item: clip });
+    ui.flush();
+    web.decoder.onloadedmetadata();
+    assert.deepEqual(web.seeks, [1]);
+    assert.equal(web.counts().draws, 0);
+    timers.run(100);
+    assert.ok(ui.render({ item: clip }).some((node) => node.type === "Image"));
+    assert.equal(web.seeks.length, 1);
+    assert.equal(timers.count(), 0, "capture clears the original10s deadline");
+    assert.equal(web.counts().plays, 0);
+  } finally {
+    ui.unmount();
+    web.restore();
+    timers.restore();
+  }
+});
+
+test("web media failure diagnostics contain only the enumerated phase and media code", () => {
+  for (const [code, label] of [
+    [1, "aborted"],
+    [2, "network"],
+    [3, "decode"],
+    [4, "unsupported"],
+    [99, "unavailable"],
+  ] as const) {
+    const web = webDecoder([true]);
+    const ui = stillUI({ platform: "web", portal: true });
+    try {
+      ui.render();
+      ui.flush();
+      web.decoder.onloadedmetadata();
+      web.decoder.error = {
+        code,
+        message: "secret-source?signature=never-copy",
+      };
+      web.decoder.onerror();
+      const nodes = ui.render();
+      assert.ok(
+        nodes.some(
+          (node) => node.props.testID === `gallery-still-failure-seek-${label}`,
+        ),
+      );
+      assert.ok(!JSON.stringify(nodes).includes("secret-source"));
+      assert.equal(web.counts().plays, 0);
+    } finally {
+      ui.unmount();
+      web.restore();
+    }
   }
 });
 
@@ -1061,6 +1160,40 @@ function thumbnailTimers() {
     },
   };
 }
+
+test("deadline diagnostics distinguish a pending seek from pixels that never become ready", () => {
+  for (const waitForPixels of [false, true]) {
+    const timers = thumbnailTimers();
+    const web = webDecoder([true]);
+    const ui = stillUI({ platform: "web", portal: true });
+    try {
+      ui.render();
+      ui.flush();
+      web.decoder.onloadedmetadata();
+      if (waitForPixels) {
+        web.decoder.readyState = 1;
+        web.decoder.onseeked();
+      }
+      timers.run(10000);
+      assert.ok(
+        ui
+          .render()
+          .some(
+            (node) =>
+              node.props.testID ===
+              `gallery-still-failure-${waitForPixels ? "frame" : "seek"}-timeout`,
+          ),
+      );
+      assert.equal(web.counts().draws, 0);
+      assert.equal(web.counts().plays, 0);
+      assert.equal(web.decoder.onseeked, null);
+    } finally {
+      ui.unmount();
+      web.restore();
+      timers.restore();
+    }
+  }
+});
 
 test("A transient web decoder error retries once with a fresh job and rejects callbacks from its first attempt", () => {
   const timers = thumbnailTimers();

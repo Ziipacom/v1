@@ -11,11 +11,11 @@ import type { Item } from "../src/lib/types.ts";
 const item = (changes: Partial<Item> = {}) =>
   ({ trim_start: 0, trim_end: null, ...changes }) as Item;
 
-test("representative frame requests are bounded to the first retained clip and skip near-start black intros", () => {
-  assert.deepEqual(galleryStillTimes(item(), 60), [21, 39, 51]);
+test("representative frames try nearby retained pixels before a distant black-intro fallback", () => {
+  assert.deepEqual(galleryStillTimes(item(), 60), [1, 3, 51]);
   assert.deepEqual(
     galleryStillTimes(item({ trim_start: 10, trim_end: 20 }), 120),
-    [13.5, 16.5, 18.5],
+    [11, 13, 18.5],
   );
   assert.deepEqual(
     galleryStillTimes(
@@ -30,7 +30,7 @@ test("representative frame requests are bounded to the first retained clip and s
       }),
       120,
     ),
-    [43.5, 46.5, 48.5],
+    [41, 43, 48.5],
   );
   for (const span of [0.0001, 0.1, 1, 1800]) {
     const times = galleryStillTimes(
@@ -46,6 +46,17 @@ test("representative frame requests are bounded to the first retained clip and s
   assert.throws(() => galleryStillTimes(item(), NaN));
   assert.equal(galleryStillSize, 360);
   assert.equal(galleryStillTimeoutMs, 10000);
+});
+
+test("long source samples start within the first retained second, never in discarded or later clips", () => {
+  for (const duration of [60, 240, 7200]) {
+    const start = 20;
+    const times = galleryStillTimes(item({ trim_start: start }), duration);
+    assert.ok(times[0] > start && times[0] <= start + 1);
+    assert.ok(times[1] > times[0] && times[1] <= start + 3);
+    assert.ok(times[2] > times[1] && times[2] < duration);
+    assert.equal(times.length, 3);
+  }
 });
 
 test("black-frame preference examines actual pixels and accepts dark but visible imagery without altering it", () => {

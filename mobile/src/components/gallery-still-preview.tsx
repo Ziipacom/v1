@@ -33,6 +33,26 @@ import { useZiipa } from "../provider";
 import { font } from "../theme";
 
 type StillSource = NonNullable<ImageProps["source"]>;
+type ThumbnailFailure = {
+  phase:
+    | "source"
+    | "metadata"
+    | "range"
+    | "seek"
+    | "frame"
+    | "canvas"
+    | "image"
+    | "native";
+  code:
+    | "timeout"
+    | "network"
+    | "aborted"
+    | "decode"
+    | "unsupported"
+    | "security"
+    | "invalid"
+    | "unavailable";
+};
 
 /** Neighboring video is decoded offscreen into an image, never a painted player. */
 export function GalleryStillPreview({
@@ -62,7 +82,10 @@ export function GalleryStillPreview({
       cacheKey,
     ],
   );
-  const [failure, setFailure] = useState<object | null>(null);
+  const [failure, setFailure] = useState<{
+    identity: object;
+    detail: ThumbnailFailure;
+  } | null>(null);
   const [posterFailure, setPosterFailure] = useState<object | null>(null);
   const [posterReady, setPosterReady] = useState<object | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -120,7 +143,11 @@ export function GalleryStillPreview({
   );
   const posterFailed = posterFailure === identity;
   const failed =
-    (failure === identity && !cachedUri) || (posterFailed && !video);
+    (failure?.identity === identity && !cachedUri) || (posterFailed && !video);
+  const failureDetail =
+    failure?.identity === identity
+      ? failure.detail
+      : { phase: "image", code: "unavailable" };
   const retryPending = failed && video && !!source && attempt === 0;
   useEffect(() => {
     if (!enabled || !transport || !retryPending) return;
@@ -211,13 +238,13 @@ export function GalleryStillPreview({
             }
             setFrame({ identity, source, dark, ownedThumbnail });
           }}
-          onError={() => {
+          onError={(detail = { phase: "native", code: "unavailable" }) => {
             if (
               currentJob.current.identity === identity &&
               currentJob.current.job === job &&
               currentJob.current.enabled
             )
-              setFailure(identity);
+              setFailure({ identity, detail });
           }}
         />
       )}
@@ -236,7 +263,10 @@ export function GalleryStillPreview({
             ) {
               if (Platform.OS === "web" && stillCacheLease)
                 webGalleryStillCache.delete(stillCacheLease, cacheKey);
-              setFailure(identity);
+              setFailure({
+                identity,
+                detail: { phase: "image", code: "unavailable" },
+              });
               setFrame(null);
             }
           }}
@@ -244,6 +274,13 @@ export function GalleryStillPreview({
       )}
       {!showPoster && !showVideo && !(enabled && frameSource && !failed) && (
         <View
+          // Enumerated phase/code only: never expose URLs, signed query strings,
+          // credentials or browser error messages through the diagnostics.
+          testID={
+            failed
+              ? `gallery-still-failure-${failureDetail.phase}-${failureDetail.code}`
+              : undefined
+          }
           style={[
             StyleSheet.absoluteFill,
             {
@@ -399,7 +436,7 @@ type ThumbnailProps = {
     dark?: boolean,
     ownedThumbnail?: VideoThumbnail,
   ) => void;
-  onError: () => void;
+  onError: (detail?: ThumbnailFailure) => void;
 };
 
 function VideoThumbnailJob(props: ThumbnailProps) {
@@ -545,6 +582,7 @@ function WebThumbnailJob(props: ThumbnailProps) {
       position = 0,
       prepared = false,
       samplePending = false;
+    let phase: ThumbnailFailure["phase"] = "metadata";
     let times: number[] = [];
     const current = () => live && latest.current.identity === props.identity;
     const decoder = document.createElement("video");
@@ -560,14 +598,17 @@ function WebThumbnailJob(props: ThumbnailProps) {
       decoder.removeAttribute("src");
       decoder.load();
     };
-    const fail = () => {
+    const fail = (detail: ThumbnailFailure) => {
       if (!current() || settled) return;
       settled = true;
       clearTimeout(deadline);
       stop();
-      latest.current.onError();
+      latest.current.onError(detail);
     };
-    const deadline = setTimeout(fail, galleryStillTimeoutMs);
+    const deadline = setTimeout(
+      () => fail({ phase, code: "timeout" }),
+      galleryStillTimeoutMs,
+    );
     decoder.muted = true;
     decoder.volume = 0;
     decoder.playsInline = true;
@@ -583,9 +624,10 @@ function WebThumbnailJob(props: ThumbnailProps) {
         // Request retained pixels even when metadata has not exposed geometry.
         // Waiting for dimensions before seeking can strand a metadata-only load.
         prepared = true;
+        phase = "seek";
         decoder.currentTime = times[0];
       } catch {
-        fail();
+        fail({ phase: prepared ? "seek" : "range", code: "invalid" });
       }
     };
     const capture = () => {
@@ -593,6 +635,7 @@ function WebThumbnailJob(props: ThumbnailProps) {
       if (decoder.readyState < 2 || !decoder.videoWidth || !decoder.videoHeight)
         return;
       try {
+        phase = "canvas";
         const scale = Math.min(
           1,
           galleryStillSize / Math.max(decoder.videoWidth, decoder.videoHeight),
@@ -614,6 +657,7 @@ function WebThumbnailJob(props: ThumbnailProps) {
           stop();
           latest.current.onReady(source);
         } else if (++position < times.length) {
+          phase = "seek";
           decoder.currentTime = times[position];
         } else {
           settled = true;
@@ -621,13 +665,20 @@ function WebThumbnailJob(props: ThumbnailProps) {
           stop();
           latest.current.onReady(null, true);
         }
-      } catch {
-        fail();
+      } catch (error) {
+        fail({
+          phase,
+          code:
+            error instanceof Error && error.name === "SecurityError"
+              ? "security"
+              : "unavailable",
+        });
       }
     };
     decoder.onloadedmetadata = prepare;
     decoder.onseeked = () => {
       if (!prepared) return;
+      phase = "frame";
       samplePending = true;
       capture();
     };
@@ -635,7 +686,22 @@ function WebThumbnailJob(props: ThumbnailProps) {
       prepare();
       capture();
     };
-    decoder.onerror = fail;
+    decoder.onerror = () => {
+      const code = decoder.error?.code;
+      fail({
+        phase,
+        code:
+          code === 1
+            ? "aborted"
+            : code === 2
+              ? "network"
+              : code === 3
+                ? "decode"
+                : code === 4
+                  ? "unsupported"
+                  : "unavailable",
+      });
+    };
     try {
       const source = props.source;
       const uri =
@@ -648,7 +714,7 @@ function WebThumbnailJob(props: ThumbnailProps) {
       decoder.src = uri;
       decoder.load();
     } catch {
-      fail();
+      fail({ phase: "source", code: "unavailable" });
     }
     return () => {
       live = false;
