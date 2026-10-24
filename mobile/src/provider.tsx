@@ -17,6 +17,10 @@ import {
 import { demoEnabled, policyVersion, portalMode } from "./lib/config";
 import { clearDraftMedia } from "./lib/local-media";
 import {
+  webGalleryStillCache,
+  type GalleryStillCacheLease,
+} from "./lib/gallery-still-cache";
+import {
   emptyPreferences,
   type Bootstrap,
   type Item,
@@ -114,6 +118,7 @@ function previewData(): Bootstrap {
 }
 type State = {
   session: Session | null;
+  stillCacheLease: GalleryStillCacheLease | null;
   guest: boolean;
   loading: boolean;
   error: string;
@@ -150,6 +155,10 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
   useTheme();
   const [session, setSession] = useState<Session | null>(null);
   const browserPreview = Platform.OS === "web" && demoEnabled && !portalMode;
+  const [stillCacheLease, setStillCacheLease] =
+    useState<GalleryStillCacheLease | null>(() =>
+      browserPreview ? webGalleryStillCache.activate("guest-preview") : null,
+    );
   const [guest, setGuest] = useState(browserPreview);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -181,6 +190,8 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
       },
     });
   const forgetSession = useCallback(async () => {
+    webGalleryStillCache.clear();
+    setStillCacheLease(null);
     clearDraftMedia();
     void disconnectWallet().catch(() => {});
     activeToken.current = null;
@@ -231,6 +242,11 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
         activeToken.current = saved.access_token;
         profileOwnerToken.current = saved.access_token;
         profileSync.current?.invalidate();
+        setStillCacheLease(
+          webGalleryStillCache.activate(
+            JSON.stringify([user.id, saved.access_token]),
+          ),
+        );
         setSession({ ...saved, user });
         putData(bootstrap);
       }
@@ -405,6 +421,11 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     if ("verification_required" in result) throw new Error(result.message);
     await writeSession(result);
     const user = await request<User>("/api/me", result.access_token);
+    setStillCacheLease(
+      webGalleryStillCache.activate(
+        JSON.stringify([user.id, result.access_token]),
+      ),
+    );
     activeToken.current = result.access_token;
     profileOwnerToken.current = null;
     // Never present a prior account's private artwork during login hydration.
@@ -450,6 +471,8 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     await forgetSession();
   }
   function enterGuest() {
+    webGalleryStillCache.clear();
+    setStillCacheLease(webGalleryStillCache.activate("guest-preview"));
     clearDraftMedia();
     setGuest(true);
     setError("");
@@ -523,6 +546,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     <Context.Provider
       value={{
         session,
+        stillCacheLease,
         guest,
         loading,
         error,

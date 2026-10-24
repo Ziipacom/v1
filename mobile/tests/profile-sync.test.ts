@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 import { createProfileImageSync } from "../src/lib/profile-sync.ts";
+import { createGalleryStillCache } from "../src/lib/gallery-still-cache.ts";
 import type { ProfileImages } from "../src/lib/types.ts";
 
 const images = (id: string): ProfileImages => ({
@@ -71,6 +72,8 @@ function providerUI() {
   const calls: { path: string; body?: unknown }[] = [];
   let bootstrapRead: (() => Promise<any>) | null = null;
   let profileRead: (() => Promise<ProfileImages>) | null = null;
+  let clearSessionWrite: (() => Promise<void>) | null = null;
+  const stillCache = createGalleryStillCache();
   const bootstrap = () => ({
     items: [],
     drafts: [],
@@ -156,7 +159,9 @@ function providerUI() {
       return {
         ApiError,
         readSession: async () => session,
-        clearSession: async () => {},
+        clearSession: async () => {
+          if (clearSessionWrite) await clearSessionWrite();
+        },
         writeSession: async () => {},
         request: async (path: string, _token: string, body?: unknown) => {
           calls.push({ path, body });
@@ -185,6 +190,8 @@ function providerUI() {
     if (name === "./lib/editor-save")
       return { applyConfirmedEditorItem: (state: any) => state };
     if (name === "./lib/profile-sync") return { createProfileImageSync };
+    if (name === "./lib/gallery-still-cache")
+      return { webGalleryStillCache: stillCache };
     if (name === "./theme") return { useTheme() {} };
     throw new Error(`Unexpected provider dependency ${name}`);
   });
@@ -192,6 +199,7 @@ function providerUI() {
     calls,
     bootstrap,
     session,
+    stillCache,
     render() {
       cursor = 0;
       return exported.ZiipaProvider({ children: null }).props.value;
@@ -214,6 +222,9 @@ function providerUI() {
     deferProfile(read: (() => Promise<ProfileImages>) | null) {
       profileRead = read;
     },
+    deferClearSession(write: (() => Promise<void>) | null) {
+      clearSessionWrite = write;
+    },
     activity(state: string) {
       background = state;
       listeners.forEach((fn) => fn(state));
@@ -229,6 +240,74 @@ async function restored(ui: ReturnType<typeof providerUI>) {
   ui.flush();
   return value;
 }
+
+test("restored and authenticated provider leases forget cached stills before session storage finishes and never revive after relogin", async () => {
+  const png =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aV6sAAAAASUVORK5CYII=";
+  for (const mode of ["restore", "authenticate"]) {
+    const ui = providerUI();
+    try {
+      let value = await restored(ui);
+      if (mode === "authenticate") {
+        await value.forgetSession();
+        await ui
+          .render()
+          .authenticate("owner@example.test", "fixture-not-a-password");
+        value = ui.render();
+      }
+      const beforeLogout = value.stillCacheLease;
+      assert.ok(beforeLogout, `${mode} exposes its provider-issued lease`);
+      assert.equal(ui.stillCache.isActive(beforeLogout), true);
+      assert.equal(ui.stillCache.put(beforeLogout, "private-clip", png), true);
+      assert.equal(ui.stillCache.get(beforeLogout, "private-clip"), png);
+
+      let finishStorage!: () => void;
+      let storagePending = true;
+      ui.deferClearSession(
+        () =>
+          new Promise<void>((resolve) => {
+            finishStorage = () => {
+              storagePending = false;
+              resolve();
+            };
+          }),
+      );
+      const forgetting = value.forgetSession();
+      assert.equal(storagePending, true);
+      assert.equal(ui.stillCache.isActive(beforeLogout), false);
+      assert.equal(ui.stillCache.get(beforeLogout, "private-clip"), null);
+      assert.equal(ui.stillCache.put(beforeLogout, "late-capture", png), false);
+      assert.equal(ui.render().stillCacheLease, null);
+      assert.notEqual(
+        ui.render().session,
+        null,
+        "storage completion is still pending; invalidation did not wait for session state cleanup",
+      );
+
+      finishStorage();
+      await forgetting;
+      ui.deferClearSession(null);
+      assert.equal(ui.render().session, null);
+      await ui
+        .render()
+        .authenticate("owner@example.test", "fixture-not-a-password");
+      const afterLogin = ui.render().stillCacheLease;
+      assert.ok(afterLogin);
+      assert.notEqual(afterLogin, beforeLogout);
+      assert.equal(ui.stillCache.isActive(afterLogin), true);
+      assert.equal(ui.stillCache.get(afterLogin, "private-clip"), null);
+      assert.equal(ui.stillCache.get(afterLogin, "late-capture"), null);
+      assert.equal(
+        ui.stillCache.put(beforeLogout, "late-after-relogin", png),
+        false,
+      );
+      assert.equal(ui.stillCache.put(afterLogin, "current-clip", png), true);
+      assert.equal(ui.stillCache.get(afterLogin, "current-clip"), png);
+    } finally {
+      ui.unmount();
+    }
+  }
+});
 
 test("cold app/update hydration and background resume use saved server artwork from another device", async () => {
   const ui = providerUI();

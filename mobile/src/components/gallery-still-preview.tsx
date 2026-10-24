@@ -25,6 +25,10 @@ import {
   galleryStillTimeoutMs,
 } from "../lib/gallery-preview";
 import type { Item } from "../lib/types";
+import {
+  galleryStillCacheKey,
+  webGalleryStillCache,
+} from "../lib/gallery-still-cache";
 import { useZiipa } from "../provider";
 import { font } from "../theme";
 
@@ -34,11 +38,16 @@ type StillSource = NonNullable<ImageProps["source"]>;
 export function GalleryStillPreview({
   item,
   enabled,
+  onStatus,
+  statusOwner,
 }: {
   item: Item;
   enabled: boolean;
+  onStatus?: (status: "loading" | "ready" | "unavailable") => void;
+  statusOwner?: object;
 }) {
-  const { session } = useZiipa();
+  const { session, stillCacheLease } = useZiipa();
+  const cacheKey = galleryStillCacheKey(item);
   const identity = useMemo(
     () => ({}),
     [
@@ -49,18 +58,23 @@ export function GalleryStillPreview({
       item.trim_end,
       item.timeline,
       session?.access_token,
+      stillCacheLease,
+      cacheKey,
     ],
   );
   const [failure, setFailure] = useState<object | null>(null);
   const [posterFailure, setPosterFailure] = useState<object | null>(null);
+  const [posterReady, setPosterReady] = useState<object | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [frame, setFrame] = useState<{
     identity: object;
     source: StillSource | null;
     dark: boolean;
     ownedThumbnail?: VideoThumbnail;
   } | null>(null);
-  const currentJob = useRef({ identity, enabled });
-  currentJob.current = { identity, enabled };
+  const job = useMemo(() => ({}), [identity, enabled, attempt]);
+  const currentJob = useRef({ identity, enabled, job });
+  currentJob.current = { identity, enabled, job };
   const currentFrame = frame?.identity === identity ? frame : null;
   // Passive cleanup runs after the old Image has left the committed tree. The
   // decoder must not release a selected SharedRef while that Image still uses it.
@@ -74,6 +88,8 @@ export function GalleryStillPreview({
     setFrame(null);
     setFailure(null);
     setPosterFailure(null);
+    setPosterReady(null);
+    setAttempt(0);
   }, [identity, enabled]);
   const transport = Platform.OS !== "web" || portalMode || !!item.demo;
   const cover = useMemo(
@@ -92,9 +108,33 @@ export function GalleryStillPreview({
   const video =
     item.content_type?.startsWith("video/") ||
     item.media_url === "/media/sintel-trailer.mp4";
+  // Only a provider-issued, still-active session lease can read these small
+  // in-memory PNGs. Native SharedRefs remain component-owned and are not cached.
+  const cachedUri =
+    Platform.OS === "web" && enabled && transport && video && stillCacheLease
+      ? webGalleryStillCache.get(stillCacheLease, cacheKey)
+      : null;
+  const frameSource = useMemo(
+    () => currentFrame?.source || (cachedUri ? { uri: cachedUri } : null),
+    [currentFrame, cachedUri],
+  );
   const posterFailed = posterFailure === identity;
-  const failed = failure === identity || (posterFailed && !video);
-  const showPoster = enabled && transport && poster && !posterFailed && !failed;
+  const failed =
+    (failure === identity && !cachedUri) || (posterFailed && !video);
+  const retryPending = failed && video && !!source && attempt === 0;
+  useEffect(() => {
+    if (!enabled || !transport || !retryPending) return;
+    // One fresh decoder retries a transient load. Never retry hidden cards or
+    // loop indefinitely, and never accept a callback from the retired attempt.
+    const timer = setTimeout(() => {
+      if (currentJob.current.job !== job || !currentJob.current.enabled) return;
+      setAttempt(1);
+      setFailure(null);
+    }, 750);
+    return () => clearTimeout(timer);
+  }, [enabled, transport, retryPending, job]);
+  const showPoster =
+    enabled && transport && poster && !posterFailed && !failed && !frameSource;
   const showVideo =
     enabled &&
     transport &&
@@ -102,7 +142,20 @@ export function GalleryStillPreview({
     !!source &&
     (!poster || posterFailed) &&
     !failed &&
-    !currentFrame;
+    !currentFrame &&
+    !frameSource;
+  const status = !enabled
+    ? "unavailable"
+    : frameSource || (showPoster && posterReady === identity)
+      ? "ready"
+      : showVideo || showPoster || retryPending
+        ? "loading"
+        : "unavailable";
+  const statusListener = useRef(onStatus);
+  statusListener.current = onStatus;
+  useEffect(() => {
+    if (currentJob.current.job === job) statusListener.current?.(status);
+  }, [identity, enabled, job, status, statusOwner]);
   const Icon = item.content_type?.startsWith("audio/")
     ? Music2
     : video
@@ -118,6 +171,10 @@ export function GalleryStillPreview({
         <StillImage
           key={item.id}
           source={cover}
+          onReady={() => {
+            if (currentJob.current.job === job && currentJob.current.enabled)
+              setPosterReady(identity);
+          }}
           onError={() => {
             if (
               currentJob.current.identity === identity &&
@@ -129,68 +186,86 @@ export function GalleryStillPreview({
       )}
       {showVideo && (
         <VideoThumbnailJob
+          key={attempt}
           source={source!}
           item={item}
-          identity={identity}
+          identity={job}
           onReady={(source, dark = false, ownedThumbnail) => {
             if (
               currentJob.current.identity !== identity ||
+              currentJob.current.job !== job ||
               !currentJob.current.enabled
             ) {
               if (ownedThumbnail) releaseThumbnail(ownedThumbnail);
               return;
+            }
+            if (Platform.OS === "web" && stillCacheLease) {
+              if (!webGalleryStillCache.isActive(stillCacheLease)) return;
+              if (
+                source &&
+                typeof source === "object" &&
+                "uri" in source &&
+                typeof source.uri === "string"
+              )
+                webGalleryStillCache.put(stillCacheLease, cacheKey, source.uri);
             }
             setFrame({ identity, source, dark, ownedThumbnail });
           }}
           onError={() => {
             if (
               currentJob.current.identity === identity &&
+              currentJob.current.job === job &&
               currentJob.current.enabled
             )
               setFailure(identity);
           }}
         />
       )}
-      {enabled && currentFrame?.source && !failed && (
+      {enabled && frameSource && !failed && (
         <Image
-          source={currentFrame.source}
+          source={frameSource}
           autoplay={false}
           contentFit="cover"
           cachePolicy="none"
           accessibilityLabel={`${item.title} representative still`}
           style={StyleSheet.absoluteFill}
           onError={() => {
-            if (currentJob.current.identity === identity) {
+            if (
+              currentJob.current.identity === identity &&
+              currentJob.current.job === job
+            ) {
+              if (Platform.OS === "web" && stillCacheLease)
+                webGalleryStillCache.delete(stillCacheLease, cacheKey);
               setFailure(identity);
               setFrame(null);
             }
           }}
         />
       )}
-      {!showPoster &&
-        !showVideo &&
-        !(enabled && currentFrame?.source && !failed) && (
-          <View
-            style={[
-              StyleSheet.absoluteFill,
-              {
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 9,
-                padding: 12,
-              },
-            ]}
+      {!showPoster && !showVideo && !(enabled && frameSource && !failed) && (
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 9,
+              padding: 12,
+            },
+          ]}
+        >
+          <Icon color="#EEE6FC" size={27} />
+          <Text
+            style={{
+              color: "white",
+              fontFamily: font.medium,
+              fontSize: 11,
+              textAlign: "center",
+            }}
           >
-            <Icon color="#EEE6FC" size={27} />
-            <Text
-              style={{
-                color: "white",
-                fontFamily: font.medium,
-                fontSize: 11,
-                textAlign: "center",
-              }}
-            >
-              {failed
+            {retryPending && enabled
+              ? "Retrying still…"
+              : failed
                 ? "Still preview unavailable"
                 : currentFrame?.dark
                   ? "Dark video · Open to watch"
@@ -201,9 +276,9 @@ export function GalleryStillPreview({
                       : item.content_type?.startsWith("audio/")
                         ? "Audio creation"
                         : "No still preview"}
-            </Text>
-          </View>
-        )}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -212,9 +287,11 @@ export function GalleryStillPreview({
 function StillImage({
   source,
   onError,
+  onReady,
 }: {
   source: ImageSourcePropType;
   onError: () => void;
+  onReady: () => void;
 }) {
   const [frame, setFrame] = useState<{
     source: ImageSourcePropType;
@@ -308,6 +385,7 @@ function StillImage({
       cachePolicy="none"
       style={StyleSheet.absoluteFill}
       onError={onError}
+      onLoad={onReady}
     />
   ) : null;
 }

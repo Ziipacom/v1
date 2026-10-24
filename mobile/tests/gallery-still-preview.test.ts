@@ -4,6 +4,7 @@ import test from "node:test";
 import ts from "typescript";
 import { profilePreviewRange } from "../src/lib/profile-preview.ts";
 import * as galleryPreview from "../src/lib/gallery-preview.ts";
+import * as stillCache from "../src/lib/gallery-still-cache.ts";
 import type { Item } from "../src/lib/types.ts";
 
 type Node = { type: any; props: Record<string, any> };
@@ -32,6 +33,7 @@ function stillUI(
     portal?: boolean;
     status?: string;
     generate?: (times: number[], size: unknown) => Promise<any[]>;
+    cacheLease?: stillCache.GalleryStillCacheLease;
   } = {},
 ) {
   const code = ts.transpileModule(
@@ -184,8 +186,14 @@ function stillUI(
       return { portalMode: options.portal ?? false };
     if (name === "../lib/profile-preview") return { profilePreviewRange };
     if (name === "../lib/gallery-preview") return galleryPreview;
+    if (name === "../lib/gallery-still-cache") return stillCache;
     if (name === "../provider")
-      return { useZiipa: () => ({ session: { access_token: "fixture" } }) };
+      return {
+        useZiipa: () => ({
+          session: { access_token: "fixture" },
+          stillCacheLease: options.cacheLease,
+        }),
+      };
     if (name === "../theme") return { font: {} };
     throw new Error(`Unexpected still dependency ${name}`);
   });
@@ -439,7 +447,7 @@ test("A native result resolving between identity render and prior cleanup cannot
   }
 });
 
-test("Native generation stops after three unusable candidates rather than decoding indefinitely", async () => {
+test("Each native attempt stops after three unusable candidates before its bounded retry", async () => {
   const ui = stillUI({ generate: async () => [] });
   try {
     ui.render();
@@ -450,9 +458,7 @@ test("Native generation stops after three unusable candidates rather than decodi
       [[6.05], [6.95], [7.55]],
     );
     assert.ok(
-      ui
-        .render()
-        .some((node) => node.props.children === "Still preview unavailable"),
+      ui.render().some((node) => node.props.children === "Retrying still…"),
     );
     assert.equal(ui.counts().plays, 0);
   } finally {
@@ -564,7 +570,7 @@ test("A stale poster error cannot reject artwork from a replacement creation", (
   }
 });
 
-test("Invalid retained ranges and decoder errors stop at an honest still-unavailable state", () => {
+test("Invalid retained ranges and decoder errors never paint or play a video while retrying", () => {
   for (const [options, props] of [
     [{}, { item: item({ trim_start: 10, trim_end: 4 }) }],
     [{ status: "error" }, {}],
@@ -577,9 +583,7 @@ test("Invalid retained ranges and decoder errors stop at an honest still-unavail
       nodes.some((node) => node.type === "VideoView"),
       false,
     );
-    assert.ok(
-      nodes.some((node) => node.props.children === "Still preview unavailable"),
-    );
+    assert.ok(nodes.some((node) => node.props.children === "Retrying still…"));
     assert.equal(ui.counts().plays, 0);
   }
 });
@@ -724,7 +728,8 @@ function webDecoder(pictures: boolean[], brokenCanvas = false) {
   let stopped = 0,
     plays = 0,
     draws = 0,
-    loads = 0;
+    loads = 0,
+    decoders = 0;
   const decoder: any = {
     duration: 20,
     videoWidth: 1920,
@@ -781,6 +786,7 @@ function webDecoder(pictures: boolean[], brokenCanvas = false) {
     value: {
       createElement(tag: string) {
         assert.ok(tag === "video" || tag === "canvas");
+        if (tag === "video") decoders++;
         return tag === "video" ? decoder : canvas;
       },
     },
@@ -790,7 +796,7 @@ function webDecoder(pictures: boolean[], brokenCanvas = false) {
     canvas,
     order,
     seeks,
-    counts: () => ({ stopped, plays, draws, loads }),
+    counts: () => ({ stopped, plays, draws, loads, decoders }),
     restore() {
       if (original) Object.defineProperty(globalThis, "document", original);
       else delete (globalThis as any).document;
@@ -946,9 +952,7 @@ test("Three dark web samples and inaccessible canvas pixels produce honest nonvi
         nodes.some(
           (node) =>
             node.props.children ===
-            (brokenCanvas
-              ? "Still preview unavailable"
-              : "Dark video · Open to watch"),
+            (brokenCanvas ? "Retrying still…" : "Dark video · Open to watch"),
         ),
       );
       assert.equal(web.counts().plays, 0);
@@ -986,9 +990,7 @@ test("Web deadline and unmount detach handlers without accepting late work or pl
     assert.equal(web.decoder.oncanplay, null);
     assert.equal(web.decoder.onerror, null);
     assert.ok(
-      ui
-        .render()
-        .some((node) => node.props.children === "Still preview unavailable"),
+      ui.render().some((node) => node.props.children === "Retrying still…"),
     );
     assert.equal(web.counts().plays, 0);
   } finally {
@@ -1028,5 +1030,251 @@ test("A stale web seek or error before passive cleanup cannot affect the replace
   } finally {
     ui.unmount();
     web.restore();
+  }
+});
+
+const capturedPng =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aV6sAAAAASUVORK5CYII=";
+
+function thumbnailTimers() {
+  const originalSet = globalThis.setTimeout;
+  const originalClear = globalThis.clearTimeout;
+  let next = 0;
+  const pending = new Map<number, { fn: () => void; ms: number }>();
+  globalThis.setTimeout = ((fn: () => void, ms: number) => {
+    const id = ++next;
+    pending.set(id, { fn, ms });
+    return id;
+  }) as any;
+  globalThis.clearTimeout = ((id: number) => pending.delete(id)) as any;
+  return {
+    run(ms: number) {
+      const entry = Array.from(pending).find(([, timer]) => timer.ms === ms);
+      assert.ok(entry, `Expected a ${ms}ms thumbnail timer`);
+      pending.delete(entry[0]);
+      entry[1].fn();
+    },
+    count: () => pending.size,
+    restore() {
+      globalThis.setTimeout = originalSet;
+      globalThis.clearTimeout = originalClear;
+    },
+  };
+}
+
+test("A transient web decoder error retries once with a fresh job and rejects callbacks from its first attempt", () => {
+  const timers = thumbnailTimers();
+  const web = webDecoder([true]);
+  const ui = stillUI({ platform: "web", portal: true });
+  try {
+    ui.render();
+    ui.flush();
+    const oldMetadata = web.decoder.onloadedmetadata;
+    const oldError = web.decoder.onerror;
+    oldError();
+    assert.ok(ui.render().some((n) => n.props.children === "Retrying still…"));
+    ui.flush();
+    timers.run(750);
+    ui.render(); // Render the replacement before cleaning up the old job.
+    oldMetadata();
+    oldError();
+    assert.equal(web.counts().draws, 0);
+    assert.ok(
+      !ui
+        .render()
+        .some((n) => n.props.children === "Still preview unavailable"),
+    );
+    ui.flush();
+    assert.equal(web.counts().decoders, 2);
+    web.decoder.onloadedmetadata();
+    web.decoder.onseeked();
+    assert.ok(ui.render().some((n) => n.type === "Image"));
+    assert.equal(web.counts().plays, 0);
+    ui.flush();
+    assert.equal(timers.count(), 0);
+  } finally {
+    ui.unmount();
+    web.restore();
+    timers.restore();
+  }
+});
+
+test("Two failed attempts stop at an honest fallback without scheduling a third decoder", () => {
+  const timers = thumbnailTimers();
+  const web = webDecoder([true]);
+  const ui = stillUI({ platform: "web", portal: true });
+  try {
+    ui.render();
+    ui.flush();
+    timers.run(10000);
+    ui.render();
+    ui.flush();
+    timers.run(750);
+    ui.render();
+    ui.flush();
+    timers.run(10000);
+    assert.ok(
+      ui.render().some((n) => n.props.children === "Still preview unavailable"),
+    );
+    ui.flush();
+    assert.equal(timers.count(), 0);
+    assert.equal(web.counts().decoders, 2);
+    assert.equal(web.counts().plays, 0);
+  } finally {
+    ui.unmount();
+    web.restore();
+    timers.restore();
+  }
+});
+
+test("Hiding or unmounting a failed card cancels its pending retry", () => {
+  for (const hide of [true, false]) {
+    const timers = thumbnailTimers();
+    const web = webDecoder([true]);
+    const ui = stillUI({ platform: "web", portal: true });
+    try {
+      ui.render();
+      ui.flush();
+      web.decoder.onerror();
+      ui.render();
+      ui.flush();
+      if (hide) {
+        ui.render({ enabled: false });
+        ui.flush();
+      } else ui.unmount();
+      assert.equal(timers.count(), 0);
+      assert.equal(web.counts().decoders, 1);
+      assert.equal(web.counts().plays, 0);
+    } finally {
+      ui.unmount();
+      web.restore();
+      timers.restore();
+    }
+  }
+});
+
+test("A successful web still survives visibility changes and remounts without another decoder", () => {
+  const web = webDecoder([true]);
+  web.canvas.toDataURL = () => capturedPng;
+  const lease = stillCache.webGalleryStillCache.activate("current-account");
+  const ui = stillUI({ platform: "web", portal: true, cacheLease: lease });
+  const next = stillUI({ platform: "web", portal: true, cacheLease: lease });
+  try {
+    ui.render();
+    ui.flush();
+    web.decoder.onloadedmetadata();
+    web.decoder.onseeked();
+    assert.equal(
+      ui.render().find((n) => n.type === "Image")?.props.source.uri,
+      capturedPng,
+    );
+    ui.flush();
+    assert.equal(
+      ui.render({ enabled: false }).some((n) => n.type === "Image"),
+      false,
+    );
+    ui.flush();
+    assert.equal(
+      ui.render().find((n) => n.type === "Image")?.props.source.uri,
+      capturedPng,
+    );
+    ui.flush();
+    ui.unmount();
+    assert.equal(
+      next.render().find((n) => n.type === "Image")?.props.source.uri,
+      capturedPng,
+    );
+    next.flush();
+    assert.equal(web.counts().decoders, 1);
+    assert.equal(web.counts().plays, 0);
+    const changed = item({ trim_start: 6 });
+    assert.equal(
+      next.render({ item: changed }).some((n) => n.type === "Image"),
+      false,
+    );
+  } finally {
+    ui.unmount();
+    next.unmount();
+    web.restore();
+    stillCache.webGalleryStillCache.clear();
+  }
+});
+
+test("Logout invalidates a web capture even before the old component receives its new context", () => {
+  const web = webDecoder([true]);
+  web.canvas.toDataURL = () => capturedPng;
+  const lease = stillCache.webGalleryStillCache.activate("old-account");
+  const ui = stillUI({ platform: "web", portal: true, cacheLease: lease });
+  try {
+    ui.render();
+    ui.flush();
+    web.decoder.onloadedmetadata();
+    stillCache.webGalleryStillCache.clear();
+    web.decoder.onseeked();
+    assert.equal(
+      ui.render().some((n) => n.type === "Image"),
+      false,
+    );
+    assert.equal(
+      stillCache.webGalleryStillCache.get(
+        lease,
+        stillCache.galleryStillCacheKey(item()),
+      ),
+      null,
+    );
+    assert.equal(web.counts().plays, 0);
+  } finally {
+    ui.unmount();
+    web.restore();
+    stillCache.webGalleryStillCache.clear();
+  }
+});
+
+test("A still poster holds rotation until the actual image has loaded", () => {
+  const ui = stillUI();
+  const statuses: string[] = [];
+  const props = {
+    item: item({ cover: "/api/creator/media/actual-poster" }),
+    onStatus: (status: string) => statuses.push(status),
+  };
+  try {
+    const image = ui.render(props).find((n) => n.type === "Image")!;
+    ui.flush();
+    assert.deepEqual(statuses, ["loading"]);
+    image.props.onLoad();
+    ui.render(props);
+    ui.flush();
+    assert.deepEqual(statuses, ["loading", "ready"]);
+    const nextScene: string[] = [];
+    ui.render({
+      ...props,
+      statusOwner: {},
+      onStatus: (s: string) => nextScene.push(s),
+    });
+    ui.flush();
+    assert.deepEqual(
+      nextScene,
+      ["ready"],
+      "an unchanged still replays readiness to a new gallery scene",
+    );
+    assert.equal(ui.counts().instances, 0);
+  } finally {
+    ui.unmount();
+  }
+});
+
+test("A superseded passive status cannot report loading into a replacement creation", () => {
+  const ui = stillUI();
+  const statuses: string[] = [];
+  try {
+    ui.render({ onStatus: (s: string) => statuses.push(s) });
+    ui.render({
+      item: item({ id: "replacement-audio", content_type: "audio/wav" }),
+      onStatus: (s: string) => statuses.push(s),
+    });
+    ui.flush();
+    assert.deepEqual(statuses, ["unavailable"]);
+  } finally {
+    ui.unmount();
   }
 });

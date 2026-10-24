@@ -34,6 +34,21 @@ import {
 import type { Item } from "../lib/types";
 import { color, font, useTheme } from "../theme";
 
+type StillStatus = "loading" | "ready" | "unavailable";
+
+function stillKey(item: Item | null | undefined) {
+  return (
+    item && [
+      item.id,
+      item.media_url,
+      item.cover,
+      item.trim_start,
+      item.trim_end,
+      item.timeline,
+    ]
+  );
+}
+
 /** Three slots show real neighboring stills; only the front creation can play. */
 export function GallerySlider({
   items,
@@ -81,6 +96,37 @@ export function GallerySlider({
   const current = galleryIndex(index, items.length);
   const item = items[current];
   const neighbors = galleryNeighbors(items, current);
+  const stillsEnabled = ready && focused && foreground && visible && !saveData;
+  const stillSignature = JSON.stringify([
+    stillKey(item),
+    stillKey(neighbors.left),
+    stillKey(neighbors.right),
+  ]);
+  const stillScene = useRef({
+    signature: stillSignature,
+    enabled: stillsEnabled,
+  });
+  if (stillScene.current.signature !== stillSignature)
+    stillScene.current = { signature: stillSignature, enabled: stillsEnabled };
+  const scene = stillScene.current;
+  scene.enabled = stillsEnabled;
+  const [stillStatuses, setStillStatuses] = useState<{
+    scene: object;
+    left?: StillStatus;
+    right?: StillStatus;
+  }>({ scene });
+  const stillPending =
+    stillsEnabled &&
+    (["left", "right"] as const).some(
+      (side) =>
+        neighbors[side] &&
+        (stillStatuses.scene !== scene ||
+          !stillStatuses[side] ||
+          stillStatuses[side] === "loading"),
+    );
+  const rotationWindow = useRef<{ scene: object; startedAt: number } | null>(
+    null,
+  );
   const explicitPlayback = !!item && explicitPlaybackId === item.id;
   const muted =
     !item ||
@@ -235,10 +281,21 @@ export function GallerySlider({
   const rotationBlocked =
     reducedMotion || saveData || !ready || !preferences.autoplay;
   useEffect(() => {
-    if (!rotating) return;
-    const timer = setTimeout(() => advance(1), 7000);
+    if (!rotating) {
+      rotationWindow.current = null;
+      return;
+    }
+    if (rotationWindow.current?.scene !== scene)
+      rotationWindow.current = { scene, startedAt: Date.now() };
+    // Do not rotate a cold neighbor away before its bounded capture/retry ends.
+    // The anchored ceiling cannot be extended by repeated loading callbacks.
+    const elapsed = Date.now() - rotationWindow.current.startedAt;
+    const timer = setTimeout(
+      () => advance(1),
+      Math.max(0, (stillPending ? 22000 : 7000) - elapsed),
+    );
     return () => clearTimeout(timer);
-  }, [rotating, advance]);
+  }, [rotating, advance, scene, stillPending]);
   const swipe = useMemo(
     () =>
       PanResponder.create({
@@ -262,7 +319,6 @@ export function GallerySlider({
     foreground &&
     visible &&
     (!saveData || explicitPlayback);
-  const stillsEnabled = ready && focused && foreground && visible && !saveData;
   if (!item) return null;
 
   return (
@@ -317,7 +373,22 @@ export function GallerySlider({
                 onPress={() => advance(offset, true)}
                 style={sideStyle}
               >
-                <GalleryStillPreview item={neighbor} enabled={stillsEnabled} />
+                <GalleryStillPreview
+                  item={neighbor}
+                  enabled={stillsEnabled}
+                  statusOwner={scene}
+                  onStatus={(status) => {
+                    if (stillScene.current !== scene || !scene.enabled) return;
+                    setStillStatuses((previous) => {
+                      if (previous.scene === scene && previous[side] === status)
+                        return previous;
+                      return {
+                        ...(previous.scene === scene ? previous : { scene }),
+                        [side]: status,
+                      };
+                    });
+                  }}
+                />
                 <LinearGradient
                   pointerEvents="none"
                   colors={["transparent", "#160A29B8"]}

@@ -97,6 +97,7 @@ function galleryUI(
   const effects: (() => void)[] = [];
   const effectSlots: { cleanup?: () => void }[] = [];
   const preferences = { autoplay: true, startMuted: false };
+  const activity = { focused: true };
   const navigations: unknown[] = [];
   const exports: Record<string, any> = {};
   const jsx = (type: unknown, props: Node["props"], key?: string) => ({
@@ -188,6 +189,7 @@ function galleryUI(
           Value,
           View: "AnimatedView",
           timing: () => ({ start() {}, stop() {} }),
+          parallel: () => ({ start() {}, stop() {} }),
         },
         PanResponder: { create: () => ({ panHandlers: {} }) },
       };
@@ -197,7 +199,7 @@ function galleryUI(
         useSafeAreaInsets: () => ({ bottom: 0 }),
       };
     if (name === "@react-navigation/native")
-      return { useIsFocused: () => true };
+      return { useIsFocused: () => activity.focused };
     if (name === "lucide-react-native")
       return new Proxy({}, { get: (_, key) => key });
     if (name === "expo-linear-gradient")
@@ -281,6 +283,7 @@ function galleryUI(
     navigation,
     navigations,
     preferences,
+    activity,
     counts: () => ({ refreshes, preferenceWrites }),
     flushEffects() {
       while (effects.length) effects.shift()!();
@@ -297,6 +300,272 @@ function galleryUI(
     },
   };
 }
+
+/** A fake clock drives the real rotation effects; thumbnail leaves report real lifecycle states. */
+async function withGalleryClock(
+  desktop: boolean,
+  check: (fixture: {
+    ui: ReturnType<typeof galleryUI>;
+    render: () => Node[];
+    tick: (milliseconds: number) => void;
+    pending: () => number;
+    front: () => string;
+  }) => void,
+) {
+  const names = [
+    "window",
+    "document",
+    "navigator",
+    "IntersectionObserver",
+    "setTimeout",
+    "clearTimeout",
+  ];
+  const previous = Object.fromEntries(
+    names.map((name) => [
+      name,
+      Object.getOwnPropertyDescriptor(globalThis, name),
+    ]),
+  );
+  const realNow = Date.now;
+  let now = 0,
+    timerId = 0;
+  const timers = new Map<number, { at: number; callback: () => void }>();
+  const replace = (name: string, value: unknown) =>
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      writable: true,
+      value,
+    });
+  const element = {
+    getBoundingClientRect: () => ({
+      top: 0,
+      bottom: 400,
+      left: 0,
+      right: 1000,
+      width: 1000,
+      height: 400,
+    }),
+    addEventListener() {},
+    removeEventListener() {},
+    contains: () => false,
+  };
+  replace("window", {
+    innerHeight: 800,
+    innerWidth: 1200,
+    addEventListener() {},
+    removeEventListener() {},
+  });
+  replace("document", {
+    visibilityState: "visible",
+    addEventListener() {},
+    removeEventListener() {},
+  });
+  replace("navigator", {});
+  replace("IntersectionObserver", undefined);
+  replace("setTimeout", (callback: () => void, duration: number) => {
+    const id = ++timerId;
+    timers.set(id, { at: now + duration, callback });
+    return id;
+  });
+  replace("clearTimeout", (id: number) => timers.delete(id));
+  Date.now = () => now;
+  const ui = galleryUI(
+    desktop
+      ? "components/desktop-featured-gallery"
+      : "components/gallery-slider",
+    { desktop, runEffects: true },
+  );
+  const name = desktop ? "DesktopFeaturedGallery" : "GallerySlider";
+  const props = {
+    items: ["first", "second"].map((id) =>
+      creation(id, "video", {
+        media_url: `/api/creator/media/${id}`,
+        content_type: "video/mp4",
+      }),
+    ),
+    label: "All creations",
+    onOpen() {},
+    open() {},
+  };
+  let nodes: Node[] = [];
+  const render = () => {
+    nodes = ui.render(name, props);
+    if (desktop)
+      nodes.find(
+        (node) =>
+          node.props.accessibilityLabel === "Featured published media gallery",
+      )!.props.ref.current = element;
+    ui.flushEffects();
+    return nodes;
+  };
+  const tick = (milliseconds: number) => {
+    const target = now + milliseconds;
+    for (;;) {
+      const due = [...timers]
+        .filter(([, timer]) => timer.at <= target)
+        .sort((a, b) => a[1].at - b[1].at)[0];
+      if (!due) break;
+      timers.delete(due[0]);
+      now = due[1].at;
+      due[1].callback();
+    }
+    now = target;
+  };
+  try {
+    render();
+    await Promise.resolve();
+    render();
+    check({
+      ui,
+      render,
+      tick,
+      pending: () => timers.size,
+      front: () =>
+        nodes.find((node) => node.type === "ReelMedia")!.props.item.id,
+    });
+  } finally {
+    ui.unmount();
+    assert.equal(
+      timers.size,
+      0,
+      "unmount cancels the remaining rotation timer",
+    );
+    Date.now = realNow;
+    for (const name of names) {
+      if (previous[name])
+        Object.defineProperty(globalThis, name, previous[name]!);
+      else delete (globalThis as any)[name];
+    }
+  }
+}
+
+test("Cold Gallery stills get more than a rotation interval and ready/error states release the hold", async () => {
+  for (const desktop of [false, true]) {
+    for (const status of ["ready", "unavailable"]) {
+      await withGalleryClock(desktop, ({ render, tick, front }) => {
+        tick(8000);
+        let nodes = render();
+        assert.equal(
+          front(),
+          "first",
+          "cold capture is not cancelled at the normal7/7.5s rotation",
+        );
+        nodes
+          .find((node) => node.type === "GalleryStillPreview")!
+          .props.onStatus(status);
+        render();
+        tick(0);
+        render();
+        assert.equal(
+          front(),
+          "second",
+          `${status} releases an already elapsed normal rotation interval`,
+        );
+      });
+    }
+  }
+});
+
+test("Repeated Gallery loading reports cannot extend the fixed22s ceiling", async () => {
+  for (const desktop of [false, true]) {
+    await withGalleryClock(desktop, ({ render, tick, front }) => {
+      for (let step = 0; step < 4; step++) {
+        tick(5000);
+        const nodes = render();
+        nodes
+          .find((node) => node.type === "GalleryStillPreview")!
+          .props.onStatus("loading");
+        render();
+        assert.equal(front(), "first");
+      }
+      tick(1999);
+      render();
+      assert.equal(front(), "first");
+      tick(1);
+      render();
+      assert.equal(
+        front(),
+        "second",
+        "a missing status cannot leave the carousel stuck forever",
+      );
+    });
+  }
+});
+
+test("Gallery manual selection bypasses the loading hold and prior-scene statuses cannot settle new stills", async () => {
+  for (const desktop of [false, true]) {
+    await withGalleryClock(desktop, ({ render, tick, front }) => {
+      let nodes = render();
+      const oldStatus = nodes.find(
+        (node) => node.type === "GalleryStillPreview",
+      )!.props.onStatus;
+      const prefix = desktop ? "desktop-gallery" : "gallery";
+      nodes
+        .find((node) => node.props.testID === `${prefix}-neighbor-right`)!
+        .props.onPress();
+      nodes = render();
+      assert.equal(
+        front(),
+        "second",
+        "manual navigation remains immediate while a still is loading",
+      );
+      nodes
+        .find((node) => node.props.testID === `${prefix}-neighbor-right`)!
+        .props.onPress();
+      nodes = render();
+      assert.equal(front(), "first");
+      nodes
+        .find(
+          (node) =>
+            (node.props.accessibilityLabel || node.props.label) ===
+            (desktop
+              ? "Resume featured gallery rotation"
+              : "Start gallery rotation"),
+        )!
+        .props.onPress();
+      render();
+      oldStatus("ready");
+      render();
+      tick(8000);
+      nodes = render();
+      assert.equal(
+        front(),
+        "first",
+        "returning to the same item arrangement does not revive an old status callback",
+      );
+      nodes
+        .find((node) => node.type === "GalleryStillPreview")!
+        .props.onStatus("ready");
+      render();
+      tick(0);
+      render();
+      assert.equal(front(), "second");
+    });
+  }
+});
+
+test("Leaving a Gallery cancels its cold-still hold and does not create background rotation timers", async () => {
+  for (const desktop of [false, true]) {
+    await withGalleryClock(desktop, ({ ui, render, tick, pending, front }) => {
+      assert.equal(pending(), 1);
+      ui.activity.focused = false;
+      let nodes = render();
+      assert.equal(pending(), 0);
+      assert.equal(
+        nodes.find((node) => node.type === "GalleryStillPreview")!.props
+          .enabled,
+        false,
+      );
+      tick(30000);
+      nodes = render();
+      assert.equal(pending(), 0);
+      assert.equal(front(), "first");
+      ui.activity.focused = true;
+      render();
+      assert.equal(pending(), 1, "returning starts one fresh bounded window");
+    });
+  }
+});
 
 test("Gallery defaults to All; icons filter explicitly; reset clears route/search and permits the same category again", () => {
   const source = [

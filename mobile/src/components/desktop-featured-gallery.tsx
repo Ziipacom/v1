@@ -22,6 +22,21 @@ import { galleryNeighbors } from "../lib/gallery";
 import type { Item } from "../lib/types";
 import { color, font, styles, themedStyles } from "../theme";
 
+type StillStatus = "loading" | "ready" | "unavailable";
+
+function stillKey(item: Item | null | undefined) {
+  return (
+    item && [
+      item.id,
+      item.media_url,
+      item.cover,
+      item.trim_start,
+      item.trim_end,
+      item.timeline,
+    ]
+  );
+}
+
 /** Only the front creation plays; two neighboring cards remain still. */
 export function DesktopFeaturedGallery({
   items,
@@ -63,6 +78,37 @@ export function DesktopFeaturedGallery({
   );
   const current = items[selectedIndex];
   const neighbors = galleryNeighbors(items, selectedIndex);
+  const stillsEnabled = ready && focused && foreground && visible && !saveData;
+  const stillSignature = JSON.stringify([
+    stillKey(current),
+    stillKey(neighbors.left),
+    stillKey(neighbors.right),
+  ]);
+  const stillScene = useRef({
+    signature: stillSignature,
+    enabled: stillsEnabled,
+  });
+  if (stillScene.current.signature !== stillSignature)
+    stillScene.current = { signature: stillSignature, enabled: stillsEnabled };
+  const scene = stillScene.current;
+  scene.enabled = stillsEnabled;
+  const [stillStatuses, setStillStatuses] = useState<{
+    scene: object;
+    left?: StillStatus;
+    right?: StillStatus;
+  }>({ scene });
+  const stillPending =
+    stillsEnabled &&
+    (["left", "right"] as const).some(
+      (side) =>
+        neighbors[side] &&
+        (stillStatuses.scene !== scene ||
+          !stillStatuses[side] ||
+          stillStatuses[side] === "loading"),
+    );
+  const rotationWindow = useRef<{ scene: object; startedAt: number } | null>(
+    null,
+  );
   const muted = startMuted ?? preferences.startMuted;
   const playable = !!current && isPlayableMedia(current);
   const { requestedPaused, playbackPaused, rotationAllowed } =
@@ -185,14 +231,20 @@ export function DesktopFeaturedGallery({
   }, []);
 
   useEffect(() => {
-    if (rotationAllowed) {
-      const timer = setTimeout(
-        () => setSelectedId(items[(selectedIndex + 1) % items.length].id),
-        7500,
-      );
-      return () => clearTimeout(timer);
+    if (!rotationAllowed) {
+      rotationWindow.current = null;
+      return;
     }
-  }, [rotationAllowed, selectedIndex, signature, items]);
+    if (rotationWindow.current?.scene !== scene)
+      rotationWindow.current = { scene, startedAt: Date.now() };
+    // Give cold stills their bounded capture/retry window, not an endless hold.
+    const elapsed = Date.now() - rotationWindow.current.startedAt;
+    const timer = setTimeout(
+      () => setSelectedId(items[(selectedIndex + 1) % items.length].id),
+      Math.max(0, (stillPending ? 22000 : 7500) - elapsed),
+    );
+    return () => clearTimeout(timer);
+  }, [rotationAllowed, selectedIndex, signature, items, scene, stillPending]);
 
   useEffect(() => {
     if (reducedMotion || !focused || !foreground || !visible) {
@@ -258,7 +310,19 @@ export function DesktopFeaturedGallery({
             >
               <GalleryStillPreview
                 item={neighbor}
-                enabled={ready && focused && foreground && visible && !saveData}
+                enabled={stillsEnabled}
+                statusOwner={scene}
+                onStatus={(status) => {
+                  if (stillScene.current !== scene || !scene.enabled) return;
+                  setStillStatuses((previous) => {
+                    if (previous.scene === scene && previous[side] === status)
+                      return previous;
+                    return {
+                      ...(previous.scene === scene ? previous : { scene }),
+                      [side]: status,
+                    };
+                  });
+                }}
               />
             </Pressable>
           ) : (
@@ -365,7 +429,9 @@ export function DesktopFeaturedGallery({
                 {requestedPaused
                   ? "Preview paused. Press Play when you’re ready."
                   : rotationAllowed
-                    ? `${playable ? (muted ? "Muted media" : "Media preview") : "Creation preview"} · next creation every 7.5 seconds.`
+                    ? stillPending
+                      ? "Preparing neighboring stills · rotation waits briefly."
+                      : `${playable ? (muted ? "Muted media" : "Media preview") : "Creation preview"} · next creation every 7.5 seconds.`
                     : "Preview enabled · automatic gallery motion paused."}
               </Text>
             </View>
