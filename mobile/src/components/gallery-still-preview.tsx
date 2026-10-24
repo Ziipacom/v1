@@ -478,6 +478,7 @@ function WebThumbnailJob(props: ThumbnailProps) {
       decoder.onseeked = null;
       decoder.onerror = null;
       decoder.pause();
+      decoder.preload = "none";
       decoder.removeAttribute("src");
       decoder.load();
     };
@@ -492,22 +493,17 @@ function WebThumbnailJob(props: ThumbnailProps) {
     decoder.muted = true;
     decoder.volume = 0;
     decoder.playsInline = true;
-    decoder.preload = "metadata";
+    // A still needs decoded pixels, not only duration/container metadata. The
+    // job never plays and is stopped after its bounded frame/deadline work.
+    decoder.preload = "auto";
     decoder.crossOrigin = "anonymous";
     const prepare = () => {
       if (!current() || settled || prepared) return;
       try {
         times = galleryStillTimes(props.item, decoder.duration);
         if (!times.length) throw new Error("No retained frame");
-        // Metadata and seek completion need not mean pixels are ready yet.
-        // Keep the same bounded job alive until loadeddata/canplay supplies them.
-        if (!decoder.videoWidth || !decoder.videoHeight) return;
-        const scale = Math.min(
-          1,
-          galleryStillSize / Math.max(decoder.videoWidth, decoder.videoHeight),
-        );
-        canvas.width = Math.max(1, Math.round(decoder.videoWidth * scale));
-        canvas.height = Math.max(1, Math.round(decoder.videoHeight * scale));
+        // Request retained pixels even when metadata has not exposed geometry.
+        // Waiting for dimensions before seeking can strand a metadata-only load.
         prepared = true;
         decoder.currentTime = times[0];
       } catch {
@@ -516,8 +512,15 @@ function WebThumbnailJob(props: ThumbnailProps) {
     };
     const capture = () => {
       if (!current() || settled || !samplePending || decoder.seeking) return;
-      if (decoder.readyState < 2) return;
+      if (decoder.readyState < 2 || !decoder.videoWidth || !decoder.videoHeight)
+        return;
       try {
+        const scale = Math.min(
+          1,
+          galleryStillSize / Math.max(decoder.videoWidth, decoder.videoHeight),
+        );
+        canvas.width = Math.max(1, Math.round(decoder.videoWidth * scale));
+        canvas.height = Math.max(1, Math.round(decoder.videoHeight * scale));
         samplePending = false;
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context) throw new Error("No canvas");
@@ -565,6 +568,7 @@ function WebThumbnailJob(props: ThumbnailProps) {
             : source?.uri;
       if (!uri) throw new Error("No trusted source");
       decoder.src = uri;
+      decoder.load();
     } catch {
       fail();
     }

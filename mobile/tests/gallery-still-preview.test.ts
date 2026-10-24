@@ -723,7 +723,8 @@ function webDecoder(pictures: boolean[], brokenCanvas = false) {
     seeks: number[] = [];
   let stopped = 0,
     plays = 0,
-    draws = 0;
+    draws = 0,
+    loads = 0;
   const decoder: any = {
     duration: 20,
     videoWidth: 1920,
@@ -749,7 +750,9 @@ function webDecoder(pictures: boolean[], brokenCanvas = false) {
     play() {
       plays++;
     },
-    load() {},
+    load() {
+      loads++;
+    },
     removeAttribute(name: string) {
       assert.equal(name, "src");
     },
@@ -787,7 +790,7 @@ function webDecoder(pictures: boolean[], brokenCanvas = false) {
     canvas,
     order,
     seeks,
-    counts: () => ({ stopped, plays, draws }),
+    counts: () => ({ stopped, plays, draws, loads }),
     restore() {
       if (original) Object.defineProperty(globalThis, "document", original);
       else delete (globalThis as any).document;
@@ -810,6 +813,12 @@ test("Web video uses at most three paused interior samples and paints only a bou
     ]);
     assert.equal(web.decoder.muted, true);
     assert.equal(web.decoder.volume, 0);
+    assert.equal(web.decoder.preload, "auto");
+    assert.equal(
+      web.counts().loads,
+      1,
+      "pixel loading begins explicitly without calling play",
+    );
     web.decoder.onloadedmetadata();
     web.decoder.onseeked();
     assert.deepEqual(web.seeks, [6.05, 6.95]);
@@ -825,6 +834,12 @@ test("Web video uses at most three paused interior samples and paints only a bou
     assert.equal(web.counts().plays, 0);
     assert.equal(web.counts().draws, 2);
     assert.equal(web.decoder.onseeked, null);
+    assert.equal(web.decoder.preload, "none");
+    assert.equal(
+      web.counts().loads,
+      2,
+      "successful capture releases its media resource",
+    );
     assert.equal(
       ui.counts().instances,
       0,
@@ -836,7 +851,7 @@ test("Web video uses at most three paused interior samples and paints only a bou
   }
 });
 
-test("Web metadata without frame dimensions waits for loaded data within the existing deadline", () => {
+test("Metadata without decoded pixels still requests a retained frame before geometry arrives", () => {
   const web = webDecoder([true]);
   const ui = stillUI({ platform: "web", portal: true });
   try {
@@ -844,8 +859,22 @@ test("Web metadata without frame dimensions waits for loaded data within the exi
     ui.flush();
     web.decoder.videoWidth = 0;
     web.decoder.videoHeight = 0;
+    web.decoder.readyState = 1;
     web.decoder.onloadedmetadata();
-    assert.equal(web.seeks.length, 0);
+    assert.equal(web.decoder.preload, "auto");
+    assert.equal(web.counts().loads, 1);
+    assert.deepEqual(
+      web.seeks,
+      [6.05],
+      "metadata alone must initiate a retained seek, not wait for pixels it has not requested",
+    );
+    web.decoder.onseeked();
+    assert.equal(web.counts().draws, 0);
+    assert.equal(
+      web.canvas.width,
+      0,
+      "the canvas waits for valid decoded geometry",
+    );
     assert.ok(
       !ui
         .render()
@@ -853,14 +882,10 @@ test("Web metadata without frame dimensions waits for loaded data within the exi
     );
     web.decoder.videoWidth = 1920;
     web.decoder.videoHeight = 1080;
+    web.decoder.readyState = 4;
     web.decoder.onloadeddata();
     assert.deepEqual(web.seeks, [6.05]);
-    assert.equal(
-      web.counts().draws,
-      0,
-      "a seek must complete before its pixels are sampled",
-    );
-    web.decoder.onseeked();
+    assert.equal(web.counts().draws, 1);
     assert.ok(ui.render().some((node) => node.type === "Image"));
     assert.equal(web.counts().plays, 0);
   } finally {
