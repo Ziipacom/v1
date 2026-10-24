@@ -52,6 +52,7 @@ export function GalleryStillPreview({
     ],
   );
   const [failure, setFailure] = useState<object | null>(null);
+  const [posterFailure, setPosterFailure] = useState<object | null>(null);
   const [frame, setFrame] = useState<{
     identity: object;
     source: StillSource | null;
@@ -72,6 +73,7 @@ export function GalleryStillPreview({
   useEffect(() => {
     setFrame(null);
     setFailure(null);
+    setPosterFailure(null);
   }, [identity, enabled]);
   const transport = Platform.OS !== "web" || portalMode || !!item.demo;
   const cover = useMemo(
@@ -90,14 +92,15 @@ export function GalleryStillPreview({
   const video =
     item.content_type?.startsWith("video/") ||
     item.media_url === "/media/sintel-trailer.mp4";
-  const failed = failure === identity;
-  const showPoster = enabled && transport && poster && !failed;
+  const posterFailed = posterFailure === identity;
+  const failed = failure === identity || (posterFailed && !video);
+  const showPoster = enabled && transport && poster && !posterFailed && !failed;
   const showVideo =
     enabled &&
     transport &&
     video &&
     !!source &&
-    !poster &&
+    (!poster || posterFailed) &&
     !failed &&
     !currentFrame;
   const Icon = item.content_type?.startsWith("audio/")
@@ -120,7 +123,7 @@ export function GalleryStillPreview({
               currentJob.current.identity === identity &&
               currentJob.current.enabled
             )
-              setFailure(identity);
+              setPosterFailure(identity);
           }}
         />
       )}
@@ -223,7 +226,8 @@ function StillImage({
   activeSource.current = source;
   useEffect(() => {
     if (Platform.OS !== "web") return;
-    let live = true;
+    let live = true,
+      settled = false;
     const current = () => live && activeSource.current === source;
     let uri: string | undefined;
     try {
@@ -242,11 +246,24 @@ function StillImage({
       return;
     }
     const image = document.createElement("img");
+    const stop = () => {
+      image.onload = null;
+      image.onerror = null;
+      image.removeAttribute("src");
+    };
+    const fail = () => {
+      if (!current() || settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      stop();
+      latest.current();
+    };
+    const deadline = setTimeout(fail, galleryStillTimeoutMs);
     // Same-origin cookies still authorize the API hop. A signed cross-origin R2
     // redirect needs anonymous CORS so its pixels remain readable by the canvas.
     image.crossOrigin = "anonymous";
     image.onload = () => {
-      if (!current()) return;
+      if (!current() || settled) return;
       try {
         if (!image.naturalWidth || !image.naturalHeight)
           throw new Error("No image dimensions");
@@ -261,21 +278,20 @@ function StillImage({
         if (!context) throw new Error("No canvas");
         context.drawImage(image, 0, 0, canvas.width, canvas.height);
         setFrame({ source, uri: canvas.toDataURL("image/png") });
+        settled = true;
+        clearTimeout(deadline);
       } catch {
-        latest.current();
+        fail();
       } finally {
-        image.removeAttribute("src");
+        stop();
       }
     };
-    image.onerror = () => {
-      if (current()) latest.current();
-    };
+    image.onerror = fail;
     image.src = uri;
     return () => {
       live = false;
-      image.onload = null;
-      image.onerror = null;
-      image.removeAttribute("src");
+      clearTimeout(deadline);
+      stop();
     };
   }, [source]);
   const display =
@@ -448,13 +464,17 @@ function WebThumbnailJob(props: ThumbnailProps) {
   useEffect(() => {
     let live = true,
       settled = false,
-      position = 0;
+      position = 0,
+      prepared = false,
+      samplePending = false;
     let times: number[] = [];
     const current = () => live && latest.current.identity === props.identity;
     const decoder = document.createElement("video");
     const canvas = document.createElement("canvas");
     const stop = () => {
       decoder.onloadedmetadata = null;
+      decoder.onloadeddata = null;
+      decoder.oncanplay = null;
       decoder.onseeked = null;
       decoder.onerror = null;
       decoder.pause();
@@ -474,27 +494,31 @@ function WebThumbnailJob(props: ThumbnailProps) {
     decoder.playsInline = true;
     decoder.preload = "metadata";
     decoder.crossOrigin = "anonymous";
-    decoder.onloadedmetadata = () => {
-      if (!current() || settled) return;
+    const prepare = () => {
+      if (!current() || settled || prepared) return;
       try {
         times = galleryStillTimes(props.item, decoder.duration);
-        if (!times.length || !decoder.videoWidth || !decoder.videoHeight)
-          throw new Error("No frame geometry");
+        if (!times.length) throw new Error("No retained frame");
+        // Metadata and seek completion need not mean pixels are ready yet.
+        // Keep the same bounded job alive until loadeddata/canplay supplies them.
+        if (!decoder.videoWidth || !decoder.videoHeight) return;
         const scale = Math.min(
           1,
           galleryStillSize / Math.max(decoder.videoWidth, decoder.videoHeight),
         );
         canvas.width = Math.max(1, Math.round(decoder.videoWidth * scale));
         canvas.height = Math.max(1, Math.round(decoder.videoHeight * scale));
+        prepared = true;
         decoder.currentTime = times[0];
       } catch {
         fail();
       }
     };
-    decoder.onseeked = () => {
-      if (!current() || settled) return;
+    const capture = () => {
+      if (!current() || settled || !samplePending || decoder.seeking) return;
+      if (decoder.readyState < 2) return;
       try {
-        if (decoder.readyState < 2) throw new Error("No decoded frame");
+        samplePending = false;
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context) throw new Error("No canvas");
         context.drawImage(decoder, 0, 0, canvas.width, canvas.height);
@@ -519,6 +543,16 @@ function WebThumbnailJob(props: ThumbnailProps) {
       } catch {
         fail();
       }
+    };
+    decoder.onloadedmetadata = prepare;
+    decoder.onseeked = () => {
+      if (!prepared) return;
+      samplePending = true;
+      capture();
+    };
+    decoder.onloadeddata = decoder.oncanplay = () => {
+      prepare();
+      capture();
     };
     decoder.onerror = fail;
     try {

@@ -48,7 +48,8 @@ function stillUI(
     },
   ).outputText;
   const exports: Record<string, any> = {};
-  const hooks: any[] = [];
+  let hooks: any[] = [];
+  const componentHooks = new Map<Function, any[]>();
   const effects: (() => void | (() => void))[] = [];
   const cleanups: (() => void)[] = [];
   const events = new Map<string, (event: any) => void>();
@@ -90,13 +91,14 @@ function stillUI(
       return {
         useState(initial: unknown) {
           const slot = cursor++;
+          const state = hooks;
           if (!(slot in hooks))
             hooks[slot] = typeof initial === "function" ? initial() : initial;
           return [
             hooks[slot],
             (next: any) =>
-              (hooks[slot] =
-                typeof next === "function" ? next(hooks[slot]) : next),
+              (state[slot] =
+                typeof next === "function" ? next(state[slot]) : next),
           ];
         },
         useRef(current: unknown) {
@@ -191,8 +193,17 @@ function stillUI(
     if (Array.isArray(value)) return value.map(render);
     if (!value || typeof value !== "object" || !("props" in value))
       return value;
-    if (typeof value.type === "function")
-      return render(value.type(value.props));
+    if (typeof value.type === "function") {
+      const previousHooks = hooks,
+        previousCursor = cursor;
+      hooks = componentHooks.get(value.type) || [];
+      componentHooks.set(value.type, hooks);
+      cursor = 0;
+      const child = value.type(value.props);
+      hooks = previousHooks;
+      cursor = previousCursor;
+      return render(child);
+    }
     return {
       ...value,
       props: { ...value.props, children: render(value.props.children) },
@@ -211,13 +222,14 @@ function stillUI(
     render(props: Record<string, unknown> = {}) {
       cursor = 0;
       return nodes(
-        render(
-          exports.GalleryStillPreview({
+        render({
+          type: exports.GalleryStillPreview,
+          props: {
             item: item(),
             enabled: true,
             ...props,
-          }),
-        ),
+          },
+        }),
       );
     },
     flush() {
@@ -474,6 +486,84 @@ test("Usable artwork is shown as a non-animated image rather than a video; audio
   assert.ok(rows.some((node) => node.props.children === "Audio creation"));
 });
 
+test("An unavailable explicit video poster falls back to a retained frame without playing the video", async () => {
+  const ui = stillUI();
+  const video = item({ cover: "/api/creator/media/missing-poster" });
+  try {
+    const poster = ui
+      .render({ item: video })
+      .find((node) => node.type === "Image")!;
+    ui.flush();
+    assert.equal(ui.counts().instances, 0);
+    poster.props.onError();
+    ui.render({ item: video });
+    ui.flush();
+    await Promise.resolve();
+    const frame = ui
+      .render({ item: video })
+      .find((node) => node.type === "Image")!;
+    assert.equal(frame.props.source, ui.bitmap);
+    assert.equal(ui.counts().instances, 1);
+    assert.equal(ui.counts().plays, 0);
+  } finally {
+    ui.unmount();
+  }
+});
+
+test("Unavailable image-only artwork keeps an honest fallback and cannot start a video decoder", () => {
+  const ui = stillUI();
+  const photo = item({
+    content_type: "image/png",
+    media_url: null,
+    cover: "/api/creator/media/missing-photo",
+  });
+  try {
+    const poster = ui
+      .render({ item: photo })
+      .find((node) => node.type === "Image")!;
+    ui.flush();
+    poster.props.onError();
+    assert.ok(
+      ui
+        .render({ item: photo })
+        .some((node) => node.props.children === "Still preview unavailable"),
+    );
+    assert.equal(ui.counts().instances, 0);
+  } finally {
+    ui.unmount();
+  }
+});
+
+test("A stale poster error cannot reject artwork from a replacement creation", () => {
+  const ui = stillUI();
+  const first = item({ cover: "/api/creator/media/first-poster" });
+  const replacement = item({
+    id: "replacement",
+    cover: "/api/creator/media/second-poster",
+  });
+  try {
+    const oldPoster = ui
+      .render({ item: first })
+      .find((node) => node.type === "Image")!;
+    ui.flush();
+    ui.render({ item: replacement });
+    oldPoster.props.onError();
+    const nodes = ui.render({ item: replacement });
+    assert.equal(
+      nodes.find((node) => node.type === "Image")!.props.source.uri,
+      replacement.cover,
+    );
+    assert.equal(ui.counts().instances, 0);
+    assert.ok(
+      !nodes.some(
+        (node) => node.props.children === "Still preview unavailable",
+      ),
+    );
+  } finally {
+    ui.unmount();
+  }
+});
+
 test("Invalid retained ranges and decoder errors stop at an honest still-unavailable state", () => {
   for (const [options, props] of [
     [{}, { item: item({ trim_start: 10, trim_end: 4 }) }],
@@ -574,6 +664,59 @@ test("Web side artwork captures one bounded still in memory and discards the dec
   }
 });
 
+test("Stalled web artwork has a bounded deadline and rejects a late load after fallback", () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const timeout = globalThis.setTimeout,
+    clear = globalThis.clearTimeout;
+  let expire!: () => void,
+    removed = 0;
+  const image: any = {
+    onload: null,
+    onerror: null,
+    removeAttribute() {
+      removed++;
+    },
+  };
+  globalThis.setTimeout = ((fn: () => void, duration: number) => {
+    assert.equal(duration, 10000);
+    expire = fn;
+    return 1;
+  }) as any;
+  globalThis.clearTimeout = (() => {}) as any;
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: { createElement: () => image },
+  });
+  const ui = stillUI({ platform: "web", portal: true });
+  const photo = item({
+    content_type: "image/png",
+    media_url: null,
+    cover: "/api/creator/media/photo",
+  });
+  try {
+    ui.render({ item: photo });
+    ui.flush();
+    const lateLoad = image.onload;
+    expire();
+    lateLoad();
+    assert.equal(image.onload, null);
+    assert.equal(image.onerror, null);
+    assert.equal(removed, 1);
+    assert.ok(
+      ui
+        .render({ item: photo })
+        .some((node) => node.props.children === "Still preview unavailable"),
+    );
+    assert.equal(ui.counts().instances, 0);
+  } finally {
+    ui.unmount();
+    if (original) Object.defineProperty(globalThis, "document", original);
+    else delete (globalThis as any).document;
+    globalThis.setTimeout = timeout;
+    globalThis.clearTimeout = clear;
+  }
+});
+
 function webDecoder(pictures: boolean[], brokenCanvas = false) {
   const original = Object.getOwnPropertyDescriptor(globalThis, "document");
   const order: string[] = [],
@@ -587,6 +730,8 @@ function webDecoder(pictures: boolean[], brokenCanvas = false) {
     videoHeight: 1080,
     readyState: 4,
     onloadedmetadata: null,
+    onloadeddata: null,
+    oncanplay: null,
     onseeked: null,
     onerror: null,
     set crossOrigin(value: string) {
@@ -691,6 +836,71 @@ test("Web video uses at most three paused interior samples and paints only a bou
   }
 });
 
+test("Web metadata without frame dimensions waits for loaded data within the existing deadline", () => {
+  const web = webDecoder([true]);
+  const ui = stillUI({ platform: "web", portal: true });
+  try {
+    ui.render();
+    ui.flush();
+    web.decoder.videoWidth = 0;
+    web.decoder.videoHeight = 0;
+    web.decoder.onloadedmetadata();
+    assert.equal(web.seeks.length, 0);
+    assert.ok(
+      !ui
+        .render()
+        .some((node) => node.props.children === "Still preview unavailable"),
+    );
+    web.decoder.videoWidth = 1920;
+    web.decoder.videoHeight = 1080;
+    web.decoder.onloadeddata();
+    assert.deepEqual(web.seeks, [6.05]);
+    assert.equal(
+      web.counts().draws,
+      0,
+      "a seek must complete before its pixels are sampled",
+    );
+    web.decoder.onseeked();
+    assert.ok(ui.render().some((node) => node.type === "Image"));
+    assert.equal(web.counts().plays, 0);
+  } finally {
+    ui.unmount();
+    web.restore();
+  }
+});
+
+test("Web seek completion before pixels are ready waits for loadeddata and never samples an in-flight seek", () => {
+  const web = webDecoder([true]);
+  const ui = stillUI({ platform: "web", portal: true });
+  try {
+    ui.render();
+    ui.flush();
+    web.decoder.onloadedmetadata();
+    web.decoder.readyState = 1;
+    web.decoder.onseeked();
+    assert.equal(web.counts().draws, 0);
+    assert.ok(
+      !ui
+        .render()
+        .some((node) => node.props.children === "Still preview unavailable"),
+    );
+    web.decoder.readyState = 4;
+    web.decoder.seeking = true;
+    web.decoder.onloadeddata();
+    assert.equal(web.counts().draws, 0);
+    web.decoder.seeking = false;
+    web.decoder.oncanplay();
+    assert.equal(web.counts().draws, 1);
+    assert.ok(ui.render().some((node) => node.type === "Image"));
+    assert.equal(web.decoder.onloadeddata, null);
+    assert.equal(web.decoder.oncanplay, null);
+    assert.equal(web.counts().plays, 0);
+  } finally {
+    ui.unmount();
+    web.restore();
+  }
+});
+
 test("Three dark web samples and inaccessible canvas pixels produce honest nonvideo fallbacks", () => {
   for (const brokenCanvas of [false, true]) {
     const web = webDecoder([false, false, false], brokenCanvas);
@@ -747,6 +957,8 @@ test("Web deadline and unmount detach handlers without accepting late work or pl
     assert.equal(web.seeks.length, 0);
     assert.equal(web.decoder.onseeked, null);
     assert.equal(web.decoder.onloadedmetadata, null);
+    assert.equal(web.decoder.onloadeddata, null);
+    assert.equal(web.decoder.oncanplay, null);
     assert.equal(web.decoder.onerror, null);
     assert.ok(
       ui

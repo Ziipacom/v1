@@ -19,7 +19,7 @@ const microphonePermission =
 const config: ExpoConfig = {
   name: production ? "Ziipa" : "Ziipa Preview",
   slug: "ziipa",
-  version: "1.0.5",
+  version: "1.0.6",
   platforms: portal
     ? ["web"]
     : production
@@ -64,7 +64,7 @@ const config: ExpoConfig = {
     allowBackup: false,
     package: production ? identifier : `${identifier}.preview`,
     ...(googleServicesFile ? { googleServicesFile } : {}),
-    versionCode: 6,
+    versionCode: 7,
     adaptiveIcon: {
       foregroundImage: "./assets/brand/app-icon.png",
       backgroundColor: "#110D1C",

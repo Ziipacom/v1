@@ -38,6 +38,27 @@ npx wrangler r2 bucket cors set ziipa-media --file ../infrastructure/r2-cors.jso
 
 Create an R2 S3 API token with **Object Read & Write** permission scoped only to `ziipa-media`. Record its access key, secret key, and the endpoint `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` as Render environment variables. R2 upload links expire after 15 minutes; authorized playback links expire after five minutes.
 
+The CORS file uses Wrangler's lowercase `rules` / `allowed` schema, rather than
+the dashboard's S3-style `AllowedOrigins` schema. Keep its existing upload rule
+unchanged: signed `PUT` requests may send `Content-Type` from the three Ziipa
+HTTPS origins and the two listed local development origins. The separate
+`GET` / `HEAD` rule permits browser playback and canvas thumbnails only from
+`https://ziipa.com`, `https://www.ziipa.com`, and `https://app.ziipa.com`. It
+allows `Range` / `If-Range` requests and exposes the four response headers needed
+for range and object identity checks. It does not add read access for development
+origins or wildcard origins, and it adds neither `Authorization` nor `Cookie` to
+the allowed request headers.
+
+This read CORS rule does **not** make the bucket public or authorize a media
+read. The API still checks the signed-in viewer's ownership, publication and
+account privacy rules before issuing an expiring signed R2 URL. Browser canvas
+capture needs anonymous CORS on the final R2 response even when ordinary video
+playback succeeds without it. Do not enable public bucket URLs or add a
+server-side video decoder to the Free API to work around missing CORS. After
+applying the policy, reload the signed-in gallery and profile and verify both
+active playback and inactive still previews; never put signed URLs in logs or
+screenshots. See [Cloudflare's CORS documentation](https://developers.cloudflare.com/r2/buckets/cors/).
+
 ## 4. Pinata
 
 Create a Pinata JWT with pinning permissions and store it as the Render environment variable `PINATA_JWT`. Creator media remains in R2 for ordinary playback. Ziipa sends a creator-approved asset and its canonical metadata to Pinata only when the user starts the NFT metadata flow.

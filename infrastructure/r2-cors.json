@@ -14,6 +14,19 @@
       },
       "exposeHeaders": ["ETag"],
       "maxAgeSeconds": 3600
+    },
+    {
+      "allowed": {
+        "origins": [
+          "https://ziipa.com",
+          "https://www.ziipa.com",
+          "https://app.ziipa.com"
+        ],
+        "methods": ["GET", "HEAD"],
+        "headers": ["Range", "If-Range"]
+      },
+      "exposeHeaders": ["Content-Range", "Accept-Ranges", "Content-Length", "ETag"],
+      "maxAgeSeconds": 3600
     }
   ]
 }
