@@ -1,6 +1,6 @@
 import { useDesktopLayout } from "../components/desktop-layout";
 import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Image,
@@ -69,7 +69,7 @@ export function ProfileScreen({
     values: Record<string, ProfileCardBounds>;
   }>({ key: "", values: {} });
   const [previewBanner, setPreviewBanner] = useState<string | null>(null);
-  const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
+  const [failedAvatar, setFailedAvatar] = useState<object | null>(null);
   const profile = data.profile;
   const banner = previewBanner || profile?.cover_url || "/media/studio.jpg";
   const bannerSource = useProfileImageSource(banner, session?.access_token);
@@ -77,6 +77,14 @@ export function ProfileScreen({
     profile?.avatar_url,
     session?.access_token,
   );
+  // A successful account read supplies a new profile receipt, allowing one
+  // retry of the same URL. Failed reads keep that receipt and its failure.
+  const avatarIdentity = useMemo(
+    () => ({}),
+    [profile, avatarSource, session?.access_token],
+  );
+  const currentAvatarIdentity = useRef(avatarIdentity);
+  currentAvatarIdentity.current = avatarIdentity;
   useEffect(() => {
     setPreviewBanner(null);
   }, [session?.access_token]);
@@ -237,10 +245,13 @@ export function ProfileScreen({
             >
               {profile?.avatar_url &&
               avatarSource &&
-              failedAvatar !== profile.avatar_url ? (
+              failedAvatar !== avatarIdentity ? (
                 <Image
                   source={avatarSource}
-                  onError={() => setFailedAvatar(profile.avatar_url)}
+                  onError={() => {
+                    if (currentAvatarIdentity.current === avatarIdentity)
+                      setFailedAvatar(avatarIdentity);
+                  }}
                   resizeMode="cover"
                   style={{ width: "100%", height: "100%", borderRadius: 39 }}
                 />

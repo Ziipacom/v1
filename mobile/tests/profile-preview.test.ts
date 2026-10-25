@@ -11,7 +11,8 @@ import {
   profileVideoSelection,
 } from "../src/lib/profile-preview.ts";
 import * as helpers from "../src/lib/profile-preview.ts";
-import type { Item } from "../src/lib/types.ts";
+import { createProfileImageSync } from "../src/lib/profile-sync.ts";
+import type { Item, ProfileImages } from "../src/lib/types.ts";
 
 function item(id: string, changes: Partial<Item> = {}): Item {
   return {
@@ -451,7 +452,10 @@ test("visible inactive Profile videos use their own still and play affordance wi
     assert.equal(still.props.enabled, true);
     assert.ok(nodes.some((node) => node.type === "Play"));
     assert.ok(nodes.some((node) => node.props.children === "Open to play"));
-    assert.equal(nodes.some((node) => node.type === "VideoView"), false);
+    assert.equal(
+      nodes.some((node) => node.type === "VideoView"),
+      false,
+    );
     ui.flush();
     assert.equal(ui.counts().plays, 0);
     assert.equal(ui.counts().instances, 0);
@@ -467,14 +471,25 @@ test("Profile still loading, failure and dark feedback stays separate from the c
   ] as const) {
     const ui = previewHarness({ stillStatus });
     const nodes = ui.render({ videoActive: false });
-    const badge = nodes.find((node) => node.props.testID === "profile-video-still-play")!;
+    const badge = nodes.find(
+      (node) => node.props.testID === "profile-video-still-play",
+    )!;
     assert.ok(badge);
     assert.equal(badge.props.style.top, 8);
     assert.equal(badge.props.style.right, 8);
     assert.ok(nodes.some((node) => node.props.children === expected));
-    assert.equal(nodes.filter((node) => node.props.children === "Open to play").length, 1);
-    assert.equal(nodes.some((node) => node.props.children === "Video · Open to play"), false);
-    assert.equal(nodes.some((node) => node.type === "VideoView"), false);
+    assert.equal(
+      nodes.filter((node) => node.props.children === "Open to play").length,
+      1,
+    );
+    assert.equal(
+      nodes.some((node) => node.props.children === "Video · Open to play"),
+      false,
+    );
+    assert.equal(
+      nodes.some((node) => node.type === "VideoView"),
+      false,
+    );
     ui.flush();
     assert.equal(ui.counts().plays, 0);
     ui.unmount();
@@ -485,8 +500,14 @@ test("Profile still jobs and playback views are absent offscreen or when the sha
   for (const videoActive of [true, false]) {
     const ui = previewHarness();
     const nodes = ui.render({ videoActive, visible: false });
-    assert.equal(nodes.some((node) => node.type === "GalleryStillPreview"), false);
-    assert.equal(nodes.some((node) => node.type === "VideoView"), false);
+    assert.equal(
+      nodes.some((node) => node.type === "GalleryStillPreview"),
+      false,
+    );
+    assert.equal(
+      nodes.some((node) => node.type === "VideoView"),
+      false,
+    );
     ui.flush();
     assert.equal(ui.counts().instances, 0);
     assert.equal(ui.counts().plays, 0);
@@ -497,7 +518,10 @@ test("Profile still jobs and playback views are absent offscreen or when the sha
 test("Profile inactive video stills require the shared readiness and Save Data permission independently of static image visibility", () => {
   const ui = previewHarness();
   const nodes = ui.render({ videoActive: false, allowVideoStill: false });
-  assert.equal(nodes.some((node) => node.type === "GalleryStillPreview"), false);
+  assert.equal(
+    nodes.some((node) => node.type === "GalleryStillPreview"),
+    false,
+  );
   assert.equal(ui.counts().instances, 0);
   const photo = ui.render({
     item: item("photo", {
@@ -515,18 +539,27 @@ test("a visible active Profile video never also starts a still job; untrusted be
   const active = previewHarness();
   const activeNodes = active.render({});
   assert.ok(activeNodes.some((node) => node.type === "VideoView"));
-  assert.equal(activeNodes.some((node) => node.type === "GalleryStillPreview"), false);
+  assert.equal(
+    activeNodes.some((node) => node.type === "GalleryStillPreview"),
+    false,
+  );
   active.unmount();
   const bearer = previewHarness({ platform: "web", portal: false });
   const bearerNodes = bearer.render({ videoActive: false });
-  assert.equal(bearerNodes.some((node) => node.type === "GalleryStillPreview"), false);
+  assert.equal(
+    bearerNodes.some((node) => node.type === "GalleryStillPreview"),
+    false,
+  );
   assert.equal(bearer.counts().instances, 0);
   const audio = previewHarness();
   const audioNodes = audio.render({
     item: item("song", { content_type: "audio/wav" }),
     videoActive: false,
   });
-  assert.equal(audioNodes.some((node) => node.type === "GalleryStillPreview"), false);
+  assert.equal(
+    audioNodes.some((node) => node.type === "GalleryStillPreview"),
+    false,
+  );
   assert.equal(audio.counts().instances, 0);
 });
 
@@ -746,7 +779,7 @@ test("profile card layout snapshots native event dimensions before a deferred st
 
 /** Render the real Profile screen with inert native leaves and persistent hook
  * slots, so local filters, native layout events and scroll position interact. */
-function profileScreenHarness(desktop = false) {
+function profileScreenHarness(desktop = false, initialProfile?: ProfileImages) {
   const source = readFileSync(
     new URL("../src/screens/profile.tsx", import.meta.url),
     "utf8",
@@ -764,6 +797,24 @@ function profileScreenHarness(desktop = false) {
   let requests = 0;
   let refreshes = 0;
   let preferenceWrites = 0;
+  let profile = initialProfile;
+  let token = "fixture-token";
+  let profileReadFailed = false;
+  let profileReads = 0;
+  let focus: (() => void) | undefined;
+  const imageSources = new Map<string, unknown>();
+  const profileSync = createProfileImageSync({
+    currentToken: () => token,
+    read: async () => {
+      profileReads++;
+      if (profileReadFailed || !profile)
+        throw new Error("Profile read unavailable");
+      return { ...profile };
+    },
+    apply: (value) => {
+      profile = value;
+    },
+  });
   const navigations: unknown[] = [];
   const creations = [
     item("game", { category: "games" }),
@@ -808,6 +859,15 @@ function profileScreenHarness(desktop = false) {
           const slot = cursor++;
           return (hooks[slot] ||= { current });
         },
+        useMemo(fn: () => unknown, deps: unknown[]) {
+          const slot = cursor++;
+          if (
+            !hooks[slot] ||
+            deps.some((value, i) => value !== hooks[slot].deps[i])
+          )
+            hooks[slot] = { deps, value: fn() };
+          return hooks[slot].value;
+        },
         useEffect() {},
         useCallback: (fn: unknown) => fn,
       };
@@ -829,7 +889,12 @@ function profileScreenHarness(desktop = false) {
         SafeAreaView: "SafeAreaView",
         useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
       };
-    if (name === "@react-navigation/native") return { useFocusEffect() {} };
+    if (name === "@react-navigation/native")
+      return {
+        useFocusEffect(callback: () => void) {
+          focus = callback;
+        },
+      };
     if (name === "lucide-react-native")
       return new Proxy({}, { get: (_, key) => key });
     if (name.endsWith("/desktop-layout"))
@@ -863,21 +928,30 @@ function profileScreenHarness(desktop = false) {
     if (name.endsWith("/assets"))
       return { coverSource: (uri: string) => ({ uri }) };
     if (name.endsWith("/profile-image-source"))
-      return { useProfileImageSource: () => null };
+      return {
+        useProfileImageSource: (path?: string | null) => {
+          if (!path) return null;
+          const key = `${path}:${token}`;
+          if (!imageSources.has(key)) imageSources.set(key, { uri: path });
+          return imageSources.get(key);
+        },
+      };
     if (name.endsWith("/profile-preview")) return helpers;
     if (name === "../provider")
       return {
         useZiipa: () => ({
           session: {
-            access_token: "fixture-token",
+            access_token: token,
             user: { id: 1, name: "Creator" },
           },
           guest: false,
           data: {
+            profile,
             items: creations.filter((row) => row.visibility === "published"),
             drafts: creations,
             preferences,
           },
+          refreshProfileImages: () => profileSync.refresh(token),
           api: () => {
             requests++;
             throw new Error("Local filters must not request account changes");
@@ -917,6 +991,16 @@ function profileScreenHarness(desktop = false) {
     navigations,
     layoutEvents,
     counts: () => ({ requests, refreshes, preferenceWrites }),
+    focus() {
+      focus?.();
+    },
+    failProfileReads(failed: boolean) {
+      profileReadFailed = failed;
+    },
+    profileReads: () => profileReads,
+    changeSession() {
+      token = "renewed-fixture-token";
+    },
     render,
     /** Native layout events are required for mounts or changed geometry only.
      * A retained key at unchanged y/height intentionally emits no new event. */
@@ -949,10 +1033,64 @@ function profileScreenHarness(desktop = false) {
   };
 }
 
+test("Profile retries a failed same-URL avatar after a confirmed focus read while failed reads preserve artwork", async () => {
+  const path =
+    "/api/creator/profile-images/3f27d47b-0c2a-49ac-bffa-1f9ee335c03d";
+  const ui = profileScreenHarness(false, {
+    avatar_media_id: "3f27d47b-0c2a-49ac-bffa-1f9ee335c03d",
+    avatar_url: path,
+    cover_media_id: null,
+    cover_url: "/media/studio.jpg",
+    cover_sample: "/media/studio.jpg",
+  });
+  const avatar = () => ui.render().find((node) => node.type === "Image");
+  const settle = async () => {
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+  };
+  const first = avatar()!;
+  ui.failProfileReads(true);
+  ui.focus();
+  await settle();
+  assert.equal(
+    avatar()!.props.source,
+    first.props.source,
+    "a failed account read keeps confirmed artwork",
+  );
+  first.props.onError();
+  assert.equal(avatar(), undefined);
+  assert.equal(avatar(), undefined, "ordinary renders cannot retry in a loop");
+  ui.focus();
+  await settle();
+  assert.equal(
+    avatar(),
+    undefined,
+    "a failed read supplies no new retry receipt",
+  );
+  ui.failProfileReads(false);
+  ui.focus();
+  await settle();
+  const retried = avatar()!;
+  assert.equal(retried.props.source.uri, path);
+  assert.equal(ui.profileReads(), 3);
+  first.props.onError();
+  assert.ok(avatar(), "a stale error cannot hide the new confirmed receipt");
+  retried.props.onError();
+  assert.equal(avatar(), undefined);
+  first.props.onError();
+  assert.equal(
+    avatar(),
+    undefined,
+    "a stale error cannot clear a newer failure",
+  );
+  ui.changeSession();
+  assert.ok(avatar(), "a new session can retry the same account URL");
+});
+
 test("Profile forwards the shared video-loading gate to stills while keeping ordinary card visibility separate", () => {
   const ui = profileScreenHarness();
   let nodes = ui.renderWithLayout();
-  const previews = () => nodes.filter((node) => node.type === "ProfileMediaPreview");
+  const previews = () =>
+    nodes.filter((node) => node.type === "ProfileMediaPreview");
   assert.ok(previews().every((node) => node.props.allowVideoStill === true));
   assert.equal(previews().filter((node) => node.props.videoActive).length, 1);
   ui.activity.mountVideo = false;
@@ -960,7 +1098,11 @@ test("Profile forwards the shared video-loading gate to stills while keeping ord
   assert.ok(previews().every((node) => node.props.allowVideoStill === false));
   assert.ok(previews().some((node) => node.props.visible));
   assert.equal(previews().filter((node) => node.props.videoActive).length, 0);
-  assert.deepEqual(ui.counts(), { requests: 0, refreshes: 0, preferenceWrites: 0 });
+  assert.deepEqual(ui.counts(), {
+    requests: 0,
+    refreshes: 0,
+    preferenceWrites: 0,
+  });
 });
 
 test("unchanged leading Profile cards remeasure across category and Saved filters without replacing the ScrollView", () => {

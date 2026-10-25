@@ -30,15 +30,40 @@ function accountUI(
   const alerts: string[] = [];
   let refreshes = 0;
   let logouts = 0;
+  let token = "fixture-token";
+  let profile = options.avatar ? { avatar_url: options.avatar } : undefined;
+  const imageSources = new Map<string, unknown>();
+  let hooks: any[] = [];
+  let cursor = 0;
+  const componentHooks = new Map<Function, any[]>();
   const exported: Record<string, any> = {};
   new Function("exports", "require", compiled)(exported, (name: string) => {
     if (name === "react")
       return {
-        useRef: (current: unknown) => ({ current }),
-        useState: (initial: unknown) => [
-          initial,
-          (value: unknown) => updates.push(value),
-        ],
+        useRef(current: unknown) {
+          return (hooks[cursor++] ||= { current });
+        },
+        useState(initial: unknown) {
+          const slot = cursor++,
+            state = hooks;
+          if (!(slot in state)) state[slot] = initial;
+          return [
+            state[slot],
+            (value: unknown) => {
+              updates.push(value);
+              state[slot] = value;
+            },
+          ];
+        },
+        useMemo(fn: () => unknown, deps: unknown[]) {
+          const slot = cursor++;
+          if (
+            !hooks[slot] ||
+            deps.some((value, i) => value !== hooks[slot].deps[i])
+          )
+            hooks[slot] = { deps, value: fn() };
+          return hooks[slot].value;
+        },
       };
     if (name === "react/jsx-runtime")
       return { jsx, jsxs: jsx, Fragment: "Fragment" };
@@ -64,15 +89,11 @@ function accountUI(
           session: options.guest
             ? null
             : {
-                access_token: "fixture-token",
+                access_token: token,
                 user: { id: 1, name: "Alex Creator" },
               },
           guest: options.guest ?? false,
-          data: {
-            profile: options.avatar
-              ? { avatar_url: options.avatar }
-              : undefined,
-          },
+          data: { profile },
           logout: async () => {
             logouts += 1;
             await options.logout?.();
@@ -95,13 +116,16 @@ function accountUI(
         useProfileImageSource: (
           path: string | null | undefined,
           token: string,
-        ) =>
-          path
-            ? {
-                uri: path,
-                headers: { Authorization: `Bearer ${token}` },
-              }
-            : null,
+        ) => {
+          if (!path) return null;
+          const key = `${path}:${token}`;
+          if (!imageSources.has(key))
+            imageSources.set(key, {
+              uri: path,
+              headers: { Authorization: `Bearer ${token}` },
+            });
+          return imageSources.get(key);
+        },
       };
     if (name === "../theme") return { color: {}, font: {}, styles: {} };
     throw new Error(`Unexpected account dependency ${name}`);
@@ -110,8 +134,17 @@ function accountUI(
     if (Array.isArray(value)) return value.map(render);
     if (!value || typeof value !== "object" || !("props" in value))
       return value;
-    if (typeof value.type === "function")
-      return render(value.type(value.props));
+    if (typeof value.type === "function") {
+      const previousHooks = hooks,
+        previousCursor = cursor;
+      hooks = componentHooks.get(value.type) || [];
+      componentHooks.set(value.type, hooks);
+      cursor = 0;
+      const child = value.type(value.props);
+      hooks = previousHooks;
+      cursor = previousCursor;
+      return render(child);
+    }
     return {
       ...value,
       props: { ...value.props, children: render(value.props.children) },
@@ -124,9 +157,10 @@ function accountUI(
   }
   function renderExport(name: string) {
     return nodes(
-      render(
-        exported[name]({ onNavigate: (name: string) => navigated.push(name) }),
-      ),
+      render({
+        type: exported[name],
+        props: { onNavigate: (name: string) => navigated.push(name) },
+      }),
     );
   }
   return {
@@ -136,6 +170,12 @@ function accountUI(
     alerts,
     refreshes: () => refreshes,
     logouts: () => logouts,
+    confirmProfile() {
+      if (profile) profile = { ...profile };
+    },
+    changeSession() {
+      token = "renewed-fixture-token";
+    },
   };
 }
 
@@ -248,8 +288,45 @@ test("the saved account avatar uses the authenticated image source instead of a 
     headers: { Authorization: "Bearer fixture-token" },
   });
   image.props.onError();
+  assert.equal(
+    ui.renderExport("AccountMenu").some((node) => node.type === "Image"),
+    false,
+  );
+});
+
+test("an account avatar retries the same URL only after a confirmed profile or session change", () => {
+  const ui = accountUI({
+    avatar: "/api/creator/profile-images/3f27d47b-0c2a-49ac-bffa-1f9ee335c03d",
+  });
+  const avatar = () =>
+    ui.renderExport("AccountMenu").find((node) => node.type === "Image");
+  const first = avatar()!;
+  first.props.onError();
+  assert.equal(avatar(), undefined);
+  assert.equal(
+    avatar(),
+    undefined,
+    "ordinary renders cannot loop a failed image",
+  );
+  ui.confirmProfile();
+  const retried = avatar()!;
+  assert.equal(retried.props.source.uri, first.props.source.uri);
+  first.props.onError();
   assert.ok(
-    ui.updates.includes(path),
-    "a failed image is marked for initial-avatar fallback",
+    avatar(),
+    "a stale error cannot reject the newer confirmed receipt",
+  );
+  retried.props.onError();
+  assert.equal(avatar(), undefined);
+  first.props.onError();
+  assert.equal(
+    avatar(),
+    undefined,
+    "a stale error cannot clear a newer failure",
+  );
+  ui.changeSession();
+  assert.equal(
+    avatar()!.props.source.headers.Authorization,
+    "Bearer renewed-fixture-token",
   );
 });

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Alert, Image, Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -69,9 +69,15 @@ function ScopedAccountMenu(props: Props) {
   const { unreadNotifications, refresh } = useAccountMessages();
   const { signOut, busy, error } = useAccountSignOut();
   const [open, setOpen] = useState(false);
-  const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
+  const [failedAvatar, setFailedAvatar] = useState<object | null>(null);
   const avatar = data.profile?.avatar_url;
   const avatarSource = useProfileImageSource(avatar, session?.access_token);
+  const avatarIdentity = useMemo(
+    () => ({}),
+    [data.profile, avatarSource, session?.access_token],
+  );
+  const currentAvatarIdentity = useRef(avatarIdentity);
+  currentAvatarIdentity.current = avatarIdentity;
   const insets = useSafeAreaInsets();
   const hasNewNotifications = (unreadNotifications ?? 0) > 0;
   const initial = Array.from(
@@ -119,10 +125,13 @@ function ScopedAccountMenu(props: Props) {
         })}
       >
         {session && !guest ? (
-          avatar && avatarSource && failedAvatar !== avatar ? (
+          avatar && avatarSource && failedAvatar !== avatarIdentity ? (
             <Image
               source={avatarSource}
-              onError={() => setFailedAvatar(avatar)}
+              onError={() => {
+                if (currentAvatarIdentity.current === avatarIdentity)
+                  setFailedAvatar(avatarIdentity);
+              }}
               resizeMode="cover"
               style={{ width: 42, height: 42, borderRadius: 21 }}
             />
