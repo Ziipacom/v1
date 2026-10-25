@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   title: 'Ziipa — More than a feed. A world of yours.',
   description:
     'Discover video, music, gaming, and creator tools in Ziipa. Explore the interactive demo, try the creator web preview, and join the mobile app waitlist.',
-  icons: { icon: '/brand/ziipa-logo.png' },
+  icons: { icon: { url: '/brand/ziipa-favicon.png', type: 'image/png', sizes: '1080x1080' } },
   metadataBase: new URL('https://ziipa.com'),
   openGraph: {
     title: 'Ziipa — More than a feed. A world of yours.',

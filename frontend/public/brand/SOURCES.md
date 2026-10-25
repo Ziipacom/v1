@@ -8,3 +8,4 @@ Extracted from the current rendered https://ziipa.com/ website on 2026-08-31 at 
 - `barlow-400.ttf` through `barlow-800.ttf`: Google Fonts Barlow, the font family used by the live site. Exact download URLs are preserved in `barlow-source.css`.
 
 The local homepage preserves the source brand, hero headline, introduction, and waitlist copy. Navigation now points to working local sections and the member portal. The source site's template links, placeholder telephone number, and broken third-party images were not copied. No live-site code or data was modified.
+- `ziipa-favicon.png`: the owner-requested standalone Z artwork reused byte-for-byte from the confirmed account avatar on 2026-10-25. Shared with the Studio web favicon; the image contains no wordmark.

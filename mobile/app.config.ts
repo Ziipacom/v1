@@ -28,6 +28,7 @@ const config: ExpoConfig = {
   web: {
     bundler: "metro",
     name: portal ? "Ziipa Studio" : "Ziipa mobile preview",
+    favicon: "./assets/brand/ziipa-favicon.png",
   },
   ...(portal ? { experiments: { baseUrl: "/studio" } } : {}),
   owner: process.env.EXPO_OWNER || undefined,

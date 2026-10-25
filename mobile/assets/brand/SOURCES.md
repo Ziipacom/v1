@@ -1,5 +1,7 @@
 # Ziipa native brand assets
 
+- `ziipa-favicon.png`: the owner-requested standalone Z artwork reused byte-for-byte from the confirmed account avatar on 2026-10-25. Shared with the website favicon; the image contains no wordmark.
+
 - `ziipa-logo.png`: unmodified original from the website project. Source: https://ziipa.com/wp-content/uploads/2022/04/cropped-image_2022_04_13T15_54_13_541Z-1.png . Original white-wordmark version, retained for dark-mode branding.
 - `ziipa-logo-light.png`: owner-requested light-mode variant made on 2026-10-20 by converting only the original wordmark RGB to black. The split is at x=4050 inside the original transparent gap; every alpha value and every symbol pixel is preserved. Dimensions remain 9446 x 3104. No symbol inversion, redrawing, background or font substitution. Shared Studio selects it only when its resolved theme is light; dark mode retains the unmodified original.
 - `ziipa-background.png`: original brand gradient from the website project. Source: https://ziipa.com/wp-content/uploads/2022/04/Background-1-1.8gb.png .

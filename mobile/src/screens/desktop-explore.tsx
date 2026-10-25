@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -26,7 +26,9 @@ import {
 } from "lucide-react-native";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { DesktopFeaturedGallery } from "../components/desktop-featured-gallery";
-import { Action, Cover, Notice, categories } from "../components/ui";
+import { GalleryStillPreview } from "../components/gallery-still-preview";
+import { useProfilePreviewActivity } from "../components/profile-media-preview";
+import { Action, Notice, categories } from "../components/ui";
 import { inCreativeWorld, searchItems } from "../lib/domain";
 import type { Category, Item, RootStack } from "../lib/types";
 import { useZiipa } from "../provider";
@@ -38,6 +40,7 @@ type Props = NativeStackScreenProps<RootStack, "Main">;
 export function DesktopExplore({ route, navigation }: Props) {
   const { data, refresh, refreshing, loading, error } = useZiipa();
   const { contentWidth } = useDesktopLayout();
+  const previewActivity = useProfilePreviewActivity(false);
   const [query, setQuery] = useState(route.params?.query || "");
   const [resetVersion, setResetVersion] = useState(0);
   const category = route.params?.category;
@@ -333,7 +336,10 @@ export function DesktopExplore({ route, navigation }: Props) {
                     ]}
                   >
                     <View style={s.cover}>
-                      <Cover item={item} style={StyleSheet.absoluteFill} />
+                      <DesktopGridPreview
+                        item={item}
+                        enabled={previewActivity.mountVideo}
+                      />
                       <LinearGradient
                         colors={["transparent", "#100A22C9"]}
                         style={StyleSheet.absoluteFill}
@@ -444,6 +450,56 @@ export function DesktopExplore({ route, navigation }: Props) {
         )}
       </View>
     </ScrollView>
+  );
+}
+
+/** Grid cards share Gallery's stills without mounting another playing video. */
+function DesktopGridPreview({
+  item,
+  enabled,
+}: {
+  item: Item;
+  enabled: boolean;
+}) {
+  const region = useRef<View>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const element = region.current as unknown as HTMLElement | null;
+    if (!element?.getBoundingClientRect) return;
+    if (typeof IntersectionObserver !== "undefined") {
+      const observer = new IntersectionObserver(
+        ([entry]) =>
+          setVisible(entry.isIntersecting && entry.intersectionRatio >= 0.5),
+        { threshold: [0, 0.5] },
+      );
+      observer.observe(element);
+      return () => observer.disconnect();
+    }
+    const measure = () => {
+      const bounds = element.getBoundingClientRect();
+      const height =
+        Math.min(bounds.bottom, window.innerHeight) - Math.max(0, bounds.top);
+      const width =
+        Math.min(bounds.right, window.innerWidth) - Math.max(0, bounds.left);
+      const area =
+        Math.min(bounds.height, window.innerHeight) *
+        Math.min(bounds.width, window.innerWidth);
+      setVisible(
+        area > 0 && (Math.max(0, height) * Math.max(0, width)) / area >= 0.5,
+      );
+    };
+    measure();
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  return (
+    <View ref={region} pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <GalleryStillPreview item={item} enabled={enabled && visible} />
+    </View>
   );
 }
 

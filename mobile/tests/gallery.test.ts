@@ -262,9 +262,16 @@ function galleryUI(
     if (name === "./desktop-explore")
       return { DesktopExplore: "DesktopExplore" };
     if (name === "./reel-media") return { ReelMedia: "ReelMedia" };
-    if (name === "./profile-media-preview")
-      return { ProfileMediaPreview: "ProfileMediaPreview" };
-    if (name === "./gallery-still-preview")
+    if (name.endsWith("/profile-media-preview"))
+      return {
+        ProfileMediaPreview: "ProfileMediaPreview",
+        useProfilePreviewActivity: (blocked: boolean) => ({
+          mountVideo: activity.focused && !blocked,
+          autoplay: activity.focused && !blocked && preferences.autoplay,
+          visible: activity.focused && !blocked,
+        }),
+      };
+    if (name.endsWith("/gallery-still-preview"))
       return { GalleryStillPreview: "GalleryStillPreview" };
     if (name === "../lib/gallery") return gallery;
     if (name === "../lib/domain") return domain;
