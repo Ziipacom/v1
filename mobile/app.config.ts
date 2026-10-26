@@ -15,7 +15,7 @@ const encryptionReviewed = process.env.ZIIPA_ENCRYPTION_REVIEWED === "true";
 const cameraPermission =
   "Allow Ziipa to preview your camera for recording or livestreaming. Video is only broadcast when you choose Go live.";
 const microphonePermission =
-  "Allow Ziipa to include your microphone in recordings or livestreams. Audio is only broadcast when you choose Go live.";
+  "Allow Ziipa to use your microphone for recordings, livestreams and voice-to-text. Livestream audio starts only when you choose Go live.";
 const config: ExpoConfig = {
   name: production ? "Ziipa" : "Ziipa Preview",
   slug: "ziipa",
@@ -123,6 +123,14 @@ const config: ExpoConfig = {
         microphonePermission,
         enableBackgroundPlayback: false,
         enableBackgroundRecording: false,
+      },
+    ],
+    [
+      "expo-speech-recognition",
+      {
+        microphonePermission,
+        speechRecognitionPermission:
+          "Allow Ziipa to turn your spoken requests into editable text.",
       },
     ],
     [

@@ -12,8 +12,10 @@ import {
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
+import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   Bell,
@@ -23,6 +25,7 @@ import {
   Clapperboard,
   FolderOpen,
   Megaphone,
+  Mic,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -33,6 +36,8 @@ import { Action, Cover, Field, Notice, Pill } from "../components/ui";
 import { AgentTasks } from "../components/agent-tasks";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { ApiError } from "../lib/api";
+import { createAutomationChatController } from "../lib/automation-chat";
+import { useAutomationDictation } from "../lib/automation-dictation";
 import {
   authorizationHeaders,
   portalMode,
@@ -374,16 +379,82 @@ export function MediaOSScreen({
 }: NativeStackScreenProps<RootStack, "MediaOS">) {
   const { session, forgetSession } = useZiipa();
   const { desktop } = useDesktopLayout();
+  const focused = useIsFocused();
   const [tab, setTab] = useState<WorkspaceTab>(route.params?.tab || "Overview");
   const [workspace, setWorkspace] = useState<Workspace>(emptyWorkspace);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const contentScroll = useRef<ScrollView>(null);
-  const mutationLock = useRef(false);
   const owner = useRef(session?.access_token);
   owner.current = session?.access_token;
+  const [assistantState, setAssistantState] = useState({
+    owner: session?.access_token,
+    draft: "",
+    sending: false,
+    approving: false,
+    error: "",
+  });
+  const assistant =
+    assistantState.owner === session?.access_token
+      ? assistantState
+      : { draft: "", sending: false, approving: false, error: "" };
+  const assistantDraft = assistant.draft;
+  const assistantSending = assistant.sending;
+  const assistantApproving = assistant.approving;
+  const assistantBusy = assistantSending || assistantApproving;
+  const assistantError = assistant.error;
+  const updateAssistant = useCallback(
+    (
+      change: (current: {
+        draft: string;
+        sending: boolean;
+        approving: boolean;
+        error: string;
+      }) => Partial<{
+        draft: string;
+        sending: boolean;
+        approving: boolean;
+        error: string;
+      }>,
+    ) => {
+      const token = session?.access_token;
+      if (owner.current !== token) return;
+      setAssistantState((previous) => {
+        if (owner.current !== token) return previous;
+        const current =
+          previous.owner === token
+            ? previous
+            : { draft: "", sending: false, approving: false, error: "" };
+        return { ...current, ...change(current), owner: token };
+      });
+    },
+    [session?.access_token],
+  );
+  const setAssistantDraft = useCallback(
+    (next: string | ((previous: string) => string)) =>
+      updateAssistant((current) => ({
+        draft: typeof next === "function" ? next(current.draft) : next,
+      })),
+    [updateAssistant],
+  );
+  const setAssistantSending = (sending: boolean) =>
+    updateAssistant(() => ({ sending }));
+  const setAssistantApproving = (approving: boolean) =>
+    updateAssistant(() => ({ approving }));
+  const setAssistantError = (message: string) =>
+    updateAssistant(() => ({ error: message }));
+  const chatController = useRef(createAutomationChatController()).current;
+  const chatIdentity = useRef({});
+  const contentScroll = useRef<ScrollView>(null);
+  const mutationLock = useRef(false);
+  const dictation = useAutomationDictation({
+    owner: session?.access_token,
+    enabled: focused && !!session && !assistantBusy && !busy,
+    value: assistantDraft,
+    onChange: setAssistantDraft,
+    maxLength: 3000,
+  });
   const requests = useRef(new Set<AbortController>());
   const generation = useRef(0);
   const api = useCallback(
@@ -443,105 +514,117 @@ export function MediaOSScreen({
     },
     [session?.access_token, forgetSession],
   );
-  const load = useCallback(async () => {
-    if (!session) return;
-    const token = session.access_token;
-    const current = ++generation.current;
-    setLoading(true);
-    setError("");
-    const paths: Partial<Record<keyof Workspace, string>> = {
-      projects: "/api/os/projects",
-      goals: "/api/os/goals",
-      library: "/api/os/library",
-      ...(tab === "Memory" ? { memories: "/api/os/memories" } : {}),
-      ...(tab === "Assistant"
-        ? {
-            memories: "/api/os/memories",
-            messages: "/api/os/assistant/messages",
-            actions: "/api/os/assistant/actions",
-            permissions: "/api/os/assistant/permissions",
-            assistant: "/api/os/assistant/config",
-          }
-        : {}),
-      ...(tab === "Workflows" || tab === "Overview"
-        ? {
-            workflows: "/api/os/workflows",
-            runs: "/api/os/workflows/runs",
-            workflowConfig: "/api/os/workflows/config",
-          }
-        : {}),
-      ...(tab === "Insights" || tab === "Overview"
-        ? {
-            revenue: "/api/os/revenue",
-            insights: "/api/os/insights",
-            activity: "/api/os/activity",
-          }
-        : {}),
-    };
-    const entries = Object.entries(paths) as [keyof Workspace, string][];
-    // Bound simultaneous connections for native browsers and the small free API.
-    // Stop the remaining batches if the user changes accounts or workspaces.
-    const results: PromiseSettledResult<unknown>[] = [];
-    for (let offset = 0; offset < entries.length; offset += 3) {
-      results.push(
-        ...(await Promise.allSettled(
-          entries
-            .slice(offset, offset + 3)
-            .map(([, path]) => api<unknown>(path)),
-        )),
-      );
-      if (owner.current !== token || generation.current !== current) return;
-    }
-    if (owner.current !== token || generation.current !== current) return;
-    const update: Partial<Workspace> = {};
-    const failures: string[] = [];
-    results.forEach((result, index) => {
-      const key = entries[index][0];
-      if (result.status === "rejected") {
-        const source = entries[index][1]
-          .replace("/api/os/", "")
-          .split("/")
-          .map(readableStatus)
-          .join(" · ");
-        failures.push(
-          result.reason instanceof Error
-            ? `${source}: ${result.reason instanceof ApiError ? result.reason.message : "Could not reach this workspace tool. Check the API connection, then refresh."}`
-            : `${source}: Could not load this workspace tool.`,
+  const load = useCallback(
+    async (targetTab: WorkspaceTab = tab) => {
+      if (!session) return;
+      const token = session.access_token;
+      const current = ++generation.current;
+      setLoading(true);
+      setError("");
+      const paths: Partial<Record<keyof Workspace, string>> = {
+        projects: "/api/os/projects",
+        goals: "/api/os/goals",
+        library: "/api/os/library",
+        ...(targetTab === "Memory" ? { memories: "/api/os/memories" } : {}),
+        ...(targetTab === "Assistant"
+          ? {
+              memories: "/api/os/memories",
+              messages: "/api/os/assistant/messages",
+              actions: "/api/os/assistant/actions",
+              permissions: "/api/os/assistant/permissions",
+              assistant: "/api/os/assistant/config",
+            }
+          : {}),
+        ...(targetTab === "Workflows" || targetTab === "Overview"
+          ? {
+              workflows: "/api/os/workflows",
+              runs: "/api/os/workflows/runs",
+              workflowConfig: "/api/os/workflows/config",
+            }
+          : {}),
+        ...(targetTab === "Insights" || targetTab === "Overview"
+          ? {
+              revenue: "/api/os/revenue",
+              insights: "/api/os/insights",
+              activity: "/api/os/activity",
+            }
+          : {}),
+      };
+      const entries = Object.entries(paths) as [keyof Workspace, string][];
+      // Bound simultaneous connections for native browsers and the small free API.
+      // Stop the remaining batches if the user changes accounts or workspaces.
+      const results: PromiseSettledResult<unknown>[] = [];
+      for (let offset = 0; offset < entries.length; offset += 3) {
+        results.push(
+          ...(await Promise.allSettled(
+            entries
+              .slice(offset, offset + 3)
+              .map(([, path]) => api<unknown>(path)),
+          )),
         );
-        return;
+        if (owner.current !== token || generation.current !== current) return;
       }
-      const value = result.value;
-      if (key === "permissions")
-        update.permissions =
-          (value as { allowed_tools?: string[] })?.allowed_tools || [];
-      else if (key === "library")
-        update.library = Array.isArray(value)
-          ? { items: value as LibraryItem[] }
-          : (value as Library) || { items: [] };
-      else if (key === "assistant") update.assistant = value as AssistantConfig;
-      else if (key === "insights")
-        update.insights = value as Workspace["insights"];
-      else if (key === "workflowConfig")
-        update.workflowConfig = (value as Record<string, unknown>) || {};
-      else (update as Record<string, unknown>)[key] = listOf(value, key);
-    });
-    setWorkspace((previous) => ({ ...previous, ...update }));
-    setError([...new Set(failures)].join("\n"));
-    setLoading(false);
-  }, [api, session?.access_token, tab]);
+      if (owner.current !== token || generation.current !== current) return;
+      const update: Partial<Workspace> = {};
+      const failures: string[] = [];
+      results.forEach((result, index) => {
+        const key = entries[index][0];
+        if (result.status === "rejected") {
+          const source = entries[index][1]
+            .replace("/api/os/", "")
+            .split("/")
+            .map(readableStatus)
+            .join(" · ");
+          failures.push(
+            result.reason instanceof Error
+              ? `${source}: ${result.reason instanceof ApiError ? result.reason.message : "Could not reach this workspace tool. Check the API connection, then refresh."}`
+              : `${source}: Could not load this workspace tool.`,
+          );
+          return;
+        }
+        const value = result.value;
+        if (key === "permissions")
+          update.permissions =
+            (value as { allowed_tools?: string[] })?.allowed_tools || [];
+        else if (key === "library")
+          update.library = Array.isArray(value)
+            ? { items: value as LibraryItem[] }
+            : (value as Library) || { items: [] };
+        else if (key === "assistant")
+          update.assistant = value as AssistantConfig;
+        else if (key === "insights")
+          update.insights = value as Workspace["insights"];
+        else if (key === "workflowConfig")
+          update.workflowConfig = (value as Record<string, unknown>) || {};
+        else (update as Record<string, unknown>)[key] = listOf(value, key);
+      });
+      setWorkspace((previous) => ({ ...previous, ...update }));
+      setError([...new Set(failures)].join("\n"));
+      setLoading(false);
+    },
+    [api, session?.access_token, tab],
+  );
   useEffect(() => {
     generation.current++;
+    chatIdentity.current = {};
+    chatController.cancel();
     mutationLock.current = false;
     setWorkspace(emptyWorkspace());
     setError("");
     setNotice("");
     setBusy(false);
+    setAssistantDraft("");
+    setAssistantSending(false);
+    setAssistantApproving(false);
+    setAssistantError("");
     return () => {
       generation.current++;
+      chatIdentity.current = {};
+      chatController.cancel();
       requests.current.forEach((request) => request.abort());
       requests.current.clear();
     };
-  }, [session?.access_token]);
+  }, [session?.access_token, chatController]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -576,6 +659,29 @@ export function MediaOSScreen({
         setBusy(false);
       }
     }
+  };
+  const sendAssistantMessage = (projectId: string | null = null) => {
+    if (busy || assistantBusy || dictation.listening || dictation.pending)
+      return Promise.resolve(false);
+    dictation.cancel();
+    const token = session?.access_token;
+    const identity = chatIdentity.current;
+    const draft = assistantDraft;
+    return chatController.send({
+      draft,
+      owner: token,
+      projectId,
+      isCurrent: () =>
+        owner.current === token && chatIdentity.current === identity,
+      post: (body) =>
+        api<AssistantReply>("/api/os/assistant/messages", "POST", body),
+      open: () => setTab("Assistant"),
+      busy: setAssistantSending,
+      error: setAssistantError,
+      accepted: () =>
+        setAssistantDraft((current) => (current === draft ? "" : current)),
+      refresh: () => load("Assistant"),
+    });
   };
   const openItem = (item: Item) => navigation.navigate("Composer", { item });
   return (
@@ -711,6 +817,140 @@ export function MediaOSScreen({
               </Pressable>
             ))}
           </View>
+          <View
+            testID="media-os-automation-chat"
+            style={{
+              minHeight: 52,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 5,
+              padding: 4,
+              borderRadius: 28,
+              borderWidth: 1,
+              borderColor: color.border,
+              backgroundColor: color.panel,
+            }}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                assistantDraft.trim()
+                  ? "Send to Ziipa AI"
+                  : "Open Ziipa AI chat"
+              }
+              accessibilityState={{
+                disabled:
+                  !session ||
+                  busy ||
+                  assistantBusy ||
+                  dictation.listening ||
+                  dictation.pending,
+                busy: assistantSending,
+              }}
+              disabled={
+                !session ||
+                busy ||
+                assistantBusy ||
+                dictation.listening ||
+                dictation.pending
+              }
+              onPress={() => {
+                if (assistantDraft.trim()) void sendAssistantMessage();
+                else setTab("Assistant");
+              }}
+              style={({ pressed }) => ({
+                width: 44,
+                height: 44,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 24,
+                backgroundColor: color.purple,
+                opacity: pressed ? 0.7 : !session || busy ? 0.5 : 1,
+              })}
+            >
+              {assistantSending ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <Sparkles size={20} color="white" />
+              )}
+            </Pressable>
+            <TextInput
+              accessibilityLabel="Ask Ziipa to Automate"
+              placeholder="Ask Ziipa to Automate..."
+              placeholderTextColor={color.faint}
+              value={assistantDraft}
+              editable={!!session && !busy && !assistantBusy}
+              onChangeText={(text) => {
+                dictation.cancel();
+                setAssistantDraft(text);
+              }}
+              maxLength={3000}
+              returnKeyType="send"
+              onSubmitEditing={() => {
+                if (dictation.listening) dictation.stop();
+                else void sendAssistantMessage();
+              }}
+              style={[
+                styles.body,
+                {
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 44,
+                  paddingVertical: 8,
+                  fontSize: 13,
+                  color: color.text,
+                },
+              ]}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                dictation.listening ? "Stop voice input" : "Use voice to type"
+              }
+              accessibilityHint="Use your device's speech service, then review the text before sending."
+              accessibilityState={{
+                disabled:
+                  !session || busy || assistantBusy || dictation.pending,
+                busy: dictation.pending,
+                selected: dictation.listening,
+              }}
+              disabled={!session || busy || assistantBusy || dictation.pending}
+              onPress={() => {
+                if (dictation.listening) dictation.stop();
+                else void dictation.start();
+              }}
+              style={({ pressed }) => ({
+                width: 44,
+                height: 44,
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: pressed
+                  ? 0.7
+                  : !session || busy || assistantBusy
+                    ? 0.5
+                    : 1,
+              })}
+            >
+              {dictation.pending ? (
+                <ActivityIndicator size="small" color={color.muted} />
+              ) : (
+                <Mic
+                  size={20}
+                  color={dictation.listening ? color.lime : color.text}
+                />
+              )}
+            </Pressable>
+          </View>
+          {dictation.listening ? (
+            <Text accessibilityLiveRegion="polite" style={styles.small}>
+              Listening… tap the microphone to finish.
+            </Text>
+          ) : null}
+          {dictation.error ? (
+            <Text accessibilityRole="alert" style={styles.small}>
+              {dictation.error}
+            </Text>
+          ) : null}
         </View>
       )}
       <ScrollView
@@ -805,7 +1045,12 @@ export function MediaOSScreen({
                 <Text style={styles.small}>Refreshing your workspace…</Text>
               </View>
             ) : null}
-            {error ? <Notice error text={error} /> : null}
+            {error || assistantError ? (
+              <Notice
+                error
+                text={[error, assistantError].filter(Boolean).join("\n")}
+              />
+            ) : null}
             {notice ? <Notice text={notice} /> : null}
             {tab === "Overview" ? (
               <Overview
@@ -846,7 +1091,17 @@ export function MediaOSScreen({
             {tab === "Assistant" ? (
               <AssistantPanel
                 workspace={workspace}
-                busy={busy}
+                busy={busy || assistantSending}
+                message={assistantDraft}
+                setMessage={(message) => {
+                  dictation.cancel();
+                  setAssistantDraft(message);
+                }}
+                chatSending={assistantSending}
+                approving={assistantApproving}
+                setApproving={setAssistantApproving}
+                isCurrentAccount={() => owner.current === session?.access_token}
+                sendMessage={sendAssistantMessage}
                 api={api}
                 mutate={mutate}
                 refresh={load}
@@ -1681,6 +1936,13 @@ function MemoryPanel({
 function AssistantPanel({
   workspace,
   busy,
+  message,
+  setMessage,
+  chatSending,
+  approving,
+  setApproving,
+  isCurrentAccount,
+  sendMessage,
   api,
   mutate,
   refresh,
@@ -1691,6 +1953,13 @@ function AssistantPanel({
 }: {
   workspace: Workspace;
   busy: boolean;
+  message: string;
+  setMessage: (message: string) => void;
+  chatSending: boolean;
+  approving: boolean;
+  setApproving: (approving: boolean) => void;
+  isCurrentAccount: () => boolean;
+  sendMessage: (projectId: string | null) => Promise<boolean>;
   api: <T>(path: string, method?: Method, body?: unknown) => Promise<T>;
   mutate: Mutate;
   refresh: () => Promise<void>;
@@ -1700,9 +1969,9 @@ function AssistantPanel({
   openResult: (result: Record<string, unknown>) => void;
 }) {
   const { desktop } = useDesktopLayout();
-  const [message, setMessage] = useState("");
   const [project, setProject] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
+  const sending = approving || chatSending;
+  const approvalLock = useRef(false);
   const [review, setReview] = useState<string | null>(null);
   const availableTools =
     workspace.assistant?.tools ||
@@ -1711,34 +1980,17 @@ function AssistantPanel({
       title: toolTitles[id] || readableStatus(id),
     })) ||
     [];
-  const chat = async () => {
-    if (!message.trim() || sending) return;
-    setSending(true);
-    report("");
-    try {
-      await api<AssistantReply>("/api/os/assistant/messages", "POST", {
-        message: message.trim(),
-        project_id: project,
-      });
-      setMessage("");
-      await refresh();
-    } catch (e) {
-      report(
-        e instanceof Error
-          ? e.message
-          : "The assistant could not finish this request.",
-      );
-    } finally {
-      setSending(false);
-    }
+  const chat = () => {
+    if (!sending && !busy) return sendMessage(project);
   };
   const permissions = (tool: string) =>
     workspace.permissions.includes(tool)
       ? workspace.permissions.filter((t) => t !== tool)
       : [...workspace.permissions, tool];
   const approve = async (id: string, revision: number) => {
-    if (sending || busy) return;
-    setSending(true);
+    if (sending || busy || approvalLock.current) return;
+    approvalLock.current = true;
+    setApproving(true);
     report("");
     try {
       const result = await api<{ result?: Record<string, unknown> }>(
@@ -1746,13 +1998,17 @@ function AssistantPanel({
         "POST",
         { revision },
       );
+      if (!isCurrentAccount()) return;
       await refresh();
+      if (!isCurrentAccount()) return;
       setReview(null);
       if (result.result) openResult(result.result);
     } catch (e) {
-      report(e instanceof Error ? e.message : "The action did not complete.");
+      if (isCurrentAccount())
+        report(e instanceof Error ? e.message : "The action did not complete.");
     } finally {
-      setSending(false);
+      approvalLock.current = false;
+      setApproving(false);
     }
   };
   const messageComposer = (
