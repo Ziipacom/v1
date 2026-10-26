@@ -69,7 +69,7 @@ def generate_maximum_inputs(work, *, caption_band=False):
 def legacy_snapshot():
     return {'schema': 1, 'source': {'content_type': 'video/mp4'}, 'audio': {'content_type': 'audio/wav'},
                 'edit': {'trim_start': 0, 'trim_end': 90,
-                         'overlays': [{'text': 'Ziipa café 100 MiB input test', 'position': 'center', 'theme': 'purple'}],
+                         'overlays': [{'id': 'oracle-resource-overlay', 'text': 'Ziipa café 100 MiB input test', 'position': 'center', 'theme': 'purple'}],
                          'captions': [{'start': n, 'end': n + 1.5, 'text': f'Caption café {n}'} for n in range(0, 90, 2)],
                          'soundtrack': {'start': 0, 'volume': 0.5}}}
 
