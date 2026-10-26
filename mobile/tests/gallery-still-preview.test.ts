@@ -34,6 +34,8 @@ function stillUI(
     status?: string;
     generate?: (times: number[], size: unknown) => Promise<any[]>;
     cacheLease?: stillCache.GalleryStillCacheLease;
+    remoteSource?: string;
+    prepareSource?: (source: unknown, signal: AbortSignal) => Promise<unknown>;
   } = {},
 ) {
   const code = ts.transpileModule(
@@ -61,6 +63,7 @@ function stillUI(
     pauses = 0,
     releases = 0;
   const samples: { times: number[]; size: unknown }[] = [];
+  const playerSources: unknown[] = [];
   const bitmap = { width: 360, height: 203, release() {} };
   const player: Record<string, any> = {
     duration: 20,
@@ -145,16 +148,25 @@ function stillUI(
         Image: { resolveAssetSource: (source: any) => source },
       };
     if (name === "expo-image") return { Image: "Image" };
+    if (name === "expo/fetch")
+      return { fetch: () => assert.fail("Unexpected native fetch") };
+    if (name === "../lib/native-thumbnail-source")
+      return {
+        prepareNativeThumbnailSource:
+          options.prepareSource ||
+          (() => assert.fail("Unexpected source resolution")),
+      };
     if (name === "expo-asset")
       return { Asset: { fromModule: () => ({ uri: "/media/poster.jpg" }) } };
     if (name === "expo") return { useEvent: () => ({ status: player.status }) };
     if (name === "expo-video")
       return {
         VideoView: "VideoView",
-        useVideoPlayer: (_: unknown, setup: (player: unknown) => void) => {
+        useVideoPlayer: (source: unknown, setup: (player: unknown) => void) => {
           const slot = cursor++;
           if (!hooks[slot]) {
             hooks[slot] = player;
+            playerSources.push(source);
             instances++;
             setup(player);
             cleanups.push(() => {
@@ -176,14 +188,18 @@ function stillUI(
         playbackSource: (path: string) =>
           path?.startsWith("/api/creator/media/")
             ? {
-                uri: path,
+                uri: options.remoteSource || path,
                 headers: { Authorization: "Bearer fixture" },
                 useCaching: false,
               }
             : null,
       };
     if (name === "../lib/config")
-      return { portalMode: options.portal ?? false };
+      return {
+        portalMode: options.portal ?? false,
+        apiOrigin: "https://api.ziipa.com",
+        canonicalApiOrigin: "https://api.ziipa.com",
+      };
     if (name === "../lib/profile-preview") return { profilePreviewRange };
     if (name === "../lib/gallery-preview") return galleryPreview;
     if (name === "../lib/gallery-still-cache") return stillCache;
@@ -225,6 +241,7 @@ function stillUI(
   return {
     player,
     samples,
+    playerSources,
     bitmap,
     events,
     render(props: Record<string, unknown> = {}) {
@@ -284,6 +301,89 @@ test("Native side video generates a bounded retained image, never paints or play
   assert.equal(ui.counts().releases, 1);
   assert.equal(ui.events.size, 0);
   assert.equal(ui.counts().plays, 0);
+});
+
+test("Android private stills resolve their source before creating a decoder and use only the resolved source", async () => {
+  let finish!: (source: unknown) => void;
+  let signal!: AbortSignal;
+  const resolved = {
+    uri: "https://fixture.r2.cloudflarestorage.com/still?capability=fixture",
+    useCaching: false,
+  };
+  const ui = stillUI({
+    remoteSource: "https://api.ziipa.com/api/creator/media/source",
+    prepareSource(source, cancellation) {
+      assert.deepEqual(source, {
+        uri: "https://api.ziipa.com/api/creator/media/source",
+        headers: { Authorization: "Bearer fixture" },
+        useCaching: false,
+      });
+      signal = cancellation;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+  });
+  ui.render();
+  ui.flush();
+  assert.equal(ui.counts().instances, 0);
+  finish(resolved);
+  await Promise.resolve();
+  ui.render();
+  ui.flush();
+  assert.deepEqual(ui.playerSources, [resolved]);
+  assert.equal(ui.counts().instances, 1);
+  assert.equal(ui.counts().plays, 0);
+  await Promise.resolve();
+  assert.equal(
+    ui.render().find((node) => node.type === "Image")!.props.source,
+    ui.bitmap,
+  );
+  ui.unmount();
+  assert.equal(signal.aborted, true);
+});
+
+test("Android source resolution cannot mount a decoder or report a stale result after disposal", async () => {
+  let finish!: (source: unknown) => void;
+  let signal!: AbortSignal;
+  const ui = stillUI({
+    remoteSource: "https://api.ziipa.com/api/creator/media/source",
+    prepareSource(_source, cancellation) {
+      signal = cancellation;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+  });
+  ui.render();
+  ui.flush();
+  ui.unmount();
+  assert.equal(signal.aborted, true);
+  finish({ uri: "https://fixture.r2.cloudflarestorage.com/still" });
+  await Promise.resolve();
+  assert.equal(ui.counts().instances, 0);
+  assert.deepEqual(ui.playerSources, []);
+});
+
+test("Android source resolution failures report a source failure without mounting a player", async () => {
+  const ui = stillUI({
+    remoteSource: "https://api.ziipa.com/api/creator/media/source",
+    prepareSource: async () => {
+      throw new Error("fixture failure");
+    },
+  });
+  ui.render();
+  ui.flush();
+  await Promise.resolve();
+  const nodes = ui.render();
+  assert.equal(ui.counts().instances, 0);
+  assert.ok(
+    nodes.some(
+      (node) =>
+        node.props.testID === "gallery-still-failure-source-unavailable",
+    ),
+  );
+  ui.unmount();
 });
 
 test("Disabled side previews and bearer-web transport do not mount private video decoders", () => {

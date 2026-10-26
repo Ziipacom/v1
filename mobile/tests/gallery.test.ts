@@ -473,7 +473,7 @@ test("Cold Gallery stills get more than a rotation interval and ready/error stat
   }
 });
 
-test("Repeated Gallery loading reports cannot extend the fixed22s ceiling", async () => {
+test("Repeated Gallery loading reports cannot extend the fixed platform deadline", async () => {
   for (const desktop of [false, true]) {
     await withGalleryClock(desktop, ({ render, tick, front }) => {
       for (let step = 0; step < 4; step++) {
@@ -485,7 +485,8 @@ test("Repeated Gallery loading reports cannot extend the fixed22s ceiling", asyn
         render();
         assert.equal(front(), "first");
       }
-      tick(1999);
+      // Android also reserves two bounded five-second URL resolutions.
+      tick((desktop ? 22000 : 32000) - 20001);
       render();
       assert.equal(front(), "first");
       tick(1);

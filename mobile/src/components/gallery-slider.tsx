@@ -292,7 +292,11 @@ export function GallerySlider({
     const elapsed = Date.now() - rotationWindow.current.startedAt;
     const timer = setTimeout(
       () => advance(1),
-      Math.max(0, (stillPending ? 22000 : 7000) - elapsed),
+      Math.max(
+        0,
+        (stillPending ? (Platform.OS === "android" ? 32000 : 22000) : 7000) -
+          elapsed,
+      ),
     );
     return () => clearTimeout(timer);
   }, [rotating, advance, scene, stillPending]);

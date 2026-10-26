@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { Image, type ImageProps } from "expo-image";
 import { Asset } from "expo-asset";
+import { fetch as nativeFetch } from "expo/fetch";
 import {
   useVideoPlayer,
   type VideoSource,
@@ -16,7 +17,8 @@ import {
 import { ImageIcon, Music2, Video } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { background, coverSource, playbackSource } from "../lib/assets";
-import { portalMode } from "../lib/config";
+import { apiOrigin, canonicalApiOrigin, portalMode } from "../lib/config";
+import { prepareNativeThumbnailSource } from "../lib/native-thumbnail-source";
 import { profilePreviewRange } from "../lib/profile-preview";
 import {
   galleryFrameHasPicture,
@@ -442,8 +444,49 @@ type ThumbnailProps = {
 function VideoThumbnailJob(props: ThumbnailProps) {
   return Platform.OS === "web" ? (
     <WebThumbnailJob {...props} />
+  ) : Platform.OS === "android" &&
+    typeof props.source === "object" &&
+    props.source !== null &&
+    "uri" in props.source &&
+    /^https?:\/\//i.test(props.source.uri || "") ? (
+    <AndroidThumbnailJob {...props} />
   ) : (
     <NativeThumbnailJob {...props} />
+  );
+}
+
+/** Resolve the private API hop before Android opens its separate metadata decoder. */
+function AndroidThumbnailJob(props: ThumbnailProps) {
+  const latest = useRef(props);
+  latest.current = props;
+  const [prepared, setPrepared] = useState<{
+    identity: object;
+    source: VideoSource;
+  } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    const current = () =>
+      !controller.signal.aborted && latest.current.identity === props.identity;
+    void prepareNativeThumbnailSource(
+      props.source,
+      controller.signal,
+      nativeFetch,
+      [apiOrigin, canonicalApiOrigin],
+    ).then(
+      (source) => {
+        if (current()) setPrepared({ identity: props.identity, source });
+      },
+      () => {
+        if (current())
+          latest.current.onError({ phase: "source", code: "unavailable" });
+      },
+    );
+    return () => controller.abort();
+  }, [props.source, props.identity]);
+  return prepared?.identity === props.identity ? (
+    <NativeThumbnailJob {...props} source={prepared.source} />
+  ) : (
+    <LoadingStill />
   );
 }
 
