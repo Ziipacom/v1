@@ -16,10 +16,13 @@ import {
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
+  Bell,
   Brain,
   CalendarClock,
   Check,
+  Clapperboard,
   FolderOpen,
+  Megaphone,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -633,30 +636,81 @@ export function MediaOSScreen({
           <Text style={styles.small}>
             Media, memory, plans and a helping hand in one private workspace.
           </Text>
-          <Action
-            secondary
-            title="Campaigns · create, review and distribute"
-            icon={CalendarClock}
-            onPress={() => navigation.navigate("Campaigns")}
-          />
-          <Action
-            secondary
-            title="Calendar · schedules and stream preflight"
-            icon={CalendarClock}
-            onPress={() => navigation.navigate("Calendar")}
-          />
-          <Action
-            secondary
-            title="Recordings · private VODs and clips"
-            onPress={() => navigation.navigate("Recordings")}
-          />
-          {session && (
-            <Action
-              secondary
-              title="Private updates · opt-in notifications"
-              onPress={() => navigation.navigate("Notifications")}
-            />
-          )}
+          <View
+            accessibilityRole="toolbar"
+            accessibilityLabel="Automate tools"
+            testID="media-os-automate-actions"
+            style={{ flexDirection: "row", gap: 6 }}
+          >
+            {[
+              {
+                label: "Campaigns",
+                description: "Campaigns · create, review and distribute",
+                icon: Megaphone,
+                onPress: () => navigation.navigate("Campaigns"),
+              },
+              {
+                label: "Calendar",
+                description: "Calendar · schedules and stream preflight",
+                icon: CalendarClock,
+                onPress: () => navigation.navigate("Calendar"),
+              },
+              {
+                label: "Recordings",
+                description: "Recordings · private VODs and clips",
+                icon: Clapperboard,
+                onPress: () => navigation.navigate("Recordings"),
+              },
+              ...(session
+                ? [
+                    {
+                      label: "Updates",
+                      description: "Private updates · opt-in notifications",
+                      icon: Bell,
+                      onPress: () => navigation.navigate("Notifications"),
+                    },
+                  ]
+                : []),
+            ].map(({ label, description, icon: Icon, onPress }) => (
+              <Pressable
+                key={label}
+                accessibilityRole="button"
+                accessibilityLabel={description}
+                onPress={onPress}
+                style={({ pressed }) => ({
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 60,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 5,
+                  paddingHorizontal: 3,
+                  paddingVertical: 8,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: color.border,
+                  backgroundColor: color.panel,
+                  opacity: pressed ? 0.7 : 1,
+                })}
+              >
+                <Icon size={20} color={color.text} />
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.small,
+                    {
+                      fontSize: 11,
+                      lineHeight: 14,
+                      textAlign: "center",
+                      color: color.text,
+                    },
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
       )}
       <ScrollView
