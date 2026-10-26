@@ -12,6 +12,7 @@ import {
 } from "../src/lib/profile-preview.ts";
 import * as helpers from "../src/lib/profile-preview.ts";
 import { createProfileImageSync } from "../src/lib/profile-sync.ts";
+import type { ProfileWebLayout } from "../src/lib/profile-web-layout.ts";
 import type { Item, ProfileImages } from "../src/lib/types.ts";
 
 function item(id: string, changes: Partial<Item> = {}): Item {
@@ -779,7 +780,17 @@ test("profile card layout snapshots native event dimensions before a deferred st
 
 /** Render the real Profile screen with inert native leaves and persistent hook
  * slots, so local filters, native layout events and scroll position interact. */
-function profileScreenHarness(desktop = false, initialProfile?: ProfileImages) {
+function profileScreenHarness(
+  desktop = false,
+  initialProfile?: ProfileImages,
+  web?: {
+    observe: (
+      scroller: Element,
+      cards: ReadonlyMap<string, Element>,
+      receive: (layout: ProfileWebLayout) => void,
+    ) => () => void;
+  },
+) {
   const source = readFileSync(
     new URL("../src/screens/profile.tsx", import.meta.url),
     "utf8",
@@ -793,6 +804,7 @@ function profileScreenHarness(desktop = false, initialProfile?: ProfileImages) {
   }).outputText;
   const exported: Record<string, any> = {};
   const hooks: any[] = [];
+  const pendingEffects: (() => void)[] = [];
   let cursor = 0;
   let requests = 0;
   let refreshes = 0;
@@ -868,22 +880,43 @@ function profileScreenHarness(desktop = false, initialProfile?: ProfileImages) {
             hooks[slot] = { deps, value: fn() };
           return hooks[slot].value;
         },
-        useEffect() {},
+        useEffect(callback: () => (() => void) | undefined, deps: unknown[]) {
+          if (!web) return;
+          const slot = cursor++;
+          const previous = hooks[slot];
+          if (
+            !previous ||
+            deps.some((value, i) => value !== previous.deps[i])
+          ) {
+            const next = {
+              deps,
+              cleanup: undefined as (() => void) | undefined,
+            };
+            hooks[slot] = next;
+            pendingEffects.push(() => {
+              previous?.cleanup?.();
+              next.cleanup = callback();
+            });
+          }
+        },
         useCallback: (fn: unknown) => fn,
       };
     if (name === "react/jsx-runtime")
       return { jsx, jsxs: jsx, Fragment: "Fragment" };
     if (name === "react-native")
-      return Object.fromEntries(
-        [
-          "Image",
-          "ImageBackground",
-          "Pressable",
-          "ScrollView",
-          "Text",
-          "View",
-        ].map((name) => [name, name]),
-      );
+      return {
+        Platform: { OS: web ? "web" : "android" },
+        ...Object.fromEntries(
+          [
+            "Image",
+            "ImageBackground",
+            "Pressable",
+            "ScrollView",
+            "Text",
+            "View",
+          ].map((name) => [name, name]),
+        ),
+      };
     if (name === "react-native-safe-area-context")
       return {
         SafeAreaView: "SafeAreaView",
@@ -937,6 +970,14 @@ function profileScreenHarness(desktop = false, initialProfile?: ProfileImages) {
         },
       };
     if (name.endsWith("/profile-preview")) return helpers;
+    if (name.endsWith("/profile-web-layout"))
+      return {
+        observeProfileWebLayout:
+          web?.observe ??
+          (() => {
+            throw new Error("Native Profile must not subscribe to DOM layout");
+          }),
+      };
     if (name === "../provider")
       return {
         useZiipa: () => ({
@@ -1002,6 +1043,9 @@ function profileScreenHarness(desktop = false, initialProfile?: ProfileImages) {
       token = "renewed-fixture-token";
     },
     render,
+    flushEffects() {
+      pendingEffects.splice(0).forEach((effect) => effect());
+    },
     /** Native layout events are required for mounts or changed geometry only.
      * A retained key at unchanged y/height intentionally emits no new event. */
     renderWithLayout() {
@@ -1032,6 +1076,86 @@ function profileScreenHarness(desktop = false, initialProfile?: ProfileImages) {
     },
   };
 }
+
+test("web Profile uses fresh DOM rectangles after a cold scroll and rejects old-session measurements", () => {
+  const subscriptions: {
+    receive: (layout: ProfileWebLayout) => void;
+    stopped: boolean;
+  }[] = [];
+  const ui = profileScreenHarness(true, undefined, {
+    observe(scroller, cards, receive) {
+      assert.equal(typeof scroller.getBoundingClientRect, "function");
+      assert.equal(cards.size, 6);
+      const subscription = { receive, stopped: false };
+      subscriptions.push(subscription);
+      return () => {
+        subscription.stopped = true;
+      };
+    },
+  });
+  let tree = ui.render();
+  const scroller = { getBoundingClientRect() {} };
+  tree.find((node) => node.type === "ScrollView")!.props.ref.current = {
+    getScrollableNode: () => scroller,
+  };
+  const feed = tree.find(
+    (node) => node.props.testID === "profile-creations-feed",
+  )!;
+  feed.props.children[0].forEach((card: any) => card.props.ref({}));
+  ui.flushEffects();
+  assert.equal(subscriptions.length, 1);
+  const snapshot: ProfileWebLayout = {
+    viewport: { top: 77, height: 643, gridTop: 0 },
+    bounds: { game: { top: 22, height: 320 }, film: { top: 360, height: 320 } },
+  };
+  subscriptions[0].receive(snapshot);
+  // Deliberately supply unrelated old native coordinates. The browser must
+  // use one DOM snapshot, rather than combining these stale events with it.
+  feed.props.onLayout({ nativeEvent: { layout: { y: 9000 } } });
+  tree = ui.render();
+  const previews = () =>
+    tree.filter((node) => node.type === "ProfileMediaPreview");
+  assert.deepEqual(
+    previews()
+      .filter((node) => node.props.visible)
+      .map((node) => node.props.item.id),
+    ["game", "film"],
+  );
+  assert.deepEqual(
+    previews()
+      .filter((node) => node.props.videoActive)
+      .map((node) => node.props.item.id),
+    ["film"],
+  );
+  ui.changeSession();
+  tree = ui.render();
+  assert.ok(
+    previews().every((node) => !node.props.visible),
+    "another account must await its own layout",
+  );
+  subscriptions[0].receive(snapshot);
+  tree = ui.render();
+  assert.ok(
+    previews().every((node) => !node.props.visible),
+    "late old-session geometry cannot activate new-account media",
+  );
+  ui.flushEffects();
+  assert.equal(subscriptions[0].stopped, true);
+  assert.equal(subscriptions.length, 2);
+  subscriptions[1].receive(snapshot);
+  tree = ui.render();
+  assert.deepEqual(
+    previews()
+      .filter((node) => node.props.videoActive)
+      .map((node) => node.props.item.id),
+    ["film"],
+  );
+  assert.deepEqual(ui.counts(), {
+    requests: 0,
+    refreshes: 0,
+    preferenceWrites: 0,
+  });
+});
 
 test("Profile retries a failed same-URL avatar after a confirmed focus read while failed reads preserve artwork", async () => {
   const path =

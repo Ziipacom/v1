@@ -70,19 +70,11 @@ export function GalleryStillPreview({
 }) {
   const { session, stillCacheLease } = useZiipa();
   const cacheKey = galleryStillCacheKey(item);
+  // Bootstrap refreshes allocate new timeline objects. The key describes every
+  // input used by this raw retained-frame capture; object allocation does not.
   const identity = useMemo(
     () => ({}),
-    [
-      item.id,
-      item.media_url,
-      item.cover,
-      item.trim_start,
-      item.trim_end,
-      item.timeline,
-      session?.access_token,
-      stillCacheLease,
-      cacheKey,
-    ],
+    [cacheKey, session?.access_token, stillCacheLease],
   );
   const [failure, setFailure] = useState<{
     identity: object;
@@ -97,6 +89,13 @@ export function GalleryStillPreview({
     dark: boolean;
     ownedThumbnail?: VideoThumbnail;
   } | null>(null);
+  const [displayedFrame, setDisplayedFrame] = useState<{
+    job: object;
+    source: StillSource;
+  } | null>(null);
+  // Keep the native display receipt ahead of React's state commit so a timeout
+  // at that boundary cannot reject pixels Image has already displayed.
+  const displayReceipt = useRef(displayedFrame);
   const job = useMemo(() => ({}), [identity, enabled, attempt]);
   const currentJob = useRef({ identity, enabled, job });
   currentJob.current = { identity, enabled, job };
@@ -114,6 +113,8 @@ export function GalleryStillPreview({
     setFailure(null);
     setPosterFailure(null);
     setPosterReady(null);
+    setDisplayedFrame(null);
+    displayReceipt.current = null;
     setAttempt(0);
   }, [identity, enabled]);
   const transport = Platform.OS !== "web" || portalMode || !!item.demo;
@@ -173,11 +174,38 @@ export function GalleryStillPreview({
     !failed &&
     !currentFrame &&
     !frameSource;
+  const frameDisplayed =
+    !!frameSource &&
+    (Platform.OS === "web" ||
+      (displayedFrame?.job === job && displayedFrame.source === frameSource));
+  useEffect(() => {
+    if (
+      Platform.OS === "web" ||
+      !enabled ||
+      !frameSource ||
+      failed ||
+      frameDisplayed
+    )
+      return;
+    // Native decode completion precedes Expo Image's queued drawable update.
+    // An Image that never displays must fail/retry instead of holding forever.
+    const timer = setTimeout(() => {
+      if (currentJob.current.job !== job || !currentJob.current.enabled) return;
+      if (
+        displayReceipt.current?.job === job &&
+        displayReceipt.current.source === frameSource
+      )
+        return;
+      setFailure({ identity, detail: { phase: "image", code: "timeout" } });
+      setFrame(null);
+    }, galleryStillTimeoutMs);
+    return () => clearTimeout(timer);
+  }, [identity, enabled, job, frameSource, failed, frameDisplayed]);
   const status = !enabled
     ? "unavailable"
-    : frameSource || (showPoster && posterReady === identity)
+    : frameDisplayed || (showPoster && posterReady === identity)
       ? "ready"
-      : showVideo || showPoster || retryPending
+      : frameSource || showVideo || showPoster || retryPending
         ? "loading"
         : "unavailable";
   const statusListener = useRef(onStatus);
@@ -258,6 +286,13 @@ export function GalleryStillPreview({
           cachePolicy="none"
           accessibilityLabel={`${item.title} representative still`}
           style={StyleSheet.absoluteFill}
+          onDisplay={() => {
+            if (currentJob.current.job === job && currentJob.current.enabled) {
+              const receipt = { job, source: frameSource };
+              displayReceipt.current = receipt;
+              setDisplayedFrame(receipt);
+            }
+          }}
           onError={() => {
             if (
               currentJob.current.identity === identity &&

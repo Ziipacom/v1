@@ -5,6 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import {
   Image,
   ImageBackground,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -48,6 +49,10 @@ import {
   type ProfileCategory,
   type ProfileCardBounds,
 } from "../lib/profile-preview";
+import {
+  observeProfileWebLayout,
+  type ProfileWebLayout,
+} from "../lib/profile-web-layout";
 import type { Category, ProfileImages, RootStack } from "../lib/types";
 import { useZiipa } from "../provider";
 import { color, font, styles } from "../theme";
@@ -68,6 +73,12 @@ export function ProfileScreen({
     key: string;
     values: Record<string, ProfileCardBounds>;
   }>({ key: "", values: {} });
+  const scrollRef = useRef<ScrollView>(null);
+  const webCards = useRef(new Map<string, Element>());
+  const [webLayout, setWebLayout] = useState<{
+    identity: object;
+    layout: ProfileWebLayout;
+  } | null>(null);
   const [previewBanner, setPreviewBanner] = useState<string | null>(null);
   const [failedAvatar, setFailedAvatar] = useState<object | null>(null);
   const profile = data.profile;
@@ -111,8 +122,30 @@ export function ProfileScreen({
   const layoutKey = `${category}:${saved}:${items.map((item) => item.id).join(",")}`;
   const layoutIdentity = useRef(layoutKey);
   layoutIdentity.current = layoutKey;
-  const cardBounds = cardLayouts.key === layoutKey ? cardLayouts.values : {};
-  const viewport = { top: scrollY, height: viewportHeight, gridTop };
+  const webIdentity = useMemo(() => ({}), [layoutKey, session?.access_token]);
+  const currentWebIdentity = useRef(webIdentity);
+  currentWebIdentity.current = webIdentity;
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const scroller = scrollRef.current?.getScrollableNode() as Element | null;
+    if (!scroller?.getBoundingClientRect) return;
+    return observeProfileWebLayout(scroller, webCards.current, (layout) => {
+      if (currentWebIdentity.current === webIdentity)
+        setWebLayout({ identity: webIdentity, layout });
+    });
+  }, [webIdentity]);
+  const currentWebLayout =
+    webLayout?.identity === webIdentity ? webLayout.layout : null;
+  const cardBounds =
+    Platform.OS === "web"
+      ? (currentWebLayout?.bounds ?? {})
+      : cardLayouts.key === layoutKey
+        ? cardLayouts.values
+        : {};
+  const viewport =
+    Platform.OS === "web"
+      ? (currentWebLayout?.viewport ?? { top: 0, height: 0, gridTop: 0 })
+      : { top: scrollY, height: viewportHeight, gridTop };
   const activity = useProfilePreviewActivity(!!sheet);
   const activeVideo = activity.mountVideo
     ? profileVideoSelection(items, cardBounds, viewport)
@@ -121,6 +154,7 @@ export function ProfileScreen({
   return (
     <View style={styles.screen}>
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={80}
         onLayout={(event) => {
@@ -430,6 +464,12 @@ export function ProfileScreen({
             return (
               <Pressable
                 key={`${layoutKey}:${item.id}`}
+                ref={(node) => {
+                  if (Platform.OS !== "web") return;
+                  if (node)
+                    webCards.current.set(item.id, node as unknown as Element);
+                  else webCards.current.delete(item.id);
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={`Watch ${item.title} · ${worldTitle}`}
                 onLayout={(event) => {

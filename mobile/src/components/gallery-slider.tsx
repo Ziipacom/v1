@@ -124,9 +124,11 @@ export function GallerySlider({
           !stillStatuses[side] ||
           stillStatuses[side] === "loading"),
     );
-  const rotationWindow = useRef<{ scene: object; startedAt: number } | null>(
-    null,
-  );
+  const rotationWindow = useRef<{
+    scene: object;
+    startedAt: number;
+    settledAt: number | null;
+  } | null>(null);
   const explicitPlayback = !!item && explicitPlaybackId === item.id;
   const muted =
     !item ||
@@ -285,19 +287,20 @@ export function GallerySlider({
       rotationWindow.current = null;
       return;
     }
+    const now = Date.now();
     if (rotationWindow.current?.scene !== scene)
-      rotationWindow.current = { scene, startedAt: Date.now() };
-    // Do not rotate a cold neighbor away before its bounded capture/retry ends.
-    // The anchored ceiling cannot be extended by repeated loading callbacks.
-    const elapsed = Date.now() - rotationWindow.current.startedAt;
-    const timer = setTimeout(
-      () => advance(1),
-      Math.max(
-        0,
-        (stillPending ? (Platform.OS === "android" ? 32000 : 22000) : 7000) -
-          elapsed,
-      ),
-    );
+      rotationWindow.current = { scene, startedAt: now, settledAt: null };
+    const window = rotationWindow.current;
+    if (stillPending) window.settledAt = null;
+    else window.settledAt ??= now;
+    // A newly generated native bitmap still needs to enter and draw in Image.
+    // Starting the display interval at the scene's original mount rotated cold
+    // captures away immediately, releasing their side owner before it painted.
+    // Loading remains bounded from the original mount, even after retries.
+    const deadline = stillPending
+      ? window.startedAt + (Platform.OS === "android" ? 32000 : 22000)
+      : window.settledAt! + 7000;
+    const timer = setTimeout(() => advance(1), Math.max(0, deadline - now));
     return () => clearTimeout(timer);
   }, [rotating, advance, scene, stillPending]);
   const swipe = useMemo(

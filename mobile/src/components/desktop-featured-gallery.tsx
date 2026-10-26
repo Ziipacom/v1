@@ -106,9 +106,11 @@ export function DesktopFeaturedGallery({
           !stillStatuses[side] ||
           stillStatuses[side] === "loading"),
     );
-  const rotationWindow = useRef<{ scene: object; startedAt: number } | null>(
-    null,
-  );
+  const rotationWindow = useRef<{
+    scene: object;
+    startedAt: number;
+    settledAt: number | null;
+  } | null>(null);
   const muted = startMuted ?? preferences.startMuted;
   const playable = !!current && isPlayableMedia(current);
   const { requestedPaused, playbackPaused, rotationAllowed } =
@@ -235,13 +237,20 @@ export function DesktopFeaturedGallery({
       rotationWindow.current = null;
       return;
     }
+    const now = Date.now();
     if (rotationWindow.current?.scene !== scene)
-      rotationWindow.current = { scene, startedAt: Date.now() };
-    // Give cold stills their bounded capture/retry window, not an endless hold.
-    const elapsed = Date.now() - rotationWindow.current.startedAt;
+      rotationWindow.current = { scene, startedAt: now, settledAt: null };
+    const window = rotationWindow.current;
+    if (stillPending) window.settledAt = null;
+    else window.settledAt ??= now;
+    // Keep a bounded loading hold, then give the resolved neighboring cards a
+    // full viewing interval. A cold capture must not cause immediate rotation.
+    const deadline = stillPending
+      ? window.startedAt + 22000
+      : window.settledAt! + 7500;
     const timer = setTimeout(
       () => setSelectedId(items[(selectedIndex + 1) % items.length].id),
-      Math.max(0, (stillPending ? 22000 : 7500) - elapsed),
+      Math.max(0, deadline - now),
     );
     return () => clearTimeout(timer);
   }, [rotationAllowed, selectedIndex, signature, items, scene, stillPending]);

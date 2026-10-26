@@ -318,6 +318,7 @@ async function withGalleryClock(
     pending: () => number;
     front: () => string;
   }) => void,
+  count = 2,
 ) {
   const names = [
     "window",
@@ -384,7 +385,7 @@ async function withGalleryClock(
   );
   const name = desktop ? "DesktopFeaturedGallery" : "GallerySlider";
   const props = {
-    items: ["first", "second"].map((id) =>
+    items: ["first", "second", "third"].slice(0, count).map((id) =>
       creation(id, "video", {
         media_url: `/api/creator/media/${id}`,
         content_type: "video/mp4",
@@ -446,7 +447,7 @@ async function withGalleryClock(
   }
 }
 
-test("Cold Gallery stills get more than a rotation interval and ready/error states release the hold", async () => {
+test("Cold Gallery stills get a bounded loading hold and settled stills get a visible interval", async () => {
   for (const desktop of [false, true]) {
     for (const status of ["ready", "unavailable"]) {
       await withGalleryClock(desktop, ({ render, tick, front }) => {
@@ -463,14 +464,97 @@ test("Cold Gallery stills get more than a rotation interval and ready/error stat
         render();
         tick(0);
         render();
+        assert.equal(front(), "first");
+        tick(desktop ? 7500 : 7000);
+        render();
         assert.equal(
           front(),
           "second",
-          `${status} releases an already elapsed normal rotation interval`,
+          `${status} resumes rotation after the platform's display interval`,
         );
       });
     }
   }
+});
+
+test("Both Galleries give a late bitmap a full visible interval before replacing its side owner", async () => {
+  for (const desktop of [false, true])
+    await withGalleryClock(desktop, ({ render, tick, front }) => {
+      // The private URL resolution and native seek can finish after the normal
+      // seven-second interval. The bitmap has only just entered Expo Image here;
+      // replacing this side item at the same timestamp releases its owner before
+      // Android can draw it. Profile's non-rotating card did not have this race.
+      tick(8000);
+      let nodes = render();
+      const secondStill = nodes.find(
+        (node) => node.type === "GalleryStillPreview",
+      )!;
+      assert.equal(secondStill.props.item.id, "second");
+      secondStill.props.onStatus("ready");
+      render();
+      tick(0);
+      nodes = render();
+      assert.equal(
+        front(),
+        "first",
+        "capture completion must not rotate immediately",
+      );
+      assert.equal(
+        nodes.find((node) => node.type === "GalleryStillPreview")!.props.item
+          .id,
+        "second",
+        "the native bitmap stays with the same visible side item",
+      );
+      tick((desktop ? 7500 : 7000) - 1);
+      render();
+      assert.equal(front(), "first");
+      tick(1);
+      render();
+      assert.equal(
+        front(),
+        "second",
+        "rotation resumes after the still's dwell interval",
+      );
+    });
+});
+
+test("Android starts its visible interval after both real side stills settle and repeated ready reports cannot extend it", async () => {
+  await withGalleryClock(
+    false,
+    ({ render, tick, front }) => {
+      tick(8000);
+      let stills = render().filter(
+        (node) => node.type === "GalleryStillPreview",
+      );
+      assert.equal(stills.length, 2);
+      stills[0].props.onStatus("ready");
+      render();
+      tick(4000);
+      stills = render().filter((node) => node.type === "GalleryStillPreview");
+      assert.equal(
+        front(),
+        "first",
+        "one ready card cannot retire the other card's decoder",
+      );
+      stills[1].props.onStatus("ready");
+      render();
+      tick(6000);
+      stills = render().filter((node) => node.type === "GalleryStillPreview");
+      stills[0].props.onStatus("ready");
+      render();
+      tick(999);
+      render();
+      assert.equal(front(), "first");
+      tick(1);
+      render();
+      assert.equal(
+        front(),
+        "second",
+        "the interval stays anchored to the last cold still settling",
+      );
+    },
+    3,
+  );
 });
 
 test("Repeated Gallery loading reports cannot extend the fixed platform deadline", async () => {
@@ -545,7 +629,7 @@ test("Gallery manual selection bypasses the loading hold and prior-scene statuse
         .find((node) => node.type === "GalleryStillPreview")!
         .props.onStatus("ready");
       render();
-      tick(0);
+      tick(desktop ? 7500 : 7000);
       render();
       assert.equal(front(), "second");
     });

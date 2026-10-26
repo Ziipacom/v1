@@ -64,6 +64,10 @@ function stillUI(
     releases = 0;
   const samples: { times: number[]; size: unknown }[] = [];
   const playerSources: unknown[] = [];
+  const account: {
+    token: string | null;
+    lease?: stillCache.GalleryStillCacheLease;
+  } = { token: "fixture", lease: options.cacheLease };
   const bitmap = { width: 360, height: 203, release() {} };
   const player: Record<string, any> = {
     duration: 20,
@@ -185,11 +189,11 @@ function stillUI(
         background: 1,
         coverSource: (path: string) =>
           path === "/brand/ziipa-background.png" ? 1 : { uri: path },
-        playbackSource: (path: string) =>
-          path?.startsWith("/api/creator/media/")
+        playbackSource: (path: string, token: string | undefined) =>
+          token && path?.startsWith("/api/creator/media/")
             ? {
                 uri: options.remoteSource || path,
-                headers: { Authorization: "Bearer fixture" },
+                headers: { Authorization: `Bearer ${token}` },
                 useCaching: false,
               }
             : null,
@@ -206,8 +210,8 @@ function stillUI(
     if (name === "../provider")
       return {
         useZiipa: () => ({
-          session: { access_token: "fixture" },
-          stillCacheLease: options.cacheLease,
+          session: account.token ? { access_token: account.token } : null,
+          stillCacheLease: account.lease,
         }),
       };
     if (name === "../theme") return { font: {} };
@@ -244,6 +248,7 @@ function stillUI(
     playerSources,
     bitmap,
     events,
+    account,
     render(props: Record<string, unknown> = {}) {
       cursor = 0;
       return nodes(
@@ -267,6 +272,40 @@ function stillUI(
       cleanups.reverse().forEach((fn) => fn());
     },
     counts: () => ({ instances, plays, pauses, releases }),
+  };
+}
+
+function stillClock() {
+  const set = globalThis.setTimeout,
+    clear = globalThis.clearTimeout;
+  let now = 0,
+    next = 0;
+  const timers = new Map<number, { at: number; callback: () => void }>();
+  globalThis.setTimeout = ((callback: () => void, duration: number) => {
+    const id = ++next;
+    timers.set(id, { at: now + duration, callback });
+    return id;
+  }) as any;
+  globalThis.clearTimeout = ((id: number) => timers.delete(id)) as any;
+  return {
+    pending: () => timers.size,
+    tick(milliseconds: number) {
+      const end = now + milliseconds;
+      for (;;) {
+        const due = [...timers]
+          .filter(([, timer]) => timer.at <= end)
+          .sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) break;
+        timers.delete(due[0]);
+        now = due[1].at;
+        due[1].callback();
+      }
+      now = end;
+    },
+    restore() {
+      globalThis.setTimeout = set;
+      globalThis.clearTimeout = clear;
+    },
   };
 }
 
@@ -301,6 +340,277 @@ test("Native side video generates a bounded retained image, never paints or play
   assert.equal(ui.counts().releases, 1);
   assert.equal(ui.events.size, 0);
   assert.equal(ui.counts().plays, 0);
+});
+
+test("An identical refreshed timeline does not cancel the native bitmap job or discard its accepted image", async () => {
+  const completions: ((frames: any[]) => void)[] = [];
+  let released = 0;
+  const bitmap = {
+    width: 360,
+    height: 200,
+    release() {
+      released++;
+    },
+  };
+  const original = item({
+    timeline: {
+      version: 1,
+      clips: [{ id: "clip", start: 5, end: 8, speed: 1 }],
+    },
+  });
+  const refreshed = {
+    ...original,
+    timeline: structuredClone(original.timeline),
+  };
+  assert.notEqual(original.timeline, refreshed.timeline);
+  assert.equal(
+    stillCache.galleryStillCacheKey(original),
+    stillCache.galleryStillCacheKey(refreshed),
+  );
+  const ui = stillUI({
+    generate: () => new Promise((resolve) => completions.push(resolve)),
+  });
+  try {
+    ui.render({ item: original });
+    ui.flush();
+    ui.render({ item: refreshed });
+    ui.flush();
+    completions[0]([bitmap]);
+    await Promise.resolve();
+    const image = ui
+      .render({ item: refreshed })
+      .find((node) => node.type === "Image");
+    assert.equal(
+      image?.props.source,
+      bitmap,
+      "bootstrap object allocation must not discard valid pixels",
+    );
+    assert.equal(
+      ui.samples.length,
+      1,
+      "identical retained media needs only one native capture",
+    );
+    assert.equal(released, 0);
+  } finally {
+    ui.unmount();
+  }
+});
+
+test("Native bitmap capture remains loading until that exact Image reports display", async () => {
+  const clock = stillClock();
+  const statuses: string[] = [];
+  const ui = stillUI();
+  try {
+    ui.render({ onStatus: (status: string) => statuses.push(status) });
+    ui.flush();
+    await Promise.resolve();
+    const image = ui
+      .render({ onStatus: (status: string) => statuses.push(status) })
+      .find((node) => node.type === "Image")!;
+    ui.flush();
+    assert.equal(
+      statuses.at(-1),
+      "loading",
+      "a generated SharedRef is not yet a displayed native image",
+    );
+    image.props.onLoad?.();
+    ui.render({ onStatus: (status: string) => statuses.push(status) });
+    ui.flush();
+    assert.equal(
+      statuses.at(-1),
+      "loading",
+      "load alone must not start carousel rotation",
+    );
+    image.props.onDisplay();
+    // Native events can arrive before React commits the resulting state. A
+    // deadline at that boundary must not retire an Image already displayed.
+    clock.tick(10000);
+    ui.render({ onStatus: (status: string) => statuses.push(status) });
+    ui.flush();
+    assert.equal(statuses.at(-1), "ready");
+    assert.equal(clock.pending(), 0, "display cancels the render watchdog");
+    clock.tick(30000);
+    assert.equal(
+      ui.render().find((node) => node.type === "Image")!.props.source,
+      ui.bitmap,
+    );
+    assert.equal(ui.counts().plays, 0);
+  } finally {
+    ui.unmount();
+    assert.equal(clock.pending(), 0);
+    clock.restore();
+  }
+});
+
+test("A native Image that never displays retries once, rejects the retired display callback, then stops with sanitized diagnostics", async () => {
+  const clock = stillClock();
+  let released = 0;
+  const bitmaps = [0, 1].map(() => ({
+    width: 360,
+    height: 200,
+    release() {
+      released++;
+    },
+  }));
+  let generation = 0;
+  const statuses: string[] = [];
+  const props = { onStatus: (status: string) => statuses.push(status) };
+  const ui = stillUI({ generate: async () => [bitmaps[generation++]] });
+  try {
+    ui.render(props);
+    ui.flush();
+    await Promise.resolve();
+    const firstImage = ui.render(props).find((node) => node.type === "Image")!;
+    ui.flush();
+    assert.equal(clock.pending(), 1);
+    assert.equal(statuses.at(-1), "loading");
+    clock.tick(10000);
+    let nodes = ui.render(props);
+    assert.equal(
+      nodes.some((node) => node.type === "Image"),
+      false,
+    );
+    assert.equal(
+      released,
+      0,
+      "the removed Image keeps its ref through the render commit",
+    );
+    assert.ok(
+      nodes.some(
+        (node) => node.props.testID === "gallery-still-failure-image-timeout",
+      ),
+    );
+    assert.ok(nodes.some((node) => node.props.children === "Retrying still…"));
+    ui.flush();
+    assert.equal(released, 1);
+    clock.tick(750);
+    ui.render(props);
+    ui.flush();
+    await Promise.resolve();
+    nodes = ui.render(props);
+    assert.equal(
+      nodes.find((node) => node.type === "Image")!.props.source,
+      bitmaps[1],
+    );
+    firstImage.props.onDisplay();
+    ui.render(props);
+    ui.flush();
+    assert.equal(
+      statuses.at(-1),
+      "loading",
+      "the first Image cannot mark a new attempt displayed",
+    );
+    clock.tick(10000);
+    nodes = ui.render(props);
+    ui.flush();
+    assert.ok(
+      nodes.some(
+        (node) => node.props.testID === "gallery-still-failure-image-timeout",
+      ),
+    );
+    assert.ok(
+      nodes.some((node) => node.props.children === "Still preview unavailable"),
+    );
+    assert.equal(statuses.at(-1), "unavailable");
+    assert.equal(released, 2);
+    assert.equal(ui.samples.length, 2);
+    assert.equal(
+      clock.pending(),
+      0,
+      "exhaustion must not schedule a third attempt",
+    );
+    assert.equal(ui.counts().plays, 0);
+  } finally {
+    ui.unmount();
+    assert.equal(clock.pending(), 0);
+    clock.restore();
+  }
+});
+
+test("Native displayed pixels and callbacks retire on account, lease, retained-range or visibility changes", async () => {
+  for (const change of ["account", "lease", "range", "disabled"] as const) {
+    let generation = 0,
+      released = 0;
+    const bitmap = {
+      width: 360,
+      height: 200,
+      release() {
+        released++;
+      },
+    };
+    const ui = stillUI({
+      generate: () =>
+        ++generation === 1 ? Promise.resolve([bitmap]) : new Promise(() => {}),
+      cacheLease: stillCache.createGalleryStillCache().activate("first-owner"),
+    });
+    const statuses: string[] = [];
+    const props = {
+      item: item(),
+      enabled: true,
+      onStatus: (status: string) => statuses.push(status),
+    };
+    try {
+      ui.render(props);
+      ui.flush();
+      await Promise.resolve();
+      const oldImage = ui.render(props).find((node) => node.type === "Image")!;
+      ui.flush();
+      oldImage.props.onDisplay();
+      ui.render(props);
+      ui.flush();
+      assert.equal(statuses.at(-1), "ready");
+      if (change === "account")
+        ui.account.token = "replacement-account-fixture";
+      if (change === "lease")
+        ui.account.lease = stillCache
+          .createGalleryStillCache()
+          .activate("new-login-same-account");
+      const next = {
+        ...props,
+        item:
+          change === "range"
+            ? item({
+                timeline: {
+                  version: 1,
+                  clips: [{ id: "new-retained", start: 10, end: 12 }],
+                },
+              })
+            : props.item,
+        enabled: change !== "disabled",
+      };
+      let nodes = ui.render(next);
+      assert.equal(
+        nodes.some((node) => node.type === "Image"),
+        false,
+        `${change}: old pixels leave before passive cleanup`,
+      );
+      assert.equal(released, 0);
+      oldImage.props.onDisplay();
+      oldImage.props.onError();
+      ui.flush();
+      nodes = ui.render(next);
+      ui.flush();
+      assert.equal(
+        nodes.some((node) => node.type === "Image"),
+        false,
+      );
+      assert.equal(
+        statuses.at(-1),
+        change === "disabled" ? "unavailable" : "loading",
+        `${change}: stale callbacks cannot report readiness or failure`,
+      );
+      assert.equal(
+        released,
+        1,
+        `${change}: the removed bitmap releases exactly once`,
+      );
+      if (change === "range")
+        assert.deepEqual(ui.samples.at(-1)!.times, [10.7]);
+    } finally {
+      ui.unmount();
+    }
+    assert.equal(released, 1);
+  }
 });
 
 test("Android private stills resolve their source before creating a decoder and use only the resolved source", async () => {
