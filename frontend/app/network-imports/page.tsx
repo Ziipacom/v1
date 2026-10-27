@@ -123,7 +123,7 @@ export default function NetworkImportsNotice() {
               Settings. Account deletion also removes its current local read
               connections and makes their cached imports inaccessible.
               See <Link href="/account-deletion">account deletion</Link>, or contact{' '}
-              <a href="mailto:hello@ziipa.com">hello@ziipa.com</a> for data or support questions.
+              <a href="mailto:ziipaziipa@gmail.com">ziipaziipa@gmail.com</a> for data or support questions.
             </p>
           </section>
 
@@ -142,7 +142,7 @@ export default function NetworkImportsNotice() {
         <footer className={s.footer}>
           <Link href="/">Back to Ziipa</Link>
           <Link href="/account-deletion">Account deletion</Link>
-          <a href="mailto:hello@ziipa.com">Contact support</a>
+          <a href="mailto:ziipaziipa@gmail.com">Contact support</a>
         </footer>
       </div>
     </main>

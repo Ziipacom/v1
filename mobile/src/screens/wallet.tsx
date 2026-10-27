@@ -64,6 +64,7 @@ import {
   walletConnectConfigured,
 } from "../lib/wallet-connector";
 import { readPending, savePending, type Pending } from "../lib/wallet-pending";
+import { iosInternalTestflight } from "../lib/config";
 import { MediaRewards, RewardRuleFields } from "../components/media-rewards";
 import {
   emptyRewardDraft,
@@ -81,7 +82,63 @@ type Transfer = {
   token_id?: string;
   symbol?: string;
 };
-export function WalletScreen({ navigation, initialItem }: Props) {
+export function WalletScreen(props: Props) {
+  return iosInternalTestflight ? <InternalWalletScreen {...props} /> : <FullWalletScreen {...props} />;
+}
+
+/** Privacy cleanup remains available without initializing an external wallet. */
+function InternalWalletScreen({ navigation }: Props) {
+  const { api, session } = useZiipa();
+  const token = session?.access_token;
+  const owner = useRef(token);
+  owner.current = token;
+  const mounted = useRef(true);
+  const [saved, setSaved] = useState<{ owner: string; links: WalletLink[] } | null>(null);
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  useEffect(() => {
+    let current = true;
+    setMessage("");
+    setBusy("");
+    if (token) void api<WalletLink[]>("/api/web3/wallets").then((links) => {
+      if (current && owner.current === token) setSaved({ owner: token, links });
+    }).catch((error) => {
+      if (current && owner.current === token) setMessage((error as Error).message);
+    });
+    return () => { current = false; };
+  }, [api, token]);
+  async function unlink(id: string) {
+    if (!token || busy || owner.current !== token) return;
+    setBusy(id);
+    setMessage("");
+    try {
+      await api(`/api/web3/wallets/${id}/unlink`, {});
+      if (!mounted.current || owner.current !== token) return;
+      setSaved((previous) => previous?.owner === token ? { ...previous, links: previous.links.filter((row) => row.id !== id) } : previous);
+      setMessage("Wallet link removed from Ziipa. Assets remain in your external wallet.");
+    } catch (error) {
+      if (mounted.current && owner.current === token) setMessage((error as Error).message);
+    } finally {
+      if (mounted.current && owner.current === token) setBusy("");
+    }
+  }
+  return <SafeAreaView style={styles.screen}><ScrollView contentContainerStyle={styles.page}>
+    <Action secondary title="Back" onPress={() => navigation.goBack()} />
+    <Text style={styles.title}>Wallet privacy</Text>
+    <Notice text="Pairing, signatures, minting and transfers are unavailable in this private iPhone beta. You can remove an existing Ziipa wallet link without connecting or signing with a wallet." />
+    {(saved && saved.owner === token ? saved.links : []).map((row) => <View key={row.id} style={styles.panel}>
+      <Text style={styles.body}>{shortAddress(row.address)}</Text>
+      <Action secondary title="Unlink wallet from Ziipa" busy={busy === row.id} disabled={!!busy} onPress={() => void unlink(row.id)} />
+    </View>)}
+    {!!message && <Notice text={message} />}
+  </ScrollView></SafeAreaView>;
+}
+
+function FullWalletScreen({ navigation, initialItem }: Props) {
   const { desktop } = useDesktopLayout();
   const { session, api, data } = useZiipa();
   const [step, setStep] = useState(0);

@@ -71,7 +71,7 @@
     "doctor": "expo-doctor",
     "prebuild": "expo prebuild --no-install",
     "release:check": "node scripts/check-release.cjs --strict",
-    "eas-build-pre-install": "node scripts/check-release.cjs",
+    "eas-build-pre-install": "node scripts/check-build-scope.cjs",
     "preview": "expo start --localhost --port 8082"
   },
   "private": true,

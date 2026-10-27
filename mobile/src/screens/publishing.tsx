@@ -28,6 +28,8 @@ import { socialProvider } from "../lib/social";
 import { readyRender, type RenderJob } from "../lib/render-types";
 import { TwitchChannel } from "../components/twitch-channel";
 import { useOperationScope } from "../lib/use-operation-scope";
+import { iosInternalTestflight } from "../lib/config";
+import { assertInternalBetaAction } from "../lib/internal-beta-policy";
 import {
   blankTikTok,
   validateTikTokReview,
@@ -464,6 +466,7 @@ function ScopedPublishingScreen({
     setRequestId(Crypto.randomUUID());
   }
   async function authorize() {
+    assertInternalBetaAction(iosInternalTestflight, "network-import");
     const current = capture();
     const result = await api<{
       auth_url?: string;
@@ -595,11 +598,10 @@ function ScopedPublishingScreen({
             <Action
               title="Open secure authorization"
               onPress={() => {
-                void Linking.openURL(authUrl).catch(() =>
-                  setMessage(
-                    "Could not open authorization. Use the Ziipa web portal.",
-                  ),
-                );
+                void run(async () => {
+                  assertInternalBetaAction(iosInternalTestflight, "network-import");
+                  await Linking.openURL(authUrl);
+                });
               }}
             />
           ) : null}
@@ -615,6 +617,7 @@ function ScopedPublishingScreen({
                   onPress={() => {
                     resetApproval();
                     void run(async (current) => {
+                      assertInternalBetaAction(iosInternalTestflight, "network-import");
                       await api(
                         `/api/publishing/connections/${provider}/target`,
                         { target_id: target.id },

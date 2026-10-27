@@ -23,6 +23,7 @@ function nativeProfileImages(os: "android" | "ios") {
     "assets",
     "config",
     "domain",
+    "internal-beta-policy",
     "local-media",
     "preview-origin",
     "private-profile-image",

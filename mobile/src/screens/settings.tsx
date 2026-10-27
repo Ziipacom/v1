@@ -26,7 +26,12 @@ import { SettingsControls } from "../components/settings-controls";
 import { PublicGallerySettingsPanel } from "../components/public-gallery-settings";
 import { useZiipa } from "../provider";
 import { color, styles } from "../theme";
-import { apiOrigin, legalUrls, supportEmail } from "../lib/config";
+import {
+  apiOrigin,
+  legalOperatorName,
+  legalUrls,
+  supportEmail,
+} from "../lib/config";
 import type { Item, RootStack } from "../lib/types";
 import {
   adminRoot,
@@ -554,7 +559,7 @@ const policies = {
       ],
       [
         "Deletion and support",
-        `Delete your account in Settings with your password. This removes server account data, wallet links and the metadata index, and queues failed private-media cleanup for retry. Public IPFS copies, blockchain records and assets held in your external wallet remain. Contact ${supportEmail} with privacy questions. Production retention and operator details require review before release.`,
+        `Ziipa is operated by ${legalOperatorName}. Delete your account in Settings with your password. This removes server account data, wallet links and the metadata index, and queues failed private-media cleanup for retry. Public IPFS copies, blockchain records and assets held in your external wallet remain. Contact ${supportEmail} with privacy questions. Production retention terms and the complete policies still require owner review before release.`,
       ],
     ],
   },
@@ -630,7 +635,7 @@ export function LegalScreen({
           }
         />
       ) : (
-        <Notice text="Development policy draft · not the final published policy. Operator details, retention terms, and public policy URLs must be reviewed before store release." />
+        <Notice text={`Development policy draft · not the final published policy. Ziipa is operated by ${legalOperatorName}. Complete policies, retention terms and public policy URLs still require owner review before store release.`} />
       )}
       {!!error && <Notice error text={error} />}
       {policy.sections.map(([title, body]) => (

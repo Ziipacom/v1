@@ -590,8 +590,8 @@ export default function LandingPage() {
                 <br />
                 And a place for you in it.
               </p>
-              <a href="mailto:hello@ziipa.com">
-                hello@ziipa.com <ArrowUpRight size={13} />
+              <a href="mailto:ziipaziipa@gmail.com">
+                ziipaziipa@gmail.com <ArrowUpRight size={13} />
               </a>
             </div>
             <div>
@@ -606,7 +606,7 @@ export default function LandingPage() {
               <a href="#vision">Our vision</a>
               <a href="#faq">Your questions</a>
               <a href="#waitlist">Join the waitlist</a>
-              <a href="mailto:hello@ziipa.com">Contact us</a>
+              <a href="mailto:ziipaziipa@gmail.com">Contact us</a>
               <Link href="/network-imports">Public imports & data</Link>
             </div>
             <div className="zl-footer-download">
@@ -621,7 +621,7 @@ export default function LandingPage() {
           </div>
           <div className="zl-footer-bottom">
             <span>
-              © {new Date().getFullYear()} Ziipa Inc. All rights reserved.
+              © {new Date().getFullYear()} Niche Labs LLC. All rights reserved.
             </span>
             <span>Built for curiosity. Open to possibility.</span>
             <a href="#top">Back to top ↑</a>

@@ -6,6 +6,7 @@ import * as hubLib from "../src/lib/network-hub.ts";
 import * as imports from "../src/lib/network-imports.ts";
 import * as discovery from "../src/lib/discovery-feed.ts";
 import * as social from "../src/lib/social.ts";
+import * as internalBetaPolicy from "../src/lib/internal-beta-policy.ts";
 
 type Node = { type: any; props: Record<string, any> };
 function flat(value: any): Node[] {
@@ -75,7 +76,7 @@ function runtime() {
   };
 }
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
-function harness(native = false, initialTab = "accounts") {
+function harness(native = false, initialTab = "accounts", internal = false) {
   const hooks = runtime(),
     requests: { path: string; body: any }[] = [],
     opened: string[] = [];
@@ -141,7 +142,7 @@ function harness(native = false, initialTab = "accounts") {
         if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
         if (name === "react-native")
           return {
-            Platform: { OS: native ? "android" : "web" },
+            Platform: { OS: internal ? "ios" : native ? "android" : "web" },
             Linking: {
               openURL: async (url: string) => {
                 opened.push(url);
@@ -161,7 +162,8 @@ function harness(native = false, initialTab = "accounts") {
           return discovery;
         if (name === "../lib/social") return social;
         if (name === "../lib/config")
-          return { canonicalApiOrigin: "https://api.ziipa.com" };
+          return { canonicalApiOrigin: "https://api.ziipa.com", iosInternalTestflight: internal };
+        if (name === "../lib/internal-beta-policy") return internalBetaPolicy;
         if (name === "../lib/use-operation-scope")
           return { useOperationScope: () => () => () => true };
         if (name === "../lib/use-network-snapshot-expiry")
@@ -244,6 +246,27 @@ test("Connections separates readiness from explicit read-only authorization and 
     false,
   );
   assert.equal(ui.requests.filter((row) => row.body !== undefined).length, 1);
+  ui.unmount();
+});
+
+test("private iOS beta rejects explicit connect and target actions before OAuth, browser handoff or a server write", async () => {
+  const ui = harness(true, "accounts", true), value = hubLib.emptyNetworkHub();
+  Object.assign(value.providers.find((row) => row.provider === "facebook")!, {
+    status: "connected", auth_type: "oauth", revision: "a39a0bde-a91e-4e5b-a58d-8348460db961",
+    import_targets: [{ id: "123", name: "My Page", kind: "page", url: "" }],
+  });
+  ui.setHub(value);
+  ui.render();
+  await tick();
+  ui.press("Manage Facebook account");
+  ui.press("Set up read-only public imports");
+  await tick();
+  assert.deepEqual(ui.opened, []);
+  assert.equal(ui.requests.some((row) => row.body !== undefined), false);
+  assert.ok(ui.render().some((row) => /imports are unavailable/.test(row.props.text || "")));
+  ui.press("Select · My Page");
+  await tick();
+  assert.equal(ui.requests.some((row) => row.body !== undefined), false);
   ui.unmount();
 });
 

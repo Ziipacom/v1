@@ -1,5 +1,8 @@
 import { Platform } from "react-native";
 import { browserPreviewApiOrigin } from "./preview-origin";
+import { isIosInternalBeta } from "./internal-beta-policy";
+
+export const iosInternalTestflight = isIosInternalBeta(Platform.OS, process.env.EXPO_PUBLIC_BUILD_SCOPE);
 
 // EXPO_PUBLIC values are bundled and must never contain secrets.
 export const portalMode =
@@ -43,7 +46,8 @@ export const legalUrls = {
   community: process.env.EXPO_PUBLIC_COMMUNITY_URL || "",
 };
 export const supportEmail =
-  process.env.EXPO_PUBLIC_SUPPORT_EMAIL || "hello@ziipa.com";
+  process.env.EXPO_PUBLIC_SUPPORT_EMAIL || "ziipaziipa@gmail.com";
+export const legalOperatorName = "Niche Labs LLC";
 
 export function validateOrigin(origin = apiOrigin) {
   if (!origin)

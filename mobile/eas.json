@@ -27,6 +27,24 @@
         "EXPO_PUBLIC_ENABLE_CONCEPTS": "true"
       }
     },
+    "ios-internal-testflight": {
+      "extends": "production",
+      "distribution": "store",
+      "credentialsSource": "remote",
+      "environment": "preview",
+      "env": {
+        "EXPO_NO_DOTENV": "1",
+        "ZIIPA_BUILD_SCOPE": "ios-internal-testflight",
+        "EXPO_PUBLIC_BUILD_SCOPE": "ios-internal-testflight",
+        "ZIIPA_APP_ID": "com.ziipa.app",
+        "ZIIPA_APPLE_TEAM_ID": "L6WH6BD2N5",
+        "ZIIPA_ASC_APP_ID": "6827668999",
+        "ZIIPA_TESTFLIGHT_DISTRIBUTION": "internal-only",
+        "ZIIPA_TESTFLIGHT_DEVICE_QA": "pending",
+        "ZIIPA_TESTFLIGHT_EXPORT_COMPLIANCE": "pending-owner-final-binary-review",
+        "ZIIPA_TESTFLIGHT_PUBLIC_RELEASE": "forbidden"
+      }
+    },
     "production": {
       "distribution": "store",
       "credentialsSource": "remote",
@@ -45,8 +63,11 @@
     }
   },
   "submit": {
+    "ios-internal-testflight": {
+      "ios": { "ascAppId": "6827668999", "appleTeamId": "L6WH6BD2N5" }
+    },
     "production": {
-      "ios": {},
+      "ios": { "ascAppId": "6827668999" },
       "android": { "track": "internal", "releaseStatus": "draft" }
     }
   }

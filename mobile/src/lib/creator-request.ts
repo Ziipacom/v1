@@ -1,5 +1,6 @@
 import { ApiError } from "./api";
-import { authorizationHeaders, portalMode, validateOrigin } from "./config";
+import { authorizationHeaders, iosInternalTestflight, portalMode, validateOrigin } from "./config";
+import { assertInternalBetaRequest } from "./internal-beta-policy";
 
 /** Owner-bound mutations that need an HTTP method other than the shared POST helper. */
 export async function creatorRequest<T>(
@@ -10,6 +11,7 @@ export async function creatorRequest<T>(
 ): Promise<T> {
   if (!path.startsWith("/api/") || path.includes("..") || !token)
     throw new Error("Sign in to use this creator tool.");
+  assertInternalBetaRequest(iosInternalTestflight, path, method);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);
   try {

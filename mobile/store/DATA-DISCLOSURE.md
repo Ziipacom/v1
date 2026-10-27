@@ -2,6 +2,15 @@
 
 Updated 2026-10-20. This describes source behavior to investigate, not completed privacy labels, Data safety answers or a legal policy. Confirm the signed binary, deployed settings, vendors/subprocessors, audience, logs and retention before answering consoles.
 
+Owner identity update, prepared locally on 2026-10-27: legal operator Niche Labs LLC;
+public support/privacy contact ziipaziipa@gmail.com. The owner intends worldwide
+13+ access, but deployed native/shared Studio registration still asks for an
+explicit adult confirmation. No minor's declaration may be recorded through
+that adult field. Age-policy/registration alignment and jurisdiction/guardian
+requirements remain unresolved; see [the unpublished contract proposal](POLICY-ALIGNMENT-CANDIDATE.md).
+No full privacy/terms policy, store disclosure or review acknowledgment is
+approved by this metadata update.
+
 Editor music additions: AI composition sends only the explicitly consented
 musical description/settings to the configured private model or Cloudflare
 Workers AI. It does not send uploaded audio/video, the media

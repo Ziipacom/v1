@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import * as internalBetaPolicy from "../src/lib/internal-beta-policy.ts";
 
 function deferred<T = any>() {
   let resolve!: (value: T) => void, reject!: (error: unknown) => void;
@@ -112,6 +113,7 @@ function harness(
     `../src/lib/api${platform === "web" ? ".web" : ""}.ts`,
     (name) => {
       if (name === "./request-deadline") return deadline;
+      if (name === "./internal-beta-policy") return internalBetaPolicy;
       if (name === "./config")
         return {
           portalMode: !!options.portal,

@@ -2,6 +2,29 @@
 
 Updated 2026-09-09. Source and an internal Android binary exist. No production signing, physical-device acceptance, App Store Connect upload or Google Play submission is claimed. See [the current audit](RELEASE-AUDIT-2026-09-09.md) and [native build evidence](NATIVE-LIVE.md).
 
+## Unpublished identity and policy alignment — 2026-10-27
+
+The owner confirmed the legal operator **Niche Labs LLC**, public support/privacy
+contact **ziipaziipa@gmail.com**, Apple Team **L6WH6BD2N5**, registered production
+bundle **com.ziipa.app**, and App Store Connect app **6827668999**. The matching
+TestFlight beta metadata was saved in the owner console. This local candidate
+pins only the public `submit.production.ios.ascAppId`; it does not create or
+upload a build, sign an agreement, configure credentials, or establish signer,
+export-compliance, privacy-label or device acceptance.
+
+The intended audience is worldwide 13+, subject to higher local minimum ages and
+guardian requirements. The deployed registration contract explicitly attests to
+adulthood and is **not changed** by this candidate. Do not relabel its
+`adult_confirmed:true` receipt as a 13+ confirmation. See the bounded
+[eligibility-contract proposal](POLICY-ALIGNMENT-CANDIDATE.md). Full policies
+remain drafts, their public configuration URLs remain blank, and every existing
+production release/signing/encryption/Web3 acknowledgment remains required.
+
+The live API/web source is `2bac04d`; the retained Android 1.0.14/code15 client is
+`b986a4a`. Changes in this candidate are uncommitted and unpublished, so they do
+not describe a replacement APK or a completed iOS/TestFlight build. Historical
+preview details below describe their stated audit dates.
+
 ## Current artifacts and release boundaries
 
 The preserved ARM64 Android preview is [Ziipa Native Live Preview](../artifacts/Ziipa-Native-Live-Preview-2026-09-09-arm64.apk). It compiles Expo57, React Native 0.86.3 and native WebRTC; package com.ziipa.app.preview, version 1.0.0/code1, Android 7+ / target36. Its Android Debug certificate is suitable for internal installation only. **Do not upload it to Play or reuse its debug key for production.** It calls https://api.ziipa.com; compiling does not deploy API routes or configure media, live or social providers.
@@ -12,7 +35,7 @@ Android SDK/build tools/NDK and JDK21 are installed locally. No Android device w
 
 - [ ] Complete [OWNER-INPUTS.template.json](OWNER-INPUTS.template.json) outside version control. Do not put passwords, keystore contents, tokens, service-account keys or reviewer credentials in this file or chat.
 - [ ] Sign into the Ziipa-controlled Expo account and confirm the organization, EAS project and membership. The local EAS CLI audit returned **Not logged in**.
-- [ ] Confirm the production Android application ID and iOS bundle ID in the appropriate owner consoles. com.ziipa.app is provisional; .preview identifies internal builds. If identifiers already exist, use their existing owner and version history.
+- [ ] Confirm production Android ownership/version history separately. The owner has now registered iOS com.ziipa.app on Team L6WH6BD2N5 and created App Store Connect 6827668999; .preview still identifies internal builds. Registration does not establish signing credentials or a completed store build.
 - [ ] Inspect existing Android upload and Play App Signing certificate SHA-256 fingerprints in Play Console. An existing app needs its matching upload key through EAS credentials; do not generate a replacement blindly. For a verified new app, create and securely back up an upload key through the owner's credential workflow.
 - [ ] Verify Apple membership, team, bundle record, distribution certificate and provisioning profile; record the App Store Connect numeric app ID. Do not revoke existing certificates or change team ownership to bypass a blocker.
 - [ ] Configure submission access in owner-controlled EAS/CI with minimum necessary permissions. Never put signing secrets in EXPO_PUBLIC variables.
@@ -60,7 +83,7 @@ Configure .env.example release values in the owner EAS production environment. P
 
 Production checks run in the EAS pre-install hook. APP_VARIANT=production activates them under differently named profiles too. They reject missing metadata/acknowledgments but cannot verify accounts, signing ownership, live URLs or human QA. Inspect final AAB/IPA package identity, version, release signing, permissions/privacy manifests and SHA-256 before submission. **Do not use local assembleRelease with the generated debug signing configuration for a store artifact.**
 
-Configure the confirmed App Store Connect ascAppId in submit.production.ios; leave the current empty object until that ID is known. Configure Play submission access securely. Select the **exact reviewed build ID**, not --latest, to avoid an unrelated/preview artifact:
+The unpublished candidate sets submit.production.ios.ascAppId to the confirmed 6827668999; do not recreate the Apple app or add an Apple login/password to source. Configure Play submission access securely. Select the **exact reviewed build ID**, not --latest, to avoid an unrelated/preview artifact:
 
     npx.cmd eas-cli@23.2.0 submit --platform android --profile production --id REVIEWED_ANDROID_BUILD_ID
     npx.cmd eas-cli@23.2.0 submit --platform ios --profile production --id REVIEWED_IOS_BUILD_ID

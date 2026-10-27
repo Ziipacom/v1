@@ -3,9 +3,11 @@ import { Platform } from "react-native";
 import { injectedWallet } from "./wallet-injected";
 import type { EVMProvider, Intent } from "./wallet-types";
 import type UniversalProvider from "@walletconnect/universal-provider";
+import { iosInternalTestflight } from "./config";
+import { assertInternalBetaAction } from "./internal-beta-policy";
 
 export const walletConnectConfigured =
-  !!process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID;
+  !iosInternalTestflight && !!process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID;
 const networks: Record<
   number,
   { name: string; rpc: string; explorer?: string }
@@ -41,10 +43,10 @@ export function observeWallet(fn: () => void) {
   };
 }
 export function currentWallet() {
-  return connection;
+  return iosInternalTestflight ? null : connection;
 }
 export function browserWalletAvailable() {
-  return !!injectedWallet();
+  return !iosInternalTestflight && !!injectedWallet();
 }
 
 // Pairing keys live only in memory. The external wallet holds all signing keys;
@@ -70,6 +72,7 @@ function ephemeralStorage() {
   };
 }
 async function walletConnect() {
+  assertInternalBetaAction(iosInternalTestflight, "wallet");
   if (!walletConnectConfigured)
     throw new Error(
       "WalletConnect needs your Reown project ID in the mobile build. A browser wallet can connect without it.",
@@ -111,6 +114,7 @@ export async function connectWallet(
   kind: "injected" | "walletconnect",
   onUri: (uri: string) => void,
 ) {
+  assertInternalBetaAction(iosInternalTestflight, "wallet");
   if (!networks[chainId] || (!__DEV__ && chainId === 31337))
     throw new Error("Unsupported test network");
   if (chainId === 31337 && Platform.OS !== "web")
@@ -225,6 +229,7 @@ export async function signWalletProof(
   address: string,
   chainId: number,
 ) {
+  assertInternalBetaAction(iosInternalTestflight, "wallet");
   const p = await checkedConnection(address, chainId);
   return (await p.request({
     method: "personal_sign",
@@ -232,6 +237,7 @@ export async function signWalletProof(
   })) as string;
 }
 export async function sendWalletTransaction(intent: Intent) {
+  assertInternalBetaAction(iosInternalTestflight, "wallet");
   if (intent.status !== "prepared" || intent.tx_hash)
     throw new Error(
       "This transaction has already been submitted. Refresh its status instead.",

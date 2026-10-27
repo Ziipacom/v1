@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
+import * as internalBetaPolicy from "../src/lib/internal-beta-policy.ts";
 import {
   webPushKey,
   webPushKeyMatches,
@@ -29,6 +30,7 @@ function client(
     afterPermission?: () => void;
     tokenError?: string;
     oldWebKey?: boolean;
+    internalBeta?: boolean;
   } = {},
 ) {
   const calls = { permissions: 0, token: 0, subscribe: 0 };
@@ -139,7 +141,8 @@ function client(
         };
       if (name === "expo-crypto")
         return { randomUUID: () => "5bca9ea2-5787-49b3-b01c-5067bc1d73b0" };
-      if (name === "./config") return { portalMode: platform === "web" };
+      if (name === "./config") return { portalMode: platform === "web", iosInternalTestflight: platform === "ios" && !!options.internalBeta };
+      if (name === "./internal-beta-policy") return internalBetaPolicy;
       if (name === "./notification-types")
         return { webPushKey, webPushKeyMatches };
       if (name === "expo-notifications") return notifications;
@@ -167,6 +170,19 @@ test("capability checks never request permission; native provider errors cannot 
     },
   );
   assert.equal(app.calls.token, 1);
+});
+
+test("private iPhone beta never requests APNs permission or an Expo token and keeps native listener inert", async () => {
+  const app = client("ios", { internalBeta: true, granted: false });
+  const capability = await app.api.pushCapability();
+  assert.equal(capability.supported, false);
+  assert.match(capability.detail, /In-app notifications remain available/);
+  await assert.rejects(app.api.registerPushDevice(config, "Private beta", () => true), /Remote push enrollment is unavailable/);
+  assert.deepEqual(app.calls, { permissions: 0, token: 0, subscribe: 0 });
+  const dispose = await app.api.nativeNotificationListener(() => assert.fail("No remote notification callback expected"));
+  dispose();
+  const web = client("web", { internalBeta: true });
+  assert.equal((await web.api.pushCapability()).supported, true);
 });
 test("denied permission and account changes during the permission sheet cannot acquire a token", async () => {
   const denied = client("ios", { granted: false, deny: true });

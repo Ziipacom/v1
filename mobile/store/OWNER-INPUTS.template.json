@@ -3,8 +3,10 @@
   "status": "owner_review_required",
   "instructions": "Copy to mobile/store-owner-inputs.local.json (ignored). Non-secret references only. Keep private keys, passwords, service-account JSON, tokens and reviewer credentials in the owner secret manager/console. Null means unknown, not no.",
   "operator": {
+    "legal_operator_name": "Niche Labs LLC",
     "legal_seller_name": null,
-    "support_email": null,
+    "support_email": "ziipaziipa@gmail.com",
+    "privacy_email": "ziipaziipa@gmail.com",
     "marketing_url": null,
     "privacy_url": null,
     "terms_url": null,
@@ -30,9 +32,9 @@
     "required_testing_track_and_evidence": null
   },
   "ios": {
-    "production_bundle_id": null,
-    "apple_team_id": null,
-    "asc_app_id": null,
+    "production_bundle_id": "com.ziipa.app",
+    "apple_team_id": "L6WH6BD2N5",
+    "asc_app_id": "6827668999",
     "distribution_certificate_reference": null,
     "provisioning_profile_reference": null,
     "submission_credential_reference": null,
@@ -42,6 +44,9 @@
   },
   "release": {
     "git_commit": null,
+    "intended_distribution": "worldwide, subject to territory and age review",
+    "intended_minimum_age": 13,
+    "intended_age_policy_implemented": false,
     "approved_countries": null,
     "content_age_questionnaire_reference": null,
     "financial_blockchain_policy_reference": null,

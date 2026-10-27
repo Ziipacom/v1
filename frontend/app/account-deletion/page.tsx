@@ -80,7 +80,7 @@ export default function AccountDeletion() {
               <p style={{ marginTop: 20 }}>
                 You can also delete your account in the mobile app under
                 Settings. For help, contact{' '}
-                <a href="mailto:hello@ziipa.com">hello@ziipa.com</a>.
+                <a href="mailto:ziipaziipa@gmail.com">ziipaziipa@gmail.com</a>.
               </p>
               <p style={{ marginTop: 16 }}>
                 <Link href="/network-imports">How public network imports use data</Link>

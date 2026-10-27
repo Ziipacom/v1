@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { AppState, Text, View } from "react-native";
 import { request } from "../lib/api";
 import { color, font, useTheme } from "../theme";
+import { iosInternalTestflight } from "../lib/config";
+import { internalBetaNotice } from "../lib/internal-beta-policy";
 
 type PlatformStatus = {
   maintenance_mode: boolean;
@@ -39,9 +41,10 @@ export function PlatformNotice() {
       listener.remove();
     };
   }, []);
-  const message = status?.banner || (status?.maintenance_mode
+  const operatorMessage = status?.banner || (status?.maintenance_mode
     ? "Ziipa maintenance: creator changes are temporarily paused."
     : status?.signup_paused ? "New Ziipa registrations are temporarily paused." : "");
+  const message = [iosInternalTestflight ? internalBetaNotice : "", operatorMessage].filter(Boolean).join("\n");
   if (!message) return null;
   return <View accessibilityRole="alert" style={{ backgroundColor: color.panel, paddingHorizontal: 18, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: color.purple }}>
     <Text style={{ color: color.text, fontFamily: font.medium, fontSize: 13 }}>{message}</Text>

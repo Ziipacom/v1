@@ -40,9 +40,11 @@ import { createAutomationChatController } from "../lib/automation-chat";
 import { useAutomationDictation } from "../lib/automation-dictation";
 import {
   authorizationHeaders,
+  iosInternalTestflight,
   portalMode,
   validateOrigin,
 } from "../lib/config";
+import { assertInternalBetaRequest } from "../lib/internal-beta-policy";
 import { useZiipa } from "../provider";
 import { color, styles } from "../theme";
 import type { Item, RootStack } from "../lib/types";
@@ -471,6 +473,7 @@ export function MediaOSScreen({
         path.includes("..")
       )
         throw new Error("Invalid workspace request.");
+      assertInternalBetaRequest(iosInternalTestflight, path, method);
       const controller = new AbortController();
       requests.current.add(controller);
       const timer = setTimeout(() => controller.abort(), 30000);
