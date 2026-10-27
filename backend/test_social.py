@@ -2,6 +2,8 @@
 import asyncio
 from functools import partial
 import base64
+from types import SimpleNamespace
+import uuid
 
 import httpx
 import pytest
@@ -139,6 +141,39 @@ def test_public_sync_persists_bounded_imports_and_disconnect_clears_them(client,
     client.post('/api/social/bluesky/disconnect')
     state = client.get('/api/social/hub').json()
     assert state['media'] == [] and state['people'] == []
+
+
+def test_same_handle_reconnect_exposes_new_public_revision_and_clears_snapshot(client, monkeypatch):
+    install_public_api(monkeypatch)
+    register_creator(client)
+    link = {'handle': 'artist.bsky.social'}
+    original = client.post('/api/social/bluesky/link', json=link).json()
+    assert str(uuid.UUID(original['revision'])) == original['revision']
+    assert client.post('/api/social/bluesky/sync').json()['media']
+    # Repeating the same link preserves its existing import and cache identity.
+    assert client.post('/api/social/bluesky/link', json=link).json()['revision'] == original['revision']
+    assert client.get('/api/social/hub').json()['media']
+    assert client.post('/api/social/bluesky/disconnect').status_code == 200
+    disconnected = client.get('/api/social/hub').json()
+    assert all(provider['revision'] is None for provider in disconnected['providers'])
+    assert disconnected['media'] == []
+    latest = client.post('/api/social/bluesky/link', json=link).json()
+    assert str(uuid.UUID(latest['revision'])) == latest['revision']
+    assert latest['revision'] != original['revision']
+    hub = client.get('/api/social/hub').json()
+    assert hub['media'] == [] and hub['people'] == []
+    assert next(provider for provider in hub['providers'] if provider['provider'] == 'bluesky')['revision'] == latest['revision']
+    connections = client.get('/api/creator/bootstrap').json()['connections']
+    assert next(provider for provider in connections if provider['provider'] == 'bluesky')['revision'] == latest['revision']
+
+
+@pytest.mark.parametrize('revision', [None, 'legacy-private-value', 123])
+def test_provider_revision_is_only_a_public_link_uuid(revision):
+    row = SimpleNamespace(data={'profile_url': 'https://bsky.app/profile/artist.bsky.social',
+        'auth_type': 'public_profile', 'revision': revision, 'oauth_token': 'DO_NOT_EXPOSE'})
+    result = social.serialize_provider('bluesky', row)
+    assert result['revision'] is None
+    assert 'DO_NOT_EXPOSE' not in str(result)
 
 
 def test_sync_failure_is_sanitized_and_last_good_snapshot_is_retained(client, monkeypatch):

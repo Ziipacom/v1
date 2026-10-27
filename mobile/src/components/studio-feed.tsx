@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import {
@@ -7,10 +7,14 @@ import {
   ChevronUp,
   Pause,
   Play,
+  RefreshCw,
   Volume2,
   VolumeX,
 } from "lucide-react-native";
 import { ReelMedia } from "./reel-media";
+import { DiscoveryNetworkPreview } from "./discovery-network-card";
+import type { DiscoveryEntry } from "../lib/discovery-feed";
+import type { NetworkMedia } from "../lib/network-hub";
 import { useDevicePreferences } from "./device-preferences";
 import { pageAtOffset, isPlayableMedia } from "../lib/domain";
 import type { Item } from "../lib/types";
@@ -21,10 +25,22 @@ export function StudioFeed({
   items,
   editing,
   onOpen,
+  entries: feedEntries,
+  onOpenNetwork,
+  onRefresh,
+  refreshing = false,
+  refreshKey,
+  networkNotice,
 }: {
   items: Item[];
   editing: boolean;
   onOpen: (item: Item) => void;
+  entries?: DiscoveryEntry[];
+  onOpenNetwork?: (media: NetworkMedia) => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+  refreshKey?: number;
+  networkNotice?: string;
 }) {
   useTheme();
   const { preferences, ready, reducedMotion } = useDevicePreferences();
@@ -35,24 +51,44 @@ export function StudioFeed({
   const [muted, setMuted] = useState(preferences.startMuted);
   useEffect(() => setPaused(!autoplay), [autoplay]);
   useEffect(() => setMuted(preferences.startMuted), [preferences.startMuted]);
-  const list = useRef<FlatList<Item>>(null);
+  const entries = useMemo(
+    () =>
+      feedEntries ||
+      items.map((item) => ({
+        id: `ziipa:${item.id}`,
+        source: "ziipa" as const,
+        item,
+      })),
+    [feedEntries, items],
+  );
+  const list = useRef<FlatList<DiscoveryEntry>>(null);
   const currentIndex = useRef(0);
-  const activeItemId = useRef(items[0]?.id);
-  const current = items[index];
-  const playable = !!current && isPlayableMedia(current);
+  const activeItemId = useRef(entries[0]?.id);
+  const priorRefresh = useRef(refreshKey);
+  const current = entries[index];
+  const currentItem = current?.source === "ziipa" ? current.item : null;
+  const currentNetwork = current?.source === "network" ? current.media : null;
+  const playable = !!currentItem && isPlayableMedia(currentItem);
+  const openCurrent = () => {
+    if (currentItem) onOpen(currentItem);
+    else if (currentNetwork) onOpenNetwork?.(currentNetwork);
+  };
   useEffect(() => {
-    const retained = items.findIndex(
+    const refreshed = priorRefresh.current !== refreshKey;
+    priorRefresh.current = refreshKey;
+    const retained = entries.findIndex(
       (item) => item.id === activeItemId.current,
     );
-    const next =
-      retained >= 0
+    const next = refreshed
+      ? 0
+      : retained >= 0
         ? retained
-        : Math.min(currentIndex.current, Math.max(0, items.length - 1));
-    if (activeItemId.current !== items[next]?.id) {
+        : Math.min(currentIndex.current, Math.max(0, entries.length - 1));
+    if (activeItemId.current !== entries[next]?.id) {
       setPaused(!autoplay);
       setMuted(preferences.startMuted);
     }
-    activeItemId.current = items[next]?.id;
+    activeItemId.current = entries[next]?.id;
     currentIndex.current = next;
     setIndex(next);
     if (height)
@@ -60,9 +96,9 @@ export function StudioFeed({
         offset: next * height,
         animated: false,
       });
-  }, [height, items, autoplay, preferences.startMuted]);
+  }, [height, entries, autoplay, preferences.startMuted, refreshKey]);
   function page(direction: number) {
-    const next = Math.max(0, Math.min(items.length - 1, index + direction));
+    const next = Math.max(0, Math.min(entries.length - 1, index + direction));
     list.current?.scrollToOffset({ offset: next * height, animated: true });
   }
   return (
@@ -70,11 +106,11 @@ export function StudioFeed({
       style={StyleSheet.absoluteFill}
       onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
     >
-      {height > 0 && items.length > 0 && (
+      {height > 0 && entries.length > 0 && (
         <FlatList
           ref={list}
           accessibilityLabel="Discover media feed"
-          data={items}
+          data={entries}
           extraData={{ index, paused, muted, editing }}
           keyExtractor={(item) => item.id}
           pagingEnabled
@@ -97,17 +133,17 @@ export function StudioFeed({
             const next = pageAtOffset(
               e.nativeEvent.contentOffset.y,
               height,
-              items.length,
+              entries.length,
             );
             if (next !== currentIndex.current) {
               currentIndex.current = next;
-              activeItemId.current = items[next]?.id;
+              activeItemId.current = entries[next]?.id;
               setIndex(next);
               setPaused(!autoplay);
               setMuted(preferences.startMuted);
             }
           }}
-          renderItem={({ item, index: i }) => (
+          renderItem={({ item: entry, index: i }) => (
             <View
               style={{ height, overflow: "hidden" }}
               accessibilityElementsHidden={i !== index}
@@ -116,11 +152,34 @@ export function StudioFeed({
               }
               aria-hidden={i !== index}
             >
-              <ReelMedia
-                item={item}
-                active={i === index && isPlayableMedia(item)}
-                paused={paused || editing}
-                muted={muted}
+              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                {entry.source === "ziipa" ? (
+                  <ReelMedia
+                    item={entry.item}
+                    active={i === index && isPlayableMedia(entry.item)}
+                    paused={paused || editing}
+                    muted={muted}
+                  />
+                ) : (
+                  <DiscoveryNetworkPreview media={entry.media} />
+                )}
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  entry.source === "ziipa"
+                    ? `Open ${entry.item.title} in Gallery feed`
+                    : `Open ${entry.media.title || "public post"} on Bluesky`
+                }
+                disabled={
+                  editing || (entry.source === "network" && !onOpenNetwork)
+                }
+                onPress={() =>
+                  entry.source === "ziipa"
+                    ? onOpen(entry.item)
+                    : onOpenNetwork?.(entry.media)
+                }
+                style={StyleSheet.absoluteFill}
               />
               <LinearGradient
                 pointerEvents="none"
@@ -146,11 +205,29 @@ export function StudioFeed({
         />
       )}
       <View pointerEvents="box-none" style={s.top}>
-        <Text style={s.heading}>Discover</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+          <Text style={s.heading}>Discover</Text>
+          {!!onRefresh && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Refresh and shuffle Discover"
+              disabled={refreshing || editing}
+              onPress={onRefresh}
+              style={[s.control, { width: 36, height: 36 }]}
+            >
+              <RefreshCw size={15} color="white" />
+            </Pressable>
+          )}
+        </View>
         <View style={s.underline} />
         <Text style={s.hint}>
           {editing ? "Paused while editing" : "Your next inspiration"}
         </Text>
+        {!!networkNotice && (
+          <Text numberOfLines={4} style={[s.hint, { fontSize: 10 }]}>
+            {networkNotice}
+          </Text>
+        )}
         {playable && !editing && (
           <View style={s.controls}>
             <Pressable
@@ -188,22 +265,41 @@ export function StudioFeed({
         <View pointerEvents="box-none" style={s.bottom}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Open ${current.title}`}
-            onPress={() => onOpen(current)}
+            accessibilityLabel={
+              currentItem
+                ? `Open ${currentItem.title}`
+                : `Open original Bluesky post`
+            }
+            onPress={openCurrent}
             style={s.details}
           >
             <Text style={s.eyebrow}>
-              {current.demo ? current.label : "CREATOR POST"}
+              {currentItem
+                ? currentItem.demo
+                  ? currentItem.label
+                  : "ZIIPA · CREATOR POST"
+                : "BLUESKY · IMPORTED PUBLIC POST"}
             </Text>
             <Text numberOfLines={1} style={s.creator}>
-              {current.creator}
+              {currentItem?.creator ||
+                currentNetwork?.author ||
+                currentNetwork?.handle ||
+                "Bluesky account"}
             </Text>
             <Text numberOfLines={2} style={s.title}>
-              {current.title}
+              {currentItem?.title ||
+                currentNetwork?.title ||
+                currentNetwork?.text ||
+                "Public Bluesky post"}
             </Text>
-            {current.id === "demo-sintel" && (
+            {currentItem?.id === "demo-sintel" && (
               <Text style={s.credit}>
                 Sintel · © Blender Foundation · CC BY 3.0
+              </Text>
+            )}
+            {!!currentNetwork && (
+              <Text style={s.credit}>
+                Public snapshot · Opens original on Bluesky
               </Text>
             )}
           </Pressable>
@@ -212,13 +308,13 @@ export function StudioFeed({
               <View style={s.swipe}>
                 <ArrowUp size={14} color={color.lime} />
                 <Text style={s.hint}>
-                  {index < items.length - 1
+                  {index < entries.length - 1
                     ? "Swipe up to discover"
                     : "You're all caught up"}
                 </Text>
               </View>
               <Text accessibilityLiveRegion="polite" style={s.count}>
-                {index + 1} / {items.length}
+                {index + 1} / {entries.length}
               </Text>
             </View>
             <Pressable
@@ -234,17 +330,17 @@ export function StudioFeed({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Next discover media"
-              accessibilityState={{ disabled: index === items.length - 1 }}
-              disabled={index === items.length - 1}
+              accessibilityState={{ disabled: index === entries.length - 1 }}
+              disabled={index === entries.length - 1}
               onPress={() => page(1)}
-              style={[s.control, index === items.length - 1 && s.disabled]}
+              style={[s.control, index === entries.length - 1 && s.disabled]}
             >
               <ChevronDown size={20} color="white" />
             </Pressable>
           </View>
         </View>
       )}
-      {!items.length && (
+      {!entries.length && (
         <View pointerEvents="none" style={s.empty}>
           <Text style={s.creator}>Your discovery starts here</Text>
           <Text style={s.hint}>

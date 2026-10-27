@@ -436,7 +436,7 @@ def test_fresh_and_repeated_migration_installs_guards_without_assigning_owner(tm
     render_migrate.upgrade_database(engine)
     render_migrate.upgrade_database(engine)
     with engine.connect() as connection:
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '20261020_0012'
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '20261027_0013'
         assert connection.scalar(text('SELECT COUNT(*) FROM admin_owner')) == 0
         triggers = set(connection.scalars(text("SELECT name FROM sqlite_master WHERE type='trigger'")))
         assert {'admin_owner_deny_update', 'admin_owner_deny_delete',

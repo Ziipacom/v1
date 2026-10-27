@@ -31,6 +31,8 @@ import { MusicAudition } from "./audio-audition";
 
 type Props = {
   purpose: "creation" | "soundtrack";
+  /** Undefined retains standalone behavior; null means no parent attachment. */
+  attachedFileUri?: string | null;
   busy: boolean;
   onBusyChange: (busy: boolean) => void;
   onAuditionStart?: () => void;
@@ -58,6 +60,7 @@ export function VoiceNarrationWorkspace({ ...props }: Props) {
 
 function ScopedVoiceNarrationWorkspace({
   purpose,
+  attachedFileUri,
   busy,
   onBusyChange,
   onAuditionStart,
@@ -86,6 +89,18 @@ function ScopedVoiceNarrationWorkspace({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const lease = useRef<Held | null>(null);
+  useEffect(() => {
+    const previous = lease.current;
+    if (
+      attachedFileUri !== undefined &&
+      previous?.transferred &&
+      previous.file.uri !== attachedFileUri
+    ) {
+      // The parent owns disposal after transfer. Never audition its released file.
+      lease.current = null;
+      setHeld(null);
+    }
+  }, [attachedFileUri, held?.transferred]);
   const auditionPause = useRef<(() => void) | null>(null);
   const registerAuditionPause = useCallback((pause: (() => void) | null) => {
     auditionPause.current = pause;

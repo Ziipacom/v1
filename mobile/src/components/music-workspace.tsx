@@ -7,6 +7,7 @@ import {
   Play,
   RefreshCw,
   Sparkles,
+  Trash2,
   Upload,
 } from "lucide-react-native";
 import { Action, Field, Notice, Pill } from "./ui";
@@ -31,6 +32,10 @@ import {
   type OwnedAudio,
 } from "../lib/music-composer";
 import { synthesizeAiMusic, type AiMusicConfig } from "../lib/ai-music";
+import {
+  knownAudioDuration,
+  parseSoundtrackStart,
+} from "../lib/soundtrack-controls";
 import type { UploadFile } from "../lib/api";
 import type { Library } from "../lib/media-os-types";
 import { color, font, styles } from "../theme";
@@ -45,6 +50,12 @@ export type MusicWorkspaceProps = {
   /** Percentage, matching the editor's existing 0–100 soundtrack control. */
   volume: number;
   onVolumeChange: (percent: number) => void;
+  /** Seconds skipped from the selected audio file, not an output-timeline delay. */
+  start?: number;
+  onStartChange?: (seconds: number) => void;
+  onRemove?: () => void;
+  /** Actual selected attachment metadata only; null means not yet known. */
+  onDurationChange?: (seconds: number | null) => void;
   onUpload: () => void;
   /** Called only for an explicit Play gesture, before audition playback starts. */
   onAuditionStart?: () => void;
@@ -102,6 +113,10 @@ function ScopedMusicWorkspace({
   selectedMediaId,
   volume,
   onVolumeChange,
+  start = 0,
+  onStartChange,
+  onRemove,
+  onDurationChange,
   onUpload,
   onAuditionStart,
   onUseOwned,
@@ -120,6 +135,12 @@ function ScopedMusicWorkspace({
   const [rights, setRights] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [startDraft, setStartDraft] = useState(String(start));
+  const [startError, setStartError] = useState("");
+  const [audioDuration, setAudioDuration] = useState<{
+    key: string;
+    duration: number | null;
+  } | null>(null);
   const [audition, setAudition] = useState<Audition | null>(null);
   const [settings, setSettings] = useState<MusicSettings>(initialSettings);
   const [generating, setGenerating] = useState(false);
@@ -165,6 +186,35 @@ function ScopedMusicWorkspace({
           }
         : null);
   const disabled = busy || generating || voiceBusy;
+  const attachmentKey = selectedFile?.uri || selectedMediaId || "";
+  const latestAttachment = useRef(attachmentKey);
+  latestAttachment.current = attachmentKey;
+  const attachmentDuration =
+    audioDuration?.key === attachmentKey ? audioDuration.duration : null;
+  const auditionIsAttachment =
+    !!attachmentKey &&
+    (selectedFile
+      ? selected?.uri === selectedFile.uri
+      : selected?.path === `/api/creator/media/${selectedMediaId}`);
+  const receiveAttachmentDuration = useCallback(
+    (seconds: number | null) => {
+      if (latestAttachment.current !== attachmentKey) return;
+      const duration = knownAudioDuration(seconds);
+      setAudioDuration((previous) =>
+        previous?.key === attachmentKey && previous.duration === duration
+          ? previous
+          : { key: attachmentKey, duration },
+      );
+    },
+    [attachmentKey],
+  );
+  useEffect(() => {
+    setStartDraft(String(start));
+    setStartError("");
+  }, [attachmentKey, start]);
+  useEffect(() => {
+    onDurationChange?.(purpose === "creation" ? null : attachmentDuration);
+  }, [attachmentKey, attachmentDuration, onDurationChange, purpose]);
 
   const load = useCallback(async () => {
     if (!session || !focused) return;
@@ -436,6 +486,12 @@ function ScopedMusicWorkspace({
             key={selected.uri || selected.path}
             audition={selected}
             volume={safeVolume}
+            start={purpose !== "creation" && auditionIsAttachment ? start : 0}
+            onDuration={
+              purpose !== "creation" && auditionIsAttachment
+                ? receiveAttachmentDuration
+                : undefined
+            }
             onAuditionStart={onAuditionStart}
             onPauseReady={registerAuditionPause}
           />
@@ -457,6 +513,86 @@ function ScopedMusicWorkspace({
               Preview volume uses the mix level. The final mix is applied when
               the saved edit is rendered.
             </Text>
+          )}
+        </View>
+      )}
+      {purpose !== "creation" && !!attachmentKey && (
+        <View style={[styles.panel, { gap: 10, padding: desktop ? 16 : 20 }]}>
+          <Text style={styles.label}>
+            Attached audio ·{" "}
+            {selectedName || selectedFile?.name || "Selected soundtrack"}
+          </Text>
+          {onStartChange && (
+            <>
+              <Field
+                label="Start within audio file (seconds)"
+                value={startDraft}
+                keyboardType="decimal-pad"
+                maxLength={14}
+                editable={!disabled}
+                onChangeText={(value) => {
+                  setStartDraft(value);
+                  setStartError("");
+                }}
+                placeholder="0"
+              />
+              <Text style={styles.small}>
+                Skip this many seconds from the audio file. The selected audio
+                still begins at the start of your edit.
+                {attachmentDuration === null
+                  ? " Duration is unavailable until this audio's preview loads."
+                  : ` Audio duration: ${attachmentDuration.toFixed(3).replace(/\.?0+$/, "")} seconds.`}
+              </Text>
+              <Action
+                secondary
+                title="Apply audio start"
+                disabled={disabled}
+                onPress={() => {
+                  if (disabled || !focused) return;
+                  try {
+                    const value = parseSoundtrackStart(
+                      startDraft,
+                      attachmentDuration,
+                    );
+                    auditionPause.current?.();
+                    onAuditionStart?.();
+                    onStartChange(value);
+                    setStartDraft(String(value));
+                    setStartError("");
+                    setAudition(null);
+                    setNotice(
+                      `Audio begins at ${value}s in the file. Review the edit and save your draft.`,
+                    );
+                  } catch (cause) {
+                    setStartError(
+                      cause instanceof Error
+                        ? cause.message
+                        : "Audio start is invalid.",
+                    );
+                  }
+                }}
+              />
+              {!!startError && <Notice error text={startError} />}
+            </>
+          )}
+          {onRemove && (
+            <Action
+              secondary
+              title="Remove attached audio"
+              icon={Trash2}
+              disabled={disabled}
+              onPress={() => {
+                if (disabled || !focused) return;
+                auditionPause.current?.();
+                onAuditionStart?.();
+                onRemove();
+                setAudition(null);
+                setStartError("");
+                setNotice(
+                  "Audio removed from this edit. Save your draft to keep the change. Existing library files are kept.",
+                );
+              }}
+            />
           )}
         </View>
       )}
@@ -602,6 +738,7 @@ function ScopedMusicWorkspace({
             <VoiceNarrationWorkspace
               key={`${session?.access_token || "guest"}:${purpose}`}
               purpose={purpose}
+              attachedFileUri={selectedFile?.uri || null}
               busy={busy || generating}
               onBusyChange={setVoiceBusy}
               onAuditionStart={pauseForVoiceCapture}

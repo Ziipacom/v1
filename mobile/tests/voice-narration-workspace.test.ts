@@ -233,6 +233,7 @@ function ui(
   });
   const props = {
     purpose: "creation",
+    attachedFileUri: undefined as string | null | undefined,
     busy: false,
     onBusyChange() {},
     onAuditionStart() {
@@ -278,6 +279,9 @@ function ui(
     consent,
     calls,
     context,
+    attachment(value: string | null | undefined) {
+      props.attachedFileUri = value;
+    },
     order,
     counts: () => ({ starts, stops, cancels, files, releases, attachments }),
     background() {
@@ -295,6 +299,55 @@ function ui(
   };
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("removing the parent's attached narration retires its preview without disposing the parent-owned file again", async () => {
+  const h = ui();
+  try {
+    h.render();
+    await settle();
+    h.script("An attached take.");
+    h.consent("Send only this script").props.onPress();
+    h.action("Generate AI narration").props.onPress();
+    await settle();
+    await settle();
+    h.attachment("blob:voice-1");
+    h.action("Use as audio creation").props.onPress();
+    h.render();
+    assert.equal(h.counts().attachments, 1);
+    assert.ok(h.render().some((node) => node.type === "MusicAudition"));
+    h.attachment(null);
+    h.render();
+    assert.equal(
+      h.render().some((node) => node.type === "MusicAudition"),
+      false,
+    );
+    assert.equal(h.counts().releases, 0);
+  } finally {
+    h.unmount();
+  }
+  assert.equal(h.counts().releases, 0);
+});
+
+test("an un-attached narration candidate survives removal of another parent soundtrack", async () => {
+  const h = ui();
+  try {
+    h.attachment("blob:old-soundtrack");
+    h.render();
+    await settle();
+    h.script("A private candidate.");
+    h.consent("Send only this script").props.onPress();
+    h.action("Generate AI narration").props.onPress();
+    await settle();
+    await settle();
+    h.attachment(null);
+    h.render();
+    assert.ok(h.render().some((node) => node.type === "MusicAudition"));
+    assert.equal(h.counts().releases, 0);
+  } finally {
+    h.unmount();
+  }
+  assert.equal(h.counts().releases, 1);
+});
 test("voice UI never requests microphone or generation on mount, and Record requires separate explicit consent", async () => {
   const h = ui();
   try {

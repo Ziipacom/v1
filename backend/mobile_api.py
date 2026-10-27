@@ -245,6 +245,8 @@ async def delete_account(data: DeleteAccount, user: User = Depends(current_user)
     delete_os_data(session, user.id)
     delete_settlement_data(session, user.id)
     delete_rewards_data(session, user.id)
+    from public_gallery import delete_gallery
+    delete_gallery(session, user.id)
     item_ids = list(session.scalars(select(CreatorItem.id).where(CreatorItem.owner_id == user.id)))
     media_ids = list(session.scalars(select(CreatorMedia.id).where(CreatorMedia.owner_id == user.id)))
     provider = storage()

@@ -373,42 +373,49 @@ export function DesktopFeaturedGallery({
           ]}
         >
           {/* Animate copy only; the live video keeps an ordinary opaque surface. */}
-          <View style={g.media}>
-            {current.content_type?.startsWith("image/") ? (
-              <ProfileMediaPreview
-                key={current.id}
-                item={current}
-                visible={focused && foreground && visible}
-                videoActive={false}
-                autoplay={!playbackPaused}
-              />
-            ) : playable ? (
-              <ReelMedia
-                key={current.id}
-                item={current}
-                active={
-                  focused &&
-                  foreground &&
-                  visible &&
-                  (!saveData || explicitPlaybackId === current.id)
-                }
-                paused={playbackPaused}
-                muted={muted}
-              />
-            ) : (
-              <Cover item={current} style={{ flex: 1 }} />
-            )}
-            <View pointerEvents="none" style={g.featureBadge}>
-              <Text style={g.badgeText}>
-                FEATURED ·{" "}
-                {playable
-                  ? muted
-                    ? "MUTED PREVIEW"
-                    : "MEDIA PREVIEW"
-                  : "CREATION PREVIEW"}
-              </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${current.title} in Gallery feed`}
+            onPress={() => open(current)}
+            style={g.media}
+          >
+            <View pointerEvents="none" style={{ flex: 1 }}>
+              {current.content_type?.startsWith("image/") ? (
+                <ProfileMediaPreview
+                  key={current.id}
+                  item={current}
+                  visible={focused && foreground && visible}
+                  videoActive={false}
+                  autoplay={!playbackPaused}
+                />
+              ) : playable ? (
+                <ReelMedia
+                  key={current.id}
+                  item={current}
+                  active={
+                    focused &&
+                    foreground &&
+                    visible &&
+                    (!saveData || explicitPlaybackId === current.id)
+                  }
+                  paused={playbackPaused}
+                  muted={muted}
+                />
+              ) : (
+                <Cover item={current} style={{ flex: 1 }} />
+              )}
+              <View pointerEvents="none" style={g.featureBadge}>
+                <Text style={g.badgeText}>
+                  FEATURED ·{" "}
+                  {playable
+                    ? muted
+                      ? "MUTED PREVIEW"
+                      : "MEDIA PREVIEW"
+                    : "CREATION PREVIEW"}
+                </Text>
+              </View>
             </View>
-          </View>
+          </Pressable>
           <Animated.View
             testID="desktop-gallery-animated-copy"
             style={[g.copy, { width: compact ? 240 : 300, opacity }]}

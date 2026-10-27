@@ -27,9 +27,11 @@ import {
 import { useDesktopLayout } from "../components/desktop-layout";
 import { DesktopFeaturedGallery } from "../components/desktop-featured-gallery";
 import { GalleryStillPreview } from "../components/gallery-still-preview";
+import { DiscoveryNetworkCard } from "../components/discovery-network-card";
 import { useProfilePreviewActivity } from "../components/profile-media-preview";
 import { Action, Notice, categories } from "../components/ui";
-import { inCreativeWorld, searchItems } from "../lib/domain";
+import { filterDiscoveryEntries } from "../lib/discovery-feed";
+import { useDiscoveryFeed } from "../lib/use-discovery-feed";
 import type { Category, Item, RootStack } from "../lib/types";
 import { useZiipa } from "../provider";
 import { themedStyles, themeValue, color, font, styles } from "../theme";
@@ -39,6 +41,7 @@ type Props = NativeStackScreenProps<RootStack, "Main">;
 /** The gallery plays one trusted source; the discovery grid stays lightweight. */
 export function DesktopExplore({ route, navigation }: Props) {
   const { data, refresh, refreshing, loading, error } = useZiipa();
+  const discovery = useDiscoveryFeed();
   const { contentWidth } = useDesktopLayout();
   const previewActivity = useProfilePreviewActivity(false);
   const [query, setQuery] = useState(route.params?.query || "");
@@ -49,19 +52,33 @@ export function DesktopExplore({ route, navigation }: Props) {
 
   const published = useMemo(
     () =>
-      data.items.filter(
-        (item) => !item.demo && item.visibility === "published",
+      discovery.entries.flatMap((entry) =>
+        entry.source === "ziipa" && !entry.item.demo ? [entry.item] : [],
       ),
-    [data.items],
+    [discovery.entries],
+  );
+  const available = useMemo(
+    () =>
+      discovery.entries.filter(
+        (entry) => entry.source !== "ziipa" || !entry.item.demo,
+      ),
+    [discovery.entries],
+  );
+  const entries = useMemo(
+    () =>
+      filterDiscoveryEntries(available, {
+        category,
+        query,
+        savedIds: saved ? data.preferences.saved : undefined,
+      }),
+    [available, query, category, saved, data.preferences.saved],
   );
   const items = useMemo(
     () =>
-      searchItems(published, query).filter(
-        (item) =>
-          (!category || inCreativeWorld(item, category)) &&
-          (!saved || data.preferences.saved.includes(item.id)),
+      entries.flatMap((entry) =>
+        entry.source === "ziipa" ? [entry.item] : [],
       ),
-    [published, query, category, saved, data.preferences.saved],
+    [entries],
   );
   const tags = useMemo(
     () =>
@@ -135,6 +152,13 @@ export function DesktopExplore({ route, navigation }: Props) {
                 ? "The creations you saved, all in one place."
                 : "Find your next inspiration. Make something of your own."}
             </Text>
+            {!saved && (
+              <Text style={[styles.small, { fontSize: 12 }]}>
+                A shuffled mix of Ziipa member creations and your imported
+                Bluesky public snapshots. Network posts open at their original
+                source.
+              </Text>
+            )}
           </View>
           <Action
             title="Create a post"
@@ -180,11 +204,11 @@ export function DesktopExplore({ route, navigation }: Props) {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Refresh published creations"
-            disabled={refreshing}
-            onPress={() => void refresh()}
+            disabled={discovery.refreshing}
+            onPress={() => void discovery.refreshFeed()}
             style={s.toolbarButton}
           >
-            {refreshing ? (
+            {discovery.refreshing ? (
               <ActivityIndicator size="small" color={color.lime} />
             ) : (
               <RefreshCw size={18} color={color.muted} />
@@ -209,12 +233,15 @@ export function DesktopExplore({ route, navigation }: Props) {
         </View>
 
         {!!error && <Notice text={error} error />}
+        {!!discovery.networkError && (
+          <Notice text={discovery.networkError} error />
+        )}
         {loading ? (
           <View style={s.loading}>
             <ActivityIndicator color={color.lime} />
             <Text style={styles.small}>Loading your creative world…</Text>
           </View>
-        ) : error && !published.length ? (
+        ) : error && !available.length ? (
           <View style={s.noResults}>
             <RefreshCw size={32} color={color.muted} />
             <Text style={styles.heading}>Your feed couldn’t load</Text>
@@ -229,7 +256,7 @@ export function DesktopExplore({ route, navigation }: Props) {
               onPress={() => void refresh()}
             />
           </View>
-        ) : !published.length ? (
+        ) : !available.length ? (
           <View style={{ gap: 22 }}>
             <LinearGradient
               colors={["#32165B", "#21162F", color.panel]}
@@ -314,79 +341,92 @@ export function DesktopExplore({ route, navigation }: Props) {
                     : activeTitle}
               </Text>
               <Text accessibilityLiveRegion="polite" style={styles.small}>
-                {items.length} {items.length === 1 ? "creation" : "creations"}
+                {entries.length}{" "}
+                {entries.length === 1 ? "creation" : "creations"}
               </Text>
             </View>
-            {items.length ? (
+            {entries.length ? (
               <View
                 onLayout={(event) =>
                   setGridWidth(event.nativeEvent.layout.width)
                 }
                 style={s.grid}
               >
-                {items.map((item) => (
-                  <Pressable
-                    key={item.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Watch ${item.title} by ${item.creator}`}
-                    onPress={() => open(item)}
-                    style={({ pressed }) => [
-                      s.card,
-                      { width: cardWidth, opacity: pressed ? 0.8 : 1 },
-                    ]}
-                  >
-                    <View style={s.cover}>
-                      <DesktopGridPreview
-                        item={item}
-                        enabled={previewActivity.mountVideo}
+                {entries.map((entry) => {
+                  if (entry.source === "network")
+                    return (
+                      <DiscoveryNetworkCard
+                        key={entry.id}
+                        media={entry.media}
+                        onOpen={(media) => void discovery.openNetwork(media)}
+                        style={{ width: cardWidth }}
                       />
-                      <LinearGradient
-                        colors={["transparent", "#100A22C9"]}
-                        style={StyleSheet.absoluteFill}
-                      />
-                      <View style={s.cardCategory}>
-                        <Text style={s.cardCategoryText}>
-                          {categories.find(
-                            (entry) => entry.id === item.category,
-                          )?.title || item.category}
-                        </Text>
-                      </View>
-                      <View style={s.play}>
-                        <Play
-                          size={24}
-                          color="white"
-                          fill="#FFFFFF44"
-                          strokeWidth={1.5}
+                    );
+                  const item = entry.item;
+                  return (
+                    <Pressable
+                      key={item.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Watch ${item.title} by ${item.creator}`}
+                      onPress={() => open(item)}
+                      style={({ pressed }) => [
+                        s.card,
+                        { width: cardWidth, opacity: pressed ? 0.8 : 1 },
+                      ]}
+                    >
+                      <View style={s.cover}>
+                        <DesktopGridPreview
+                          item={item}
+                          enabled={previewActivity.mountVideo}
                         />
-                      </View>
-                      {data.preferences.saved.includes(item.id) && (
-                        <View style={s.savedBadge}>
-                          <Bookmark
-                            size={16}
-                            color={color.lime}
-                            fill={color.lime}
+                        <LinearGradient
+                          colors={["transparent", "#100A22C9"]}
+                          style={StyleSheet.absoluteFill}
+                        />
+                        <View style={s.cardCategory}>
+                          <Text style={s.cardCategoryText}>
+                            {categories.find(
+                              (entry) => entry.id === item.category,
+                            )?.title || item.category}
+                          </Text>
+                        </View>
+                        <View style={s.play}>
+                          <Play
+                            size={24}
+                            color="white"
+                            fill="#FFFFFF44"
+                            strokeWidth={1.5}
                           />
                         </View>
-                      )}
-                    </View>
-                    <View style={s.cardCopy}>
-                      <Text numberOfLines={2} style={s.cardTitle}>
-                        {item.title}
-                      </Text>
-                      <Text numberOfLines={1} style={styles.small}>
-                        {item.creator}
-                      </Text>
-                      {!!item.tags.length && (
-                        <Text numberOfLines={1} style={s.cardTags}>
-                          {item.tags
-                            .slice(0, 3)
-                            .map((tag) => `#${tag}`)
-                            .join("  ")}
+                        {data.preferences.saved.includes(item.id) && (
+                          <View style={s.savedBadge}>
+                            <Bookmark
+                              size={16}
+                              color={color.lime}
+                              fill={color.lime}
+                            />
+                          </View>
+                        )}
+                      </View>
+                      <View style={s.cardCopy}>
+                        <Text numberOfLines={2} style={s.cardTitle}>
+                          {item.title}
                         </Text>
-                      )}
-                    </View>
-                  </Pressable>
-                ))}
+                        <Text numberOfLines={1} style={styles.small}>
+                          {item.creator}
+                        </Text>
+                        {!!item.tags.length && (
+                          <Text numberOfLines={1} style={s.cardTags}>
+                            {item.tags
+                              .slice(0, 3)
+                              .map((tag) => `#${tag}`)
+                              .join("  ")}
+                          </Text>
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                })}
               </View>
             ) : (
               <View style={s.noResults}>

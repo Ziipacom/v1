@@ -462,25 +462,30 @@ export function GallerySlider({
               zIndex: 2,
             }}
           >
-            {item.content_type?.startsWith("image/") ? (
-              <ProfileMediaPreview
-                key={item.id}
-                item={item}
-                visible={focused && foreground && visible}
-                videoActive={false}
-                autoplay={!playbackPaused}
-              />
-            ) : playable ? (
-              <ReelMedia
-                key={item.id}
-                item={item}
-                active={mediaActive}
-                paused={playbackPaused}
-                muted={muted}
-              />
-            ) : (
-              <Cover item={item} style={{ flex: 1 }} />
-            )}
+            <View
+              pointerEvents="none"
+              style={{ position: "absolute", inset: 0 }}
+            >
+              {item.content_type?.startsWith("image/") ? (
+                <ProfileMediaPreview
+                  key={item.id}
+                  item={item}
+                  visible={focused && foreground && visible}
+                  videoActive={false}
+                  autoplay={!playbackPaused}
+                />
+              ) : playable ? (
+                <ReelMedia
+                  key={item.id}
+                  item={item}
+                  active={mediaActive}
+                  paused={playbackPaused}
+                  muted={muted}
+                />
+              ) : (
+                <Cover item={item} style={{ flex: 1 }} />
+              )}
+            </View>
             <Animated.View
               testID="gallery-animated-copy"
               style={{

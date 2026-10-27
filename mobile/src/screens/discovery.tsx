@@ -30,6 +30,7 @@ import { AccountMenu } from "../components/account-menu";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { DesktopExplore } from "./desktop-explore";
 import { galleryItems } from "../lib/gallery";
+import { useDiscoveryFeed } from "../lib/use-discovery-feed";
 import type { Category, RootStack } from "../lib/types";
 import { useZiipa } from "../provider";
 import { color, font, styles } from "../theme";
@@ -49,7 +50,8 @@ function MobileDiscoverScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStack, "Main">) {
-  const { data, guest } = useZiipa();
+  const { guest } = useZiipa();
+  const discovery = useDiscoveryFeed();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const logoWidth = Math.max(96, Math.min(145, width - 188));
@@ -57,7 +59,13 @@ function MobileDiscoverScreen({
   const [query, setQuery] = useState(route.params?.query || "");
   const [resetVersion, setResetVersion] = useState(0);
   useEffect(() => setQuery(route.params?.query || ""), [route.params?.query]);
-  const items = galleryItems(data.items, category, query);
+  const items = galleryItems(
+    discovery.entries.flatMap((entry) =>
+      entry.source === "ziipa" ? [entry.item] : [],
+    ),
+    category,
+    query,
+  );
   function select(id: Category) {
     navigation.setParams({ category: id });
   }
@@ -200,6 +208,22 @@ function MobileDiscoverScreen({
             <SlidersHorizontal size={16} color={color.muted} />
           </Pressable>
         </View>
+        {discovery.networkCount > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Browse imported public posts in Discover"
+            onPress={() => navigation.navigate("Studio")}
+            style={{
+              alignSelf: "center",
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+            }}
+          >
+            <Text style={[styles.small, { fontSize: 11 }]}>
+              Ziipa + {discovery.networkCount} Bluesky public posts in Discover
+            </Text>
+          </Pressable>
+        )}
       </View>
       <CategoryDock
         selected={category}

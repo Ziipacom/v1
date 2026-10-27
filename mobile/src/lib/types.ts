@@ -34,6 +34,7 @@ export type SocialProvider =
   "bluesky" | "facebook" | "instagram" | "tiktok" | "twitch" | "youtube";
 export type SocialConnection = {
   provider: SocialProvider;
+  revision?: string | null;
   name: string;
   capability: string;
   status: "connected" | "linked" | "disconnected" | "action_required";

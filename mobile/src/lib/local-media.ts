@@ -28,6 +28,13 @@ export function clearDraftMedia() {
   draftLeases.clear();
   for (const uri of uris) releaseUnreferenced(uri);
 }
+/** Drop one saved draft attachment, preserving files still used by other drafts. */
+export function releaseDraftMedia(key: string) {
+  const uri = draftLeases.get(key);
+  if (!uri) return;
+  draftLeases.delete(key);
+  releaseUnreferenced(uri);
+}
 export function isRetainedDraftMedia(uri: string) {
   return Array.from(draftLeases.values()).includes(uri);
 }

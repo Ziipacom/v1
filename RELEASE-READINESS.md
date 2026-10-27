@@ -1,3 +1,34 @@
+# Ziipa local release candidate — 27 October 2026
+
+The current shared web/Android source candidate targets Android **1.0.13,
+version code 14**. It adds manual timed-caption editing, selected audio source
+offsets and removal, public gallery settings and anonymous creator pages, and a
+shuffled Discover feed combining eligible Ziipa creations with the signed-in
+account's imported Bluesky public snapshots. Network posts remain attributed
+links to their original source; they are not Ziipa uploads or publishing
+authorizations. Connection revisions invalidate imports after reconnecting.
+
+Public gallery addresses are **opt-in and off by default**. No real account has
+been opted in during implementation or testing. Public pages exclude private
+drafts and recheck consent, profile visibility, publication, moderation and
+ownership on each media/artwork request. Published edits requiring a finished
+export are excluded rather than exposing their uncut sources; the displayed
+pending count does not queue a render. Current uploaded artwork uses revocable
+routes; the six selected bundled cover assets are already public.
+
+Targeted local validation: **496 mobile tests, 198 backend tests and 54 frontend
+tests passed**. These results do not claim production rendering or acceptance on
+a physical Android phone. Web and Android builds are pending at this checkpoint;
+release hashes, package verification and deployment outcomes will be recorded
+after they complete. Hosting remains on free plans.
+
+Additive schema head **20261027_0013** introduces public gallery consent and
+address reservations. Apply the migration with the matching API release. Worker
+startup requires an exact schema-head match: renderer, scheduler, agent and
+workflow packages built for 0012 must be rebuilt from the new release before
+restart. Production video rendering remains blocked by Oracle recovery; the
+old isolated renderer must not be started using its previous recovery package.
+
 # Live, private recordings and notifications — 19 October 2026
 
 Implemented signed Livepeer event ingestion, current-provider ownership checks,

@@ -219,11 +219,13 @@ def current_user(request: Request, session: Session = Depends(db)):
     live_cleanup = (request.method == 'POST' and path_parts[:3] == ['api', 'live', 'streams']
         and ((len(path_parts) == 5 and path_parts[4] == 'end')
              or (len(path_parts) == 6 and path_parts[4:] == ['destinations', 'twitch'])))
+    gallery_disable = (request.method == 'POST' and path_parts == ['api', 'creator', 'gallery', 'disable'])
     # Privacy, sign-out, consent revocation and reporting remain available
     # during maintenance. Twitch enablement has its own fresh route-level guard;
     # detaching or stopping a stream must remain possible during maintenance.
     if (request.method not in {'GET', 'HEAD', 'OPTIONS'}
             and not live_cleanup
+            and not gallery_disable
             and not request.url.path.startswith(('/api/account/', '/api/auth/',
                 '/api/mobile/auth/', '/api/notifications/', '/api/safety/'))):
         require_mutations_open(session, user)
@@ -417,3 +419,6 @@ app.include_router(rewards_settlement_router)
 from admin_api import router as admin_router, platform_router
 app.include_router(admin_router)
 app.include_router(platform_router)
+from public_gallery import owner_router as gallery_owner_router, public_router as public_gallery_router
+app.include_router(gallery_owner_router)
+app.include_router(public_gallery_router)

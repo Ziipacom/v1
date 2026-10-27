@@ -39,7 +39,8 @@ import { AccountMenu } from "../components/account-menu";
 import { useDevicePreferences } from "../components/device-preferences";
 import { color, font, styles, themedStyles } from "../theme";
 import { useZiipa } from "../provider";
-import { inCreativeWorld, studioDiscoverItems } from "../lib/domain";
+import { inCreativeWorld } from "../lib/domain";
+import { useDiscoveryFeed } from "../lib/use-discovery-feed";
 import type { Category, RootStack } from "../lib/types";
 
 const menuOrder: Category[] = ["nft", "games", "live", "music", "store"];
@@ -48,6 +49,7 @@ export function StudioScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Studio">) {
   const { data, guest } = useZiipa();
+  const discovery = useDiscoveryFeed();
   const { reducedMotion } = useDevicePreferences();
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<Category>(
@@ -80,8 +82,11 @@ export function StudioScreen({
   );
   const world = worlds.find((w) => w.id === selected);
   const discoverItems = useMemo(
-    () => studioDiscoverItems(data.items),
-    [data.items],
+    () =>
+      discovery.entries.flatMap((entry) =>
+        entry.source === "ziipa" ? [entry.item] : [],
+      ),
+    [discovery.entries],
   );
   const dockHeight = 76 + Math.max(insets.bottom, 10);
   const add = () => navigation.navigate("Composer", { category: selected });
@@ -126,7 +131,18 @@ export function StudioScreen({
       >
         <StudioFeed
           items={discoverItems}
+          entries={discovery.entries}
           editing={editing}
+          onOpenNetwork={(media) => void discovery.openNetwork(media)}
+          onRefresh={() => void discovery.refreshFeed()}
+          refreshing={discovery.refreshing}
+          refreshKey={discovery.seed}
+          networkNotice={
+            discovery.networkError ||
+            (discovery.networkCount
+              ? "Ziipa + Bluesky public snapshots"
+              : "Ziipa member creations · Link and sync Bluesky in Networks for public imports.")
+          }
           onOpen={(item) =>
             navigation.navigate("Watch", {
               itemId: item.id,

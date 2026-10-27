@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { filterDiscoveryEntries } from "../src/lib/discovery-feed.ts";
 
 type Node = { type: any; props: Record<string, any> };
 const source = readFileSync(
@@ -123,6 +124,25 @@ function fixture(observerSupported = true) {
         return { DesktopFeaturedGallery: "DesktopFeaturedGallery" };
       if (name === "../components/gallery-still-preview")
         return { GalleryStillPreview: "GalleryStillPreview" };
+      if (name === "../components/discovery-network-card")
+        return { DiscoveryNetworkCard: "DiscoveryNetworkCard" };
+      if (name === "../lib/discovery-feed") return { filterDiscoveryEntries };
+      if (name === "../lib/use-discovery-feed")
+        return {
+          useDiscoveryFeed: () => ({
+            entries: published.map((item) => ({
+              id: `ziipa:${item.id}`,
+              source: "ziipa",
+              item,
+            })),
+            seed: 0,
+            refreshing: false,
+            networkError: "",
+            networkCount: 0,
+            refreshFeed: async () => {},
+            openNetwork: async () => {},
+          }),
+        };
       if (name === "../components/profile-media-preview")
         return { useProfilePreviewActivity: () => ({ mountVideo: activity }) };
       if (name === "../components/ui")

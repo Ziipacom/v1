@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import * as gallery from "../src/lib/gallery.ts";
 import * as domain from "../src/lib/domain.ts";
+import * as discoveryFeed from "../src/lib/discovery-feed.ts";
 import { featuredGalleryPlayback } from "../src/lib/featured-gallery-playback.ts";
 import { palettes } from "../src/lib/appearance.ts";
 
@@ -230,6 +231,28 @@ function galleryUI(
           loading: false,
           error: "",
         }),
+      };
+    if (name === "../lib/use-discovery-feed")
+      return {
+        useDiscoveryFeed: () => ({
+          entries: (options.items || [])
+            .filter((item) => !item.demo && item.visibility === "published")
+            .map((item) => ({ id: `ziipa:${item.id}`, source: "ziipa", item })),
+          seed: 0,
+          refreshing: false,
+          networkError: "",
+          networkCount: 0,
+          refreshFeed: async () => {
+            refreshes++;
+          },
+          openNetwork: async () => {},
+        }),
+      };
+    if (name === "../lib/discovery-feed") return discoveryFeed;
+    if (name.endsWith("/discovery-network-card"))
+      return {
+        DiscoveryNetworkCard: "DiscoveryNetworkCard",
+        DiscoveryNetworkPreview: "DiscoveryNetworkPreview",
       };
     if (name.endsWith("/floating"))
       return {

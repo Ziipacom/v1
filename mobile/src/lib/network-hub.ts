@@ -3,6 +3,8 @@ import type { SocialProvider } from "./types";
 export type NetworkTab = "accounts" | "feed" | "people" | "outbox";
 export type NetworkAccount = {
   provider: SocialProvider;
+  /** Public link revision invalidates imported snapshots after unlink/relink. */
+  revision?: string | null;
   name: string;
   capability: string;
   status: "disconnected" | "linked" | "connected";

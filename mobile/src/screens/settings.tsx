@@ -23,6 +23,7 @@ import {
 } from "lucide-react-native";
 import { Action, Field, Notice } from "../components/ui";
 import { SettingsControls } from "../components/settings-controls";
+import { PublicGallerySettingsPanel } from "../components/public-gallery-settings";
 import { useZiipa } from "../provider";
 import { color, styles } from "../theme";
 import { apiOrigin, legalUrls, supportEmail } from "../lib/config";
@@ -84,6 +85,7 @@ function ScopedSettingsScreen({
     marketing_emails: false,
   });
   const [privacyReady, setPrivacyReady] = useState(false);
+  const [galleryRefreshKey, setGalleryRefreshKey] = useState(0);
   useEffect(() => {
     if (!session) return;
     let active = true;
@@ -281,6 +283,7 @@ function ScopedSettingsScreen({
             setPrivacy(
               await api<typeof privacy>("/api/account/privacy", privacy),
             );
+            setGalleryRefreshKey((value) => value + 1);
             setMessage("Your privacy controls are saved.");
           })
         }
@@ -358,7 +361,8 @@ function ScopedSettingsScreen({
             busy={busy}
           />
           <Text style={styles.small}>
-            Return to Get Started on this device. Your account and saved media stay on Ziipa.
+            Return to Get Started on this device. Your account and saved media
+            stay on Ziipa.
           </Text>
         </View>
       )}
@@ -425,6 +429,15 @@ function ScopedSettingsScreen({
         >
           <View style={workspace.main}>
             {session && identityPanel}
+            {session && (
+              <PublicGallerySettingsPanel
+                disabled={busy}
+                refreshKey={galleryRefreshKey}
+                onOpenCreations={() =>
+                  navigation.navigate("CreatorStudio", { tab: "library" })
+                }
+              />
+            )}
             {session && privacyPanel}
           </View>
           <View style={workspace.main}>
@@ -435,6 +448,15 @@ function ScopedSettingsScreen({
       ) : (
         <>
           {session && identityPanel}
+          {session && (
+            <PublicGallerySettingsPanel
+              disabled={busy}
+              refreshKey={galleryRefreshKey}
+              onOpenCreations={() =>
+                navigation.navigate("CreatorStudio", { tab: "library" })
+              }
+            />
+          )}
           {safetyPanel}
           {session && privacyPanel}
         </>

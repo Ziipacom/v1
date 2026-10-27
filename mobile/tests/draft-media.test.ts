@@ -6,6 +6,7 @@ import {
   localPlaybackSource,
   rememberLocalMedia,
   retainDraftMedia,
+  releaseDraftMedia,
 } from "../src/lib/local-media.ts";
 test("shared guest soundtrack remains playable until its final draft reference clears", async () => {
   const a = "blob:ziipa-a",
@@ -40,4 +41,26 @@ test("remote metadata cannot retain or authorize a device URI", () => {
     localPlaybackSource("file:///private/never-selected.wav", true),
     null,
   );
+});
+
+test("saving a detached soundtrack releases only its final saved draft lease", async () => {
+  const uri = "blob:removed-audio";
+  let disposed = 0;
+  rememberLocalMedia(uri);
+  retainDraftMedia("draft-one:soundtrack", uri, async () => {
+    disposed++;
+  });
+  retainDraftMedia("draft-two:soundtrack", uri);
+  releaseDraftMedia("draft-one:soundtrack");
+  await Promise.resolve();
+  assert.equal(disposed, 0);
+  assert.equal(isRetainedDraftMedia(uri), true);
+  releaseDraftMedia("draft-two:soundtrack");
+  await Promise.resolve();
+  assert.equal(disposed, 1);
+  assert.equal(localPlaybackSource(uri, true), null);
+  releaseDraftMedia("draft-two:soundtrack");
+  clearDraftMedia();
+  await Promise.resolve();
+  assert.equal(disposed, 1);
 });

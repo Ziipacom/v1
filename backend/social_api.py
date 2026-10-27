@@ -123,6 +123,13 @@ def normalized_profile(provider: str, data: LinkInput) -> tuple[str, str]:
 def serialize_provider(provider: str, row: CreatorConnection | None) -> dict:
     data = row.data if row else {}
     linked = bool(row and data.get('profile_url') and data.get('auth_type') == 'public_profile')
+    # Public cache identity only; no OAuth state or provider credential leaves
+    # the account API. A reconnect must invalidate its former imported snapshot.
+    revision = data.get('revision') if linked else None
+    try:
+        revision = str(uuid.UUID(revision)) if isinstance(revision, str) else None
+    except ValueError:
+        revision = None
     can_sync = linked and provider == 'bluesky' and settings.social_public_sync_enabled
     snapshot = data.get('snapshot', {}) if linked else {}
     message = ('Public profile linked. Sync imports up to 30 public author posts and 50 followed accounts; '
@@ -133,7 +140,8 @@ def serialize_provider(provider: str, row: CreatorConnection | None) -> dict:
         'provider': provider, 'name': PROVIDERS[provider][0], 'capability': PROVIDERS[provider][1],
         'status': 'linked' if linked else 'disconnected', 'handle': data.get('handle', '') if linked else '',
         'profile_url': data.get('profile_url', '') if linked else '', 'configured': False,
-        'auth_type': 'public_profile' if linked else 'none', 'can_sync': can_sync, 'can_publish': False,
+        'auth_type': 'public_profile' if linked else 'none', 'revision': revision,
+        'can_sync': can_sync, 'can_publish': False,
         'capabilities': {'profile_link': True, 'public_feed': provider == 'bluesky' and settings.social_public_sync_enabled,
                          'following': provider == 'bluesky' and settings.social_public_sync_enabled,
                          'private_feed': False, 'publish': False},
