@@ -30,6 +30,8 @@ const cameraPermission =
   "Allow Ziipa to preview your camera for recording or livestreaming. Video is only broadcast when you choose Go live.";
 const microphonePermission =
   "Allow Ziipa to use your microphone for recordings, livestreams and voice-to-text. Livestream audio starts only when you choose Go live.";
+const photoLibraryPermission =
+  "Allow Ziipa to access the photos and videos you choose to upload for your creations, profile avatar and cover artwork.";
 const config: ExpoConfig = {
   name: production ? "Ziipa" : "Ziipa Preview",
   slug: "ziipa",
@@ -71,6 +73,7 @@ const config: ExpoConfig = {
         : {}),
       NSCameraUsageDescription: cameraPermission,
       NSMicrophoneUsageDescription: microphonePermission,
+      NSPhotoLibraryUsageDescription: photoLibraryPermission,
       ...(production
         ? {}
         : { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } }),
@@ -128,7 +131,7 @@ const config: ExpoConfig = {
     [
       "expo-image-picker",
       {
-        photosPermission: false,
+        photosPermission: photoLibraryPermission,
         cameraPermission,
         microphonePermission,
       },

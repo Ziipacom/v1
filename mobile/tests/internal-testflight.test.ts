@@ -196,6 +196,39 @@ test("beta app config pins iOS team, omits unreviewed encryption, and has a sepa
   );
 });
 
+test("real iOS Info.plist retains photo-library read purpose after every native config plugin", { timeout: 60000 }, () => {
+  const result = spawnSync(
+    process.execPath,
+    [fileURLToPath(new URL("node_modules/expo/bin/cli", root)), "config", "--type", "introspect", "--json"],
+    {
+      cwd: fileURLToPath(root),
+      env: environment({
+        ...baseline,
+        EXPO_OFFLINE: "1",
+        EXPO_NO_TELEMETRY: "1",
+        CI: "1",
+      }),
+      encoding: "utf8",
+      timeout: 60000,
+      maxBuffer: 32 * 1024 * 1024,
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const config = JSON.parse(result.stdout);
+  const generated = config._internal.modResults.ios.infoPlist;
+  const purpose = "Allow Ziipa to access the photos and videos you choose to upload for your creations, profile avatar and cover artwork.";
+  assert.equal(generated.NSPhotoLibraryUsageDescription, purpose);
+  assert.equal(config.ios.infoPlist.NSPhotoLibraryUsageDescription, purpose);
+  assert.equal(config.plugins.find((plugin: any) => Array.isArray(plugin) && plugin[0] === "expo-image-picker")[1].photosPermission, purpose);
+  assert.equal(config.ios.bundleIdentifier, "com.ziipa.app");
+  assert.equal(config.ios.appleTeamId, "L6WH6BD2N5");
+  assert.equal(config.icon, "./assets/brand/ziipa-favicon.png");
+  assert.equal("aps-environment" in config._internal.modResults.ios.entitlements, false);
+  assert.equal((generated.UIBackgroundModes || []).includes("remote-notification"), false);
+  assert.equal("ITSAppUsesNonExemptEncryption" in generated, false);
+  assert.equal("ITSEncryptionExportComplianceCode" in generated, false);
+});
+
 test("runtime restriction applies only to the explicit iOS binary and blocks normalized direct bypasses", () => {
   assert.equal(policy.isIosInternalBeta("ios", scope), true);
   for (const platform of ["android", "web"])
