@@ -45,6 +45,30 @@
         "ZIIPA_TESTFLIGHT_PUBLIC_RELEASE": "forbidden"
       }
     },
+    "ios-external-testflight": {
+      "extends": "production",
+      "distribution": "store",
+      "credentialsSource": "remote",
+      "environment": "preview",
+      "env": {
+        "EXPO_NO_DOTENV": "1",
+        "ZIIPA_BUILD_SCOPE": "ios-external-testflight",
+        "EXPO_PUBLIC_BUILD_SCOPE": "ios-external-testflight",
+        "ZIIPA_APP_ID": "com.ziipa.app",
+        "ZIIPA_APPLE_TEAM_ID": "L6WH6BD2N5",
+        "ZIIPA_ASC_APP_ID": "6827668999",
+        "EXPO_PUBLIC_PRIVACY_URL": "https://ziipa.com/privacy-beta",
+        "EXPO_PUBLIC_SUPPORT_EMAIL": "ziipaziipa@gmail.com",
+        "ZIIPA_TESTFLIGHT_DISTRIBUTION": "limited-external-preparation",
+        "ZIIPA_TESTFLIGHT_DEVICE_QA": "pending",
+        "ZIIPA_TESTFLIGHT_EXPORT_COMPLIANCE": "pending-owner-final-binary-review",
+        "ZIIPA_TESTFLIGHT_POLICY_STATUS": "pending-owner-review-and-publication",
+        "ZIIPA_TESTFLIGHT_REVIEWER_STATUS": "pending-owner-setup",
+        "ZIIPA_TESTFLIGHT_APPLE_BETA_REVIEW": "pending",
+        "ZIIPA_TESTFLIGHT_EXTERNAL_DISTRIBUTION": "blocked-until-owner-checks-and-apple-approval",
+        "ZIIPA_TESTFLIGHT_PUBLIC_RELEASE": "forbidden"
+      }
+    },
     "production": {
       "distribution": "store",
       "credentialsSource": "remote",
@@ -63,6 +87,9 @@
     }
   },
   "submit": {
+    "ios-external-testflight": {
+      "ios": { "ascAppId": "6827668999", "appleTeamId": "L6WH6BD2N5" }
+    },
     "ios-internal-testflight": {
       "ios": { "ascAppId": "6827668999", "appleTeamId": "L6WH6BD2N5" }
     },

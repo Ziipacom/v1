@@ -1,8 +1,12 @@
 import { Platform } from "react-native";
 import { browserPreviewApiOrigin } from "./preview-origin";
-import { isIosInternalBeta } from "./internal-beta-policy";
+import { externalBetaPrivacyUrl, isIosExternalBeta, isIosLimitedBeta } from "./internal-beta-policy";
 
-export const iosInternalTestflight = isIosInternalBeta(Platform.OS, process.env.EXPO_PUBLIC_BUILD_SCOPE);
+export const iosLimitedTestflight = isIosLimitedBeta(Platform.OS, process.env.EXPO_PUBLIC_BUILD_SCOPE);
+export const iosExternalTestflight = isIosExternalBeta(Platform.OS, process.env.EXPO_PUBLIC_BUILD_SCOPE);
+// Compatibility name used by every existing transport/action guard. Both
+// limited iOS profiles share the restrictions; ordinary web/Android do not.
+export const iosInternalTestflight = iosLimitedTestflight;
 
 // EXPO_PUBLIC values are bundled and must never contain secrets.
 export const portalMode =
@@ -41,7 +45,7 @@ export const conceptsEnabled =
   __DEV__ || process.env.EXPO_PUBLIC_ENABLE_CONCEPTS === "true";
 export const policyVersion = "2026-08-31";
 export const legalUrls = {
-  privacy: process.env.EXPO_PUBLIC_PRIVACY_URL || "",
+  privacy: iosExternalTestflight ? externalBetaPrivacyUrl : process.env.EXPO_PUBLIC_PRIVACY_URL || "",
   terms: process.env.EXPO_PUBLIC_TERMS_URL || "",
   community: process.env.EXPO_PUBLIC_COMMUNITY_URL || "",
 };

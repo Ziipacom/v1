@@ -1,9 +1,21 @@
 export const internalBetaScope = "ios-internal-testflight";
+export const externalBetaScope = "ios-external-testflight";
+export const externalBetaPrivacyUrl = "https://ziipa.com/privacy-beta";
+export const externalBetaNotice =
+  "Limited iPhone beta · existing Ziipa accounts only (18+). Saved uploads and edits use your live account. Wallet actions, new network imports and remote push are unavailable. Video rendering is unavailable.";
 export const internalBetaNotice =
   "Private iPhone beta · existing accounts only. Your live Ziipa account stores saved uploads and edits. Wallet actions, new network imports and remote push are unavailable. Video rendering is unavailable; device acceptance is pending. External testing and public release are not approved.";
 
 export function isIosInternalBeta(platform: string, scope: string | undefined) {
   return platform === "ios" && scope === internalBetaScope;
+}
+
+export function isIosExternalBeta(platform: string, scope: string | undefined) {
+  return platform === "ios" && scope === externalBetaScope;
+}
+
+export function isIosLimitedBeta(platform: string, scope: string | undefined) {
+  return isIosInternalBeta(platform, scope) || isIosExternalBeta(platform, scope);
 }
 
 export type InternalBetaAction =

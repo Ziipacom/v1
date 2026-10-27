@@ -28,6 +28,7 @@ import { useZiipa } from "../provider";
 import { color, styles } from "../theme";
 import {
   apiOrigin,
+  iosExternalTestflight,
   legalOperatorName,
   legalUrls,
   supportEmail,
@@ -614,6 +615,7 @@ export function LegalScreen({
   const policy = policies[kind];
   const [error, setError] = useState("");
   const url = legalUrls[kind];
+  const externalBetaPrivacy = iosExternalTestflight && kind === "privacy";
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
@@ -626,7 +628,7 @@ export function LegalScreen({
       <Text style={styles.title}>{policy.title}</Text>
       {url ? (
         <Action
-          title="Read the published policy"
+          title={externalBetaPrivacy ? "Open beta privacy notice" : "Read the published policy"}
           secondary
           onPress={() =>
             void Linking.openURL(url).catch(() =>
@@ -638,7 +640,9 @@ export function LegalScreen({
         <Notice text={`Development policy draft · not the final published policy. Ziipa is operated by ${legalOperatorName}. Complete policies, retention terms and public policy URLs still require owner review before store release.`} />
       )}
       {!!error && <Notice error text={error} />}
-      {policy.sections.map(([title, body]) => (
+      {externalBetaPrivacy ? (
+        <Text style={styles.body}>{`Read the beta privacy notice for details about account data, selected media, permissions and deletion choices. Ziipa is operated by ${legalOperatorName}. Contact ${supportEmail} with privacy questions.`}</Text>
+      ) : policy.sections.map(([title, body]) => (
         <View key={title} style={{ gap: 12 }}>
           <Text style={styles.heading}>{title}</Text>
           <Text style={styles.body}>{body}</Text>

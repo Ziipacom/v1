@@ -6,9 +6,13 @@ const identifier = process.env.ZIIPA_APP_ID || "com.ziipa.app";
 const projectId = process.env.EXPO_EAS_PROJECT_ID;
 const internalTestflight = process.env.ZIIPA_BUILD_SCOPE === "ios-internal-testflight" ||
   process.env.EXPO_PUBLIC_BUILD_SCOPE === "ios-internal-testflight";
-if (internalTestflight && (
-  process.env.ZIIPA_BUILD_SCOPE !== "ios-internal-testflight" ||
-  process.env.EXPO_PUBLIC_BUILD_SCOPE !== "ios-internal-testflight" ||
+const externalTestflight = process.env.ZIIPA_BUILD_SCOPE === "ios-external-testflight" ||
+  process.env.EXPO_PUBLIC_BUILD_SCOPE === "ios-external-testflight";
+const limitedTestflight = internalTestflight || externalTestflight;
+const limitedScope = internalTestflight ? "ios-internal-testflight" : "ios-external-testflight";
+if (limitedTestflight && (
+  process.env.ZIIPA_BUILD_SCOPE !== limitedScope ||
+  process.env.EXPO_PUBLIC_BUILD_SCOPE !== limitedScope ||
   !production || portal || identifier !== "com.ziipa.app" ||
   process.env.EXPO_OWNER !== "ziipa" ||
   projectId !== "a130b762-6812-4963-9ebd-5d103a24084e" ||
@@ -17,7 +21,9 @@ if (internalTestflight && (
   process.env.EXPO_PUBLIC_API_URL !== "https://api.ziipa.com" ||
   process.env.EXPO_PUBLIC_ENABLE_DEMO !== "false" ||
   process.env.EXPO_PUBLIC_ENABLE_CONCEPTS !== "false"
-)) throw new Error("The private iOS beta requires its matching scope, production identity, live HTTPS API and disabled demo/concept flags.");
+)) throw new Error("The limited iOS beta requires its matching scope, production identity, live HTTPS API and disabled demo/concept flags.");
+if (externalTestflight && process.env.EXPO_PUBLIC_PRIVACY_URL !== "https://ziipa.com/privacy-beta")
+  throw new Error("External beta preparation requires the exact Ziipa beta privacy URL; publication and review remain separate checks.");
 // Owner-provided Firebase client configuration (an EAS file variable or local
 // path), never the FCM service-account private key. Web exports do not use it.
 const googleServicesFile = portal
@@ -36,7 +42,7 @@ const config: ExpoConfig = {
   name: production ? "Ziipa" : "Ziipa Preview",
   slug: "ziipa",
   version: "1.0.14",
-  platforms: internalTestflight ? ["ios"] : portal
+  platforms: limitedTestflight ? ["ios"] : portal
     ? ["web"]
     : production
       ? ["ios", "android"]
@@ -53,12 +59,12 @@ const config: ExpoConfig = {
   userInterfaceStyle: "automatic",
   icon: "./assets/brand/ziipa-favicon.png",
   ios: {
-    ...(internalTestflight ? { appleTeamId: "L6WH6BD2N5" } : {}),
+    ...(limitedTestflight ? { appleTeamId: "L6WH6BD2N5" } : {}),
     bundleIdentifier: production ? identifier : `${identifier}.preview`,
     buildNumber: "1",
     supportsTablet: false,
     infoPlist: {
-      ...(!internalTestflight && encryptionReviewed &&
+      ...(!limitedTestflight && encryptionReviewed &&
       (encryptionDeclaration === "true" || encryptionDeclaration === "false")
         ? {
             ITSAppUsesNonExemptEncryption: encryptionDeclaration === "true",
@@ -101,7 +107,7 @@ const config: ExpoConfig = {
     ],
   },
   plugins: [
-    ...(internalTestflight ? ["./scripts/with-internal-testflight.cjs"] : []),
+    ...(limitedTestflight ? ["./scripts/with-internal-testflight.cjs"] : []),
     [
       "expo-notifications",
       {
@@ -175,6 +181,7 @@ const config: ExpoConfig = {
     ...(projectId ? { eas: { projectId } } : {}),
     variant: production ? "production" : "preview",
     ...(internalTestflight ? { buildScope: "ios-internal-testflight", publicReleaseAllowed: false, deviceQA: "pending", exportCompliance: "pending-owner-final-binary-review" } : {}),
+    ...(externalTestflight ? { buildScope: "ios-external-testflight", publicReleaseAllowed: false, externalDistributionAllowed: false, deviceQA: "pending", exportCompliance: "pending-owner-final-binary-review", policyPublication: "pending-owner-review-and-publication", reviewerAccount: "pending-owner-setup", appleBetaReview: "pending" } : {}),
   },
 };
 export default config;

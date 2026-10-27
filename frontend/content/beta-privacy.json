@@ -1,0 +1,128 @@
+{
+  "title": "Ziipa 18+ TestFlight Beta Privacy Notice",
+  "subtitle": "Current iPhone beta · existing Ziipa accounts only",
+  "operator": "Niche Labs LLC",
+  "support_and_privacy_email": "ziipaziipa@gmail.com",
+  "sections": [
+    {
+      "id": "scope",
+      "title": "Who we are and who this beta is for",
+      "paragraphs": [
+        "Niche Labs LLC operates Ziipa. Contact us about this beta, support or privacy at ziipaziipa@gmail.com.",
+        "This notice covers the current Ziipa iPhone TestFlight beta for people aged 18 or older using an existing Ziipa account. A TestFlight invitation does not create an account. This build connects to the live Ziipa service, so information you save can remain in your normal account after you leave the beta. It is not a separate demonstration account.",
+        "New account registration, new connected-network authorisations/imports, wallet pairing/signing/transactions, minting, voice cloning and remote push enrolment are unavailable in this beta. Existing account records and available disconnection or removal controls may still appear. A capability described as unavailable is not activated by accepting this notice."
+      ]
+    },
+    {
+      "id": "information",
+      "title": "Information handled when you use Ziipa",
+      "paragraphs": [
+        "We handle the account information needed to recognise and secure your existing account, such as your name, email, account identifiers, profile settings and authentication records. Your password is sent to the HTTPS account service for sign-in and is stored there as a password hash rather than readable text.",
+        "When you choose to upload, record or save content, we handle the selected photo, video or audio; avatar and cover artwork; titles, descriptions and tags; captions, overlays, soundtrack choices and editing instructions; and draft, publication or export records. Files may contain embedded information such as dates or camera metadata. Do not assume that all file metadata has been removed.",
+        "If you use your Media OS or the social parts of your account, we handle the messages, plans, projects, explicitly saved memories/preferences, calendar details, comments, likes, saved items, feed choices, reports and blocks you create or use. Information you send to support includes the content of your message and any attachments you choose to include.",
+        "Ziipa and its hosting/delivery services can receive IP addresses, request times and routes, app/device information, authentication events and error or security metadata as part of delivering and protecting the service."
+      ]
+    },
+    {
+      "id": "purpose",
+      "title": "Why we use it",
+      "paragraphs": [
+        "We use this information to sign you in, save and retrieve account content and settings, provide the editing/playback/workspace functions you request, display requested content and interactions, diagnose beta problems, protect accounts, handle reports and respond to support or privacy requests.",
+        "A draft, AI suggestion or campaign plan does not itself authorise publication, a live broadcast, an external message, an advertisement purchase or a payment. Review the action and use its separate confirmation where available. Please use only content you are entitled to upload and avoid unnecessary sensitive information about yourself or others."
+      ]
+    },
+    {
+      "id": "visibility",
+      "title": "Private drafts and public sharing",
+      "paragraphs": [
+        "Saving a private account draft and publishing a creation are different actions. Private drafts are associated with your account. Publishing, profile visibility and enabling a public Gallery affect who can see content; review those settings before sharing. An enabled public Gallery can expose eligible published public creations and your current profile artwork without requiring viewers to sign in. The public Gallery is off by default until you enable it.",
+        "Private or members-only content is not intended to be served through the public Gallery. Edits that need a finished export are excluded there rather than exposing an uncut original. A thumbnail or editor preview is not proof that a final export exists; production video rendering is currently unavailable.",
+        "Disabling a public Gallery or removing content can stop further access through Ziipa’s corresponding route, but cannot recall screenshots, downloads or copies already obtained by someone else. People can also retain information you choose to send or publish outside Ziipa."
+      ]
+    },
+    {
+      "id": "device",
+      "title": "Your iPhone, permissions and local copies",
+      "paragraphs": [
+        "The app stores its native session in iOS Keychain. Appearance/playback preferences and selected, recorded or generated files may also exist on your device in app storage or temporary caches. An unsaved local take or edit is different from a draft saved to your account. Deleting the app or leaving TestFlight does not itself delete server account data or copies you have exported elsewhere.",
+        "Photo/video selection uses the operating system picker. Access to selected original media, the camera, microphone or speech recognition is requested for the relevant action. You choose whether to allow a permission, and can change it later in iPhone Settings. Refusing a permission may make that optional action unavailable; you can still use other supported actions.",
+        "A camera preview is not a live broadcast. A local narration recording stays local until you choose to attach and save it. The recording tool removes an unattached take when you leave that screen or background the app; the operating system, other exported files and independent device backups are outside that specific cleanup promise.",
+        "Ziipa does not request access to your contacts, precise GPS location or advertising identifier. A city entered into a creation is information you provide, not a GPS measurement. Hosting and TestFlight can still process the network and usage information described in this notice."
+      ]
+    },
+    {
+      "id": "ai",
+      "title": "Optional AI, captions and voice input",
+      "paragraphs": [
+        "Available AI features have their own notices and consent controls. For AI instrumental composition, Ziipa sends the musical description and arrangement controls you submit to the identified configured private inference service or Cloudflare Workers AI. That composition request does not include uploaded audio/video, your media library or account history. Ziipa synthesises the returned score to audio on the device; review and save it before it becomes account content.",
+        "For preset voice narration, the selected text script and voice choice are sent to Cloudflare Workers AI after the feature’s separate consent step. Recording your own narration does not clone your voice, and this release has no connected own-voice cloning service or reference-sample upload for cloning.",
+        "Auto captions, when available, process a bounded part of the selected source you own after separate consent. The configured private speech engine or optional Cloudflare route processes that audio. Cloudflare receives bounded decoded audio, not a public or signed source-media URL. Caption proposals are temporary and do not change the saved creation until you review, apply and save them.",
+        "Voice-to-text for an automation request uses the iPhone’s speech-recognition service, which may process speech on the device or through its service under the applicable device settings and policies. Ziipa configures this input not to persist a recognition recording. Dictation fills editable text; sending that text to chat is a separate action, and you can type instead.",
+        "Assistant/agent messages and permitted, bounded account context may be processed by Ziipa’s configured inference runtime, including a protected hosted runtime when configured. Messages, plans and explicitly saved memories may be kept in your workspace. Review permissions and proposed actions. Do not put passwords, recovery phrases, private keys or confidential information into prompts. Availability is not guaranteed, and AI output does not prove that a real-world action completed.",
+        "Cloudflare’s Workers AI data-use information and privacy policy describe its processing. Other configured inference services may have their own processing terms. This notice does not promise that every AI operation is on-device or that every provider retains no data."
+      ],
+      "links": [
+        {
+          "label": "Cloudflare Workers AI data usage",
+          "url": "https://developers.cloudflare.com/workers-ai/platform/data-usage/"
+        },
+        {
+          "label": "Cloudflare Privacy Policy",
+          "url": "https://www.cloudflare.com/privacypolicy/"
+        }
+      ]
+    },
+    {
+      "id": "external",
+      "title": "Live media, external content and service providers",
+      "paragraphs": [
+        "If live broadcasting is available and you explicitly choose Go live, the selected camera/microphone media and stream information are transmitted through the configured Livepeer ingest/delivery service and can be seen by the chosen audience. An explicitly selected, configured relay destination, such as Twitch, also receives the media and information needed to deliver that relay. A private preview alone does not do this. Live delivery and any provider recording or logs are separate from a locally displayed preview; this notice does not promise app-to-viewer end-to-end encryption.",
+        "Existing imported content, saved links or third-party thumbnails may still appear from your account or permitted discovery sources. Loading an external thumbnail or opening an external page can reveal ordinary connection information, including your IP address, to that provider. A new network import cannot be authorised from this restricted beta. Disconnecting a saved connection does not delete posts or revoke every permission at the external provider.",
+        "If you use an existing authorised publishing destination and separately approve delivery, Ziipa sends the selected media, caption/copy and required publication metadata to that destination. Existing server schedules created through Ziipa web or Android are not cancelled by installing this beta; manage or pause them separately.",
+        "Ziipa uses infrastructure for API delivery, website/media delivery, database and session/cache operations and available account email. The recorded deployment uses Render for the API and Cloudflare for web/media delivery. Optional AI and live services receive the data needed for the actions described above. Authorised personnel may access relevant information for operation, support, security and moderation. We may disclose relevant information when required by applicable law.",
+        "Internet delivery and these services can process information outside your country. This beta notice does not promise a particular storage country, universal encryption of every stored copy, or zero access by service providers. Ask us at ziipaziipa@gmail.com about the handling of a particular feature or record."
+      ]
+    },
+    {
+      "id": "testflight",
+      "title": "Apple TestFlight and feedback",
+      "paragraphs": [
+        "Apple collects beta-installation/usage information and crash logs through TestFlight and shares relevant information with the app provider. If you submit TestFlight feedback, Apple shares that feedback and associated information with us. We use beta feedback and diagnostics to investigate problems and improve Ziipa.",
+        "Apple says joining solely through a public TestFlight link does not show your name/email to the developer through that invitation. Signing in to Ziipa is a separate process and uses your Ziipa account information. Apple’s TestFlight privacy notice explains its automatic collection and the information associated with invitations and feedback.",
+        "Do not include passwords or unnecessary private content in a screenshot, crash description or support message. Review a screenshot before sharing it."
+      ],
+      "links": [
+        {
+          "label": "Apple TestFlight and Privacy",
+          "url": "https://www.apple.com/legal/privacy/data/en/test-flight/"
+        }
+      ]
+    },
+    {
+      "id": "retention",
+      "title": "Storage and removal",
+      "paragraphs": [
+        "Account content is stored so it can be retrieved and used in your account until you remove the relevant content or complete account deletion. Saved edits, profile artwork and accepted captions remain associated with the relevant account or creation. Temporary proposals or cached items can expire earlier, and a preview or temporary file is not a permanent backup.",
+        "Removal can involve several storage and provider operations. If required cleanup cannot be confirmed, Ziipa can show an error without completing deletion, or report that media cleanup is pending. Check the result and contact support if it does not complete. We do not promise instant physical erasure of every cache, backup, diagnostic, security/audit or support record.",
+        "Security/audit records, backups, support correspondence and provider-side records can have separate handling from your active account content. Contact us about a particular record, deletion request or retained copy."
+      ]
+    },
+    {
+      "id": "controls",
+      "title": "Your choices, account deletion and contact",
+      "paragraphs": [
+        "In Settings, use the available privacy and notification controls, account-data export and account-deletion controls. Profile editing lets you change supported account artwork and information. Where available, you can remove creations, clear supported assistant messages/memories, disable a public Gallery or disconnect an existing network association. You can also stop using optional AI/capture features and revoke device permissions.",
+        "Account deletion requires sign-in, your current password and typing DELETE to confirm. A successful operation removes the active account and related account-owned records, revokes Ziipa sessions and initiates the applicable media cleanup. An error is not confirmation of deletion. A data export is a structured account export, not a complete archive of every raw file, operational log or external provider record.",
+        "For support or a request to access, correct or delete information, contact Niche Labs LLC at ziipaziipa@gmail.com. Include the account email and enough non-secret detail to explain the request. We may need reasonable verification to protect the account; never send your password or wallet recovery material. If you believe someone under 18 is using this adult beta, contact us at the same address.",
+        "Changes to the beta’s data handling will be reflected in an updated notice and relevant feature-specific prompts. This notice does not enable future features or replace any separate permission that an action requires."
+      ],
+      "links": [
+        {
+          "label": "Email Ziipa support and privacy",
+          "url": "mailto:ziipaziipa@gmail.com"
+        }
+      ]
+    }
+  ],
+  "version": "2026-10-27"
+}

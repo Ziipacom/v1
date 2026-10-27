@@ -8,12 +8,16 @@ function headers(portal) {
   const previewExports={};
   const previewSource=readFileSync(new URL('../../mobile/src/lib/preview-origin.ts',import.meta.url),'utf8');
   vm.runInNewContext(ts.transpileModule(previewSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:previewExports,URL});
+  const betaExports={};
+  const betaSource=readFileSync(new URL('../../mobile/src/lib/internal-beta-policy.ts',import.meta.url),'utf8');
+  vm.runInNewContext(ts.transpileModule(betaSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:betaExports});
   const source=readFileSync(new URL('../../mobile/src/lib/config.ts',import.meta.url),'utf8');
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{
     exports,process:{env:{EXPO_PUBLIC_PORTAL_MODE:portal?'true':'false'}},__DEV__:false,
     require:(name)=>{
       if(name==='react-native') return {Platform:{OS:'web'}};
       if(name==='./preview-origin') return previewExports;
+      if(name==='./internal-beta-policy') return betaExports;
       throw new Error('Unexpected config dependency: '+name);
     },location:{origin:'https://ziipa.com',hostname:'ziipa.com'},URL,
   });

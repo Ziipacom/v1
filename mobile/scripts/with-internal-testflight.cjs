@@ -1,12 +1,12 @@
 const { withEntitlementsPlist, withInfoPlist } = require("expo/config-plugins");
 
-// The private first-device beta does not enroll in remote push. Keeping this
+// Both limited iOS beta preparation targets do not enroll in remote push. Keeping this
 // first in the plugin list makes its mod callback run after the later plugins'
 // callbacks (Expo mods are composed in reverse registration order).
 module.exports = function withInternalTestflight(config) {
-  if (config.extra?.buildScope !== "ios-internal-testflight")
+  if (!["ios-internal-testflight", "ios-external-testflight"].includes(config.extra?.buildScope))
     throw new Error(
-      "The internal TestFlight plugin requires its explicit build scope.",
+      "The limited TestFlight plugin requires its explicit build scope.",
     );
   config = withEntitlementsPlist(config, (value) => {
     delete value.modResults["aps-environment"];
