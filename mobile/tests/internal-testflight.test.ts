@@ -130,6 +130,15 @@ test("beta app config pins iOS team, omits unreviewed encryption, and has a sepa
   assert.deepEqual(config.platforms, ["ios"]);
   assert.equal(config.ios.bundleIdentifier, "com.ziipa.app");
   assert.equal(config.ios.appleTeamId, "L6WH6BD2N5");
+  const avatarIcon = "./assets/brand/ziipa-favicon.png";
+  assert.equal(config.icon, avatarIcon);
+  assert.equal(config.android.adaptiveIcon.foregroundImage, avatarIcon);
+  assert.equal(config.web.favicon, avatarIcon);
+  const iconBytes = readFileSync(new URL("assets/brand/ziipa-favicon.png", root));
+  assert.equal(createHash("sha256").update(iconBytes).digest("hex"), "f004365c505105d5f446488a00ccb3396a1fcd6df55e44055286fdd46fe6aa62");
+  assert.equal(iconBytes.readUInt32BE(16), 1080);
+  assert.equal(iconBytes.readUInt32BE(20), 1080);
+  assert.equal(iconBytes[25], 2); // PNG RGB: no alpha channel.
   assert.equal("ITSAppUsesNonExemptEncryption" in config.ios.infoPlist, false);
   assert.equal(config.extra.publicReleaseAllowed, false);
   assert.equal(config.extra.deviceQA, "pending");

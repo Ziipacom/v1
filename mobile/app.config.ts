@@ -49,7 +49,7 @@ const config: ExpoConfig = {
   scheme: production ? "ziipa" : "ziipa-preview",
   orientation: "portrait",
   userInterfaceStyle: "automatic",
-  icon: "./assets/brand/app-icon.png",
+  icon: "./assets/brand/ziipa-favicon.png",
   ios: {
     ...(internalTestflight ? { appleTeamId: "L6WH6BD2N5" } : {}),
     bundleIdentifier: production ? identifier : `${identifier}.preview`,
@@ -82,7 +82,7 @@ const config: ExpoConfig = {
     ...(googleServicesFile ? { googleServicesFile } : {}),
     versionCode: 15,
     adaptiveIcon: {
-      foregroundImage: "./assets/brand/app-icon.png",
+      foregroundImage: "./assets/brand/ziipa-favicon.png",
       backgroundColor: "#110D1C",
     },
     blockedPermissions: [
