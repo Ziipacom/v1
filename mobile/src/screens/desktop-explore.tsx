@@ -155,8 +155,8 @@ export function DesktopExplore({ route, navigation }: Props) {
             {!saved && (
               <Text style={[styles.small, { fontSize: 12 }]}>
                 A shuffled mix of Ziipa member creations and your imported
-                Bluesky public snapshots. Network posts open at their original
-                source.
+                connected-network public snapshots. Network posts open at their
+                original source.
               </Text>
             )}
           </View>

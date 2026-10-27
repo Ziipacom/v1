@@ -7,11 +7,12 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import re
+import time
 from urllib.parse import parse_qs, quote, urlsplit
 import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from redis.exceptions import RedisError
 from sqlalchemy import select
@@ -21,6 +22,7 @@ from sqlalchemy.orm import Session
 from app import User, cache, current_user, db, guard, settings
 from creator import CreatorConnection, CreatorDistribution, CreatorMedia, PROVIDERS, SocialProvider, provider_connection
 from storage_services import LocalStorage, storage
+import social_read_imports as read_imports
 
 router = APIRouter(prefix='/api/social', dependencies=[Depends(current_user)])
 BLUESKY_ORIGIN = 'https://public.api.bsky.app'
@@ -123,33 +125,67 @@ def normalized_profile(provider: str, data: LinkInput) -> tuple[str, str]:
 def serialize_provider(provider: str, row: CreatorConnection | None) -> dict:
     data = row.data if row else {}
     linked = bool(row and data.get('profile_url') and data.get('auth_type') == 'public_profile')
+    oauth = read_imports.authorized(row)
     # Public cache identity only; no OAuth state or provider credential leaves
     # the account API. A reconnect must invalidate its former imported snapshot.
-    revision = data.get('revision') if linked else None
+    revision = data.get('revision') if linked or oauth else None
     try:
         revision = str(uuid.UUID(revision)) if isinstance(revision, str) else None
     except ValueError:
         revision = None
-    can_sync = linked and provider == 'bluesky' and settings.social_public_sync_enabled
-    snapshot = data.get('snapshot', {}) if linked else {}
+    youtube_ready = bool(settings.social_youtube_imports_enabled and settings.social_youtube_api_key)
+    available = (provider == 'bluesky' and settings.social_public_sync_enabled or provider == 'youtube' and youtube_ready or
+                 provider in read_imports.READ_PROVIDERS and read_imports.readiness(provider)['can_start'])
+    can_sync = read_imports.can_sync(row) if oauth else linked and (provider == 'bluesky' and settings.social_public_sync_enabled or provider == 'youtube' and youtube_ready)
+    snapshot = snapshot_for(row)
+    cached_metadata = read_imports.read_metadata(row) if row and provider in read_imports.READ_PROVIDERS | {'youtube'} else {}
+    import_state = read_imports.readiness(provider) if provider in read_imports.READ_PROVIDERS else {
+        'can_start': youtube_ready if provider == 'youtube' else available,
+        'requirements': ([] if youtube_ready else ['Operator-enabled YouTube public imports and a server-side API key']) if provider == 'youtube' else [],
+        'detail': 'Read a bounded public channel uploads snapshot. Private and unlisted videos are excluded.' if provider == 'youtube' else ''}
     message = ('Public profile linked. Sync imports up to 30 public author posts and 50 followed accounts; '
                'ownership is not verified and posting is not authorized.' if provider == 'bluesky' else
                'Public profile link only. Feed, contacts and publishing require an implemented provider adapter '
                'and authorization; saving this link grants no account access.')
+    if oauth:
+        message = ('Read authorization is saved. Select an eligible account and explicitly sync its public posts. '
+                   'Disconnect removes these imports and stored read credentials from Ziipa; manage app permissions on the provider to revoke its app-wide grant. Publishing authorization is separate.')
+    elif provider == 'youtube':
+        message = ('Public channel linked. Configured imports read public, processed uploads only. A profile link does not '
+                   'verify channel ownership or authorize publishing. Imported metadata expires after 24 hours.')
     return {
         'provider': provider, 'name': PROVIDERS[provider][0], 'capability': PROVIDERS[provider][1],
-        'status': 'linked' if linked else 'disconnected', 'handle': data.get('handle', '') if linked else '',
-        'profile_url': data.get('profile_url', '') if linked else '', 'configured': False,
-        'auth_type': 'public_profile' if linked else 'none', 'revision': revision,
+        'status': 'connected' if oauth else 'linked' if linked else 'disconnected', 'handle': data.get('handle', '') if linked or oauth else '',
+        'profile_url': data.get('profile_url', '') if linked or oauth else '', 'configured': bool(available),
+        'auth_type': 'oauth' if oauth else 'public_profile' if linked else 'none', 'revision': revision,
         'can_sync': can_sync, 'can_publish': False,
-        'capabilities': {'profile_link': True, 'public_feed': provider == 'bluesky' and settings.social_public_sync_enabled,
+        'capabilities': {'profile_link': True, 'public_feed': bool(available),
                          'following': provider == 'bluesky' and settings.social_public_sync_enabled,
                          'private_feed': False, 'publish': False},
-        'sync_status': data.get('sync_status', 'never') if provider == 'bluesky' else 'not_available',
+        'sync_status': data.get('sync_status', 'never') if available or oauth else 'not_available',
         'last_synced_at': data.get('last_synced_at'), 'sync_error': data.get('sync_error'),
         'media_count': len(snapshot.get('media', [])), 'people_count': len(snapshot.get('people', [])),
         'connection_notice': message,
+        'import_targets': read_imports.public_targets(row),
+        'selected_import_target_id': data.get('selected_import_target_id') if oauth else None,
+        'import_requirements': import_state['requirements'], 'import_detail': import_state['detail'],
+        'snapshot_expires_at': datetime.fromtimestamp(cached_metadata['expires_at'], timezone.utc).isoformat() if read_imports.timestamp(cached_metadata.get('expires_at')) else None,
     }
+
+
+def snapshot_for(row):
+    if row is None:
+        return {}
+    if row.data.get('auth_type') == 'oauth':
+        return read_imports.visible_snapshot(row)
+    if row.data.get('auth_type') != 'public_profile':
+        return {}
+    if row.provider == 'youtube':
+        if not settings.social_youtube_imports_enabled or not settings.social_youtube_api_key:
+            return {}
+        value = read_imports.read_metadata(row).get('snapshot')
+        return value if isinstance(value, dict) else {}
+    return row.data.get('snapshot', {}) if isinstance(row.data.get('snapshot'), dict) else {}
 
 
 def providers_for(user: User, session: Session) -> list[dict]:
@@ -160,7 +196,7 @@ def providers_for(user: User, session: Session) -> list[dict]:
 def build_hub(user: User, session: Session) -> dict:
     rows = list(session.scalars(select(CreatorConnection).where(CreatorConnection.owner_id == user.id)))
     by_provider = {r.provider: r for r in rows}
-    snapshots = [r.data.get('snapshot', {}) for r in rows if r.data.get('auth_type') == 'public_profile']
+    snapshots = [snapshot_for(row) for row in rows]
     media = [item for snapshot in snapshots for item in snapshot.get('media', [])]
     media.sort(key=lambda item: item.get('published_at') or '', reverse=True)
     return {'providers': [serialize_provider(p, by_provider.get(p)) for p in PROVIDERS], 'media': media,
@@ -196,12 +232,17 @@ def export_owned_media(media_id: str, user: User = Depends(current_user), sessio
 @router.post('/{provider}/link', dependencies=[Depends(guard)])
 def link_profile(provider: SocialProvider, data: LinkInput, user: User = Depends(current_user), session: Session = Depends(db)):
     handle, profile_url = normalized_profile(provider, data)
-    row = provider_connection(provider, user, session)
+    if not session.scalar(select(User.id).where(User.id == user.id).with_for_update()):
+        raise HTTPException(401, 'Please sign in')
+    row = session.scalar(select(CreatorConnection).where(CreatorConnection.owner_id == user.id,
+        CreatorConnection.provider == provider).execution_options(populate_existing=True))
     # Linking the same URL is idempotent; editing an identity removes its old import.
     if not row:
         row = CreatorConnection(owner_id=user.id, provider=provider)
         session.add(row)
-    if not row.data or row.data.get('profile_url') != profile_url:
+    if not row.data or row.data.get('profile_url') != profile_url or row.data.get('auth_type') != 'public_profile':
+        if row.provider in read_imports.READ_PROVIDERS | {'youtube'}:
+            read_imports.clear_metadata(row)
         row.data = {'version': 1, 'revision': str(uuid.uuid4()), 'handle': handle, 'profile_url': profile_url,
                     'auth_type': 'public_profile', 'sync_status': 'never', 'snapshot': {}}
     row.status = 'linked'
@@ -214,8 +255,10 @@ def link_profile(provider: SocialProvider, data: LinkInput, user: User = Depends
 
 
 @router.post('/{provider}/connect', dependencies=[Depends(guard)])
-def connect_account(provider: SocialProvider):
+def connect_account(provider: SocialProvider, request: Request, response: Response, user: User = Depends(current_user), session: Session = Depends(db)):
     """Readiness action, not a fake OAuth handshake or a client-ID-only toggle."""
+    if provider in read_imports.READ_PROVIDERS:
+        return read_imports.begin(provider, request, response, user, session)
     return {'status': 'setup_required', 'auth_url': None,
             'detail': (f'This {PROVIDERS[provider][0]} profile link does not grant publishing permission. Use Publishing accounts to authorize supported destinations. '
                        'You can save and open its public profile link' +
@@ -225,10 +268,28 @@ def connect_account(provider: SocialProvider):
                              'Approved publishing adapter before automatic cross-posting']}
 
 
+@router.post('/{provider}/import-target', dependencies=[Depends(guard)])
+def select_import_target(provider: SocialProvider, data: read_imports.TargetInput, user: User = Depends(current_user), session: Session = Depends(db)):
+    if provider not in read_imports.READ_PROVIDERS:
+        raise HTTPException(422, 'This provider does not use managed-account import targets.')
+    return serialize_provider(provider, read_imports.select_target(provider, data, user, session))
+
+
 def disconnect_for(provider: str, user: User, session: Session) -> dict:
-    row = provider_connection(provider, user, session)
+    if not session.scalar(select(User.id).where(User.id == user.id).with_for_update()):
+        raise HTTPException(401, 'Please sign in')
+    row = session.scalar(select(CreatorConnection).where(CreatorConnection.owner_id == user.id,
+        CreatorConnection.provider == provider).execution_options(populate_existing=True))
     if row:
-        session.delete(row)
+        if provider in read_imports.READ_PROVIDERS | {'youtube'}:
+            read_imports.clear_metadata(row)
+    else:
+        row = CreatorConnection(owner_id=user.id, provider=provider)
+        session.add(row)
+    # Persist a consent tombstone even if the first authorization has not saved
+    # a row yet. Its original callback cannot turn a disconnect into a new grant.
+    row.status = 'disconnected'
+    row.data = {'version': 2, 'revision': str(uuid.uuid4()), 'auth_type': 'none'}
     for job in session.scalars(select(CreatorDistribution).where(CreatorDistribution.owner_id == user.id,
                                                                 CreatorDistribution.provider == provider)):
         if job.status not in ('published', 'unsupported_media'):
@@ -350,6 +411,10 @@ def claim_sync(user_id: int, provider: str):
 
 @router.post('/{provider}/sync', dependencies=[Depends(guard)])
 async def sync_profile(provider: SocialProvider, user: User = Depends(current_user), session: Session = Depends(db)):
+    if provider in read_imports.READ_PROVIDERS:
+        return await read_imports.sync(provider, user, session)
+    if provider == 'youtube':
+        return await sync_youtube(user, session)
     row = provider_connection(provider, user, session)
     if not row or row.data.get('auth_type') != 'public_profile':
         raise HTTPException(409, 'Save a public profile link before syncing.')
@@ -395,4 +460,63 @@ async def sync_profile(provider: SocialProvider, user: User = Depends(current_us
     latest.data = {**latest.data, **({'sync_status': 'error', 'sync_error': error} if error else updated)}
     session.commit()
     # Preserve the last successful snapshot on upstream failure and make the stale state explicit.
+    return build_hub(user, session)
+
+
+def claim_youtube_budget():
+    key = 'social_youtube_budget:' + datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    # At most three fixed read calls per import. Reserve conservatively before
+    # network I/O, never refund uncertain calls. Max4500 per UTC day bounds two
+    # crossed UTC ledgers to9000 inside Google's Pacific-midnight quota window.
+    script = "local n=tonumber(redis.call('GET',KEYS[1]) or '0'); if n+3>tonumber(ARGV[1]) then return 0 end; redis.call('INCRBY',KEYS[1],3); redis.call('EXPIRE',KEYS[1],90000); return 1"
+    try:
+        if cache.eval(script, 1, key, settings.social_youtube_daily_budget) != 1:
+            raise HTTPException(429, 'The daily free YouTube import budget is used. Try again tomorrow.')
+    except RedisError:
+        raise HTTPException(503, 'YouTube import quota tracking is unavailable. Retry later.') from None
+
+
+async def sync_youtube(user, session):
+    row = provider_connection('youtube', user, session)
+    if not row or row.data.get('auth_type') != 'public_profile':
+        raise HTTPException(409, 'Save a public YouTube profile link before importing.')
+    if not settings.social_youtube_imports_enabled or not settings.social_youtube_api_key:
+        raise HTTPException(409, 'YouTube public imports require operator configuration. No provider request was made.')
+    from youtube_discovery import fetch_youtube_snapshot, YouTubeSyncFailure
+    claim_sync(user.id, 'youtube')
+    claim_youtube_budget()
+    owner_id, row_id, revision = user.id, row.id, row.data.get('revision')
+    identity = row.data.get('handle')
+    session.commit()
+    result, error = None, None
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(8, connect=4), follow_redirects=False, trust_env=False) as client:
+            result = await fetch_youtube_snapshot(client, identity, settings.social_youtube_api_key)
+    except YouTubeSyncFailure as exc:
+        error = str(exc)
+    except Exception:
+        error = 'YouTube public imports could not complete. Retry later.'
+    session.expire_all()
+    owner = session.scalar(select(User).where(User.id == owner_id).with_for_update())
+    read_imports.enforce_owner(session, owner_id)
+    latest = session.scalar(select(CreatorConnection).where(CreatorConnection.id == row_id,
+        CreatorConnection.owner_id == owner_id).with_for_update())
+    if not owner or not latest or latest.data.get('revision') != revision or latest.data.get('auth_type') != 'public_profile':
+        raise HTTPException(409, 'The YouTube link changed during import. Refresh your networks.')
+    if error:
+        patch = {'sync_status': 'error', 'sync_error': error}
+    else:
+        patch = {'last_synced_at': datetime.now(timezone.utc).isoformat(),
+            'sync_status': 'synced', 'sync_error': None}
+    read_imports.clear_metadata(latest)
+    latest.data = {key: value for key, value in latest.data.items() if key not in ('snapshot', 'display_name', 'channel_id', 'snapshot_stored_at', 'snapshot_expires_at')}
+    latest.data = {**latest.data, **patch, 'revision': str(uuid.uuid4())}
+    if not error:
+        try:
+            read_imports.write_metadata(latest, snapshot=result['snapshot'])
+        except HTTPException:
+            latest.data = {**latest.data, 'sync_status': 'error', 'sync_error': 'Public import metadata could not be saved. Retry later.'}
+            session.commit()
+            raise
+    session.commit()
     return build_hub(user, session)

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type PropsWithChildren,
@@ -17,7 +18,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Image } from "expo-image";
 import * as Clipboard from "expo-clipboard";
@@ -57,6 +58,22 @@ import {
   type NetworkTab,
 } from "../lib/network-hub";
 import { prepareMediaShare } from "../lib/share-creation";
+import { canonicalApiOrigin } from "../lib/config";
+import { useNetworkSnapshotExpiry } from "../lib/use-network-snapshot-expiry";
+import { useOperationScope } from "../lib/use-operation-scope";
+import {
+  discoveryPostUrl,
+  discoveryThumbnailUrl,
+  importedDiscoveryMedia,
+} from "../lib/discovery-feed";
+import {
+  importAuthorizationUrl,
+  importPortalUrl,
+  importTargets,
+  importTargetInput,
+  readImportConnect,
+  readImportProviders,
+} from "../lib/network-imports";
 import { creationCaption, type PreparedMedia } from "../lib/share-types";
 import type { Item, RootStack, SocialProvider } from "../lib/types";
 import { themedStyles, themeValue, color, font, styles } from "../theme";
@@ -182,7 +199,19 @@ function NetworkSheet({
   );
 }
 
-export function ConnectionsScreen({
+export function ConnectionsScreen(
+  props: NativeStackScreenProps<RootStack, "Connections">,
+) {
+  const { session, guest } = useZiipa();
+  return (
+    <ScopedConnectionsScreen
+      key={session?.access_token || (guest ? "guest" : "signed-out")}
+      {...props}
+    />
+  );
+}
+
+function ScopedConnectionsScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStack, "Connections">) {
@@ -196,6 +225,8 @@ export function ConnectionsScreen({
     savePreviewNetworks,
   } = useZiipa();
   const { desktop, contentWidth } = useDesktopLayout();
+  const focused = useIsFocused();
+  const capture = useOperationScope(session?.access_token || "guest", focused);
   const workspaceWidth = Math.min(Math.max(0, contentWidth - 56), 1340);
   const columns = workspaceWidth >= 1120 ? 3 : 2;
   const desktopCard = desktop
@@ -204,6 +235,7 @@ export function ConnectionsScreen({
   const [hub, setHub] = useState<NetworkHub>(() =>
     guest ? previewNetworks : emptyNetworkHub(),
   );
+  useNetworkSnapshotExpiry(hub);
   const [tab, setTab] = useState<NetworkTab>(route.params?.tab || "accounts");
   const [filter, setFilter] = useState<SocialProvider | "all">("all");
   const [search, setSearch] = useState("");
@@ -219,6 +251,8 @@ export function ConnectionsScreen({
   const preparedRef = useRef<PreparedMedia | null>(null);
   const mounted = useRef(true);
   const [requirements, setRequirements] = useState<string[]>([]);
+  const [authorizationLink, setAuthorizationLink] = useState("");
+  const [portalLink, setPortalLink] = useState("");
   useEffect(() => {
     if (route.params?.tab) setTab(route.params.tab);
   }, [route.params?.tab]);
@@ -258,6 +292,16 @@ export function ConnectionsScreen({
   const account = selected
     ? hub.providers.find((value) => value.provider === selected)
     : null;
+  const targetOptions = useMemo(() => {
+    try {
+      return { rows: account ? importTargets(account) : [], error: "" };
+    } catch {
+      return {
+        rows: [],
+        error: "Import targets could not load. Refresh network status.",
+      };
+    }
+  }, [account]);
   const linked = hub.providers.filter(
     (value) => value.status !== "disconnected",
   );
@@ -279,6 +323,8 @@ export function ConnectionsScreen({
     setError("");
     setNotice("");
     setRequirements([]);
+    setAuthorizationLink("");
+    setPortalLink("");
     setConfirmDisconnect(false);
     setSelected(value.provider);
     setLinkValue(value.profile_url || value.handle);
@@ -333,13 +379,61 @@ export function ConnectionsScreen({
       navigation.navigate("Login");
       return;
     }
-    const result = await api<ConnectResult>(
-      `/api/social/${selected}/connect`,
-      {},
-    );
+    const current = capture();
+    setAuthorizationLink("");
+    setPortalLink("");
+    let result: ConnectResult;
+    try {
+      result = readImportConnect(
+        await api<unknown>(`/api/social/${selected}/connect`, {}),
+      );
+    } catch (cause) {
+      if (!current()) return;
+      if ((cause as { status?: number }).status === 404)
+        throw new Error(
+          "Public imports require the updated Ziipa server. This deployment is not ready yet.",
+        );
+      throw cause;
+    }
+    if (!current()) return;
     setRequirements(result.requirements || []);
     setNotice(result.detail);
+    if (result.status === "browser_sign_in_required") {
+      if (!result.connect_via_portal)
+        throw new Error(
+          "Open the Ziipa portal and explicitly connect public imports there.",
+        );
+      const local =
+        Platform.OS === "web" &&
+        typeof globalThis.location !== "undefined" &&
+        ["localhost", "127.0.0.1", "[::1]"].includes(
+          globalThis.location.hostname,
+        );
+      setPortalLink(
+        importPortalUrl(
+          result.connect_via_portal,
+          local ? globalThis.location.origin : "https://ziipa.com",
+          local,
+        ),
+      );
+      return;
+    }
     if (result.auth_url) {
+      if (readImportProviders.has(selected)) {
+        if (Platform.OS !== "web")
+          throw new Error(
+            "Authorize public imports in the Ziipa web portal, then return and refresh this app.",
+          );
+        setAuthorizationLink(
+          importAuthorizationUrl(
+            selected,
+            result.auth_url,
+            canonicalApiOrigin,
+            __DEV__,
+          ),
+        );
+        return;
+      }
       const url = new URL(result.auth_url);
       if (!(
         selected === "twitch" &&
@@ -350,6 +444,37 @@ export function ConnectionsScreen({
           "Authorization for this provider is not enabled in this build.",
         );
       await Linking.openURL(result.auth_url);
+    }
+  }
+  async function selectImportTarget(targetId: string) {
+    if (!account || !selected || guest || !focused) return;
+    const current = capture();
+    const input = importTargetInput(account, targetId);
+    try {
+      await api(`/api/social/${selected}/import-target`, input);
+      if (!current()) return;
+      const next = await api<NetworkHub>("/api/social/hub");
+      if (!current()) return;
+      setHub(next);
+      await refresh();
+      if (current())
+        setNotice(
+          "Public import target saved. Review it, then choose Sync public content. No posts were imported automatically.",
+        );
+    } catch (cause) {
+      if (!current()) return;
+      const status = (cause as { status?: number }).status;
+      if (status === 404)
+        throw new Error(
+          "Public import targets require the updated Ziipa server. Refresh after deployment.",
+        );
+      if (status === 409)
+        throw new Error(
+          "This network changed. Refresh import status before selecting a target again.",
+        );
+      throw new Error(
+        "The target change was not confirmed. Refresh import status before trying again; no sync was started.",
+      );
     }
   }
   async function sync(provider?: SocialProvider) {
@@ -366,7 +491,7 @@ export function ConnectionsScreen({
     );
     if (!candidates.length) {
       setNotice(
-        "Link a Bluesky public profile to sync public posts and following. Other networks need their supported account integration.",
+        "Link Bluesky or a public YouTube channel, or authorize and select an eligible Meta/TikTok import target. Server readiness and permissions are required; saving a shortcut alone grants no access.",
       );
       return;
     }
@@ -478,7 +603,8 @@ export function ConnectionsScreen({
     );
   }
   const query = search.trim().toLowerCase();
-  const media = hub.media.filter(
+  const importedMedia = importedDiscoveryMedia(hub);
+  const media = importedMedia.filter(
     (item) =>
       (filter === "all" || item.provider === filter) &&
       `${item.title} ${item.text} ${item.author}`.toLowerCase().includes(query),
@@ -556,7 +682,7 @@ export function ConnectionsScreen({
                 <View style={n.statRow}>
                   {[
                     [linked.length, "profiles"],
-                    [hub.media.length, "synced posts"],
+                    [importedMedia.length, "synced posts"],
                     [hub.people.length, "following"],
                   ].map(([count, label]) => (
                     <View key={label} style={n.stat}>
@@ -572,7 +698,7 @@ export function ConnectionsScreen({
             <View style={nd.summary}>
               {[
                 [linked.length, "linked profiles"],
-                [hub.media.length, "synced posts"],
+                [importedMedia.length, "synced posts"],
                 [hub.people.length, "public following"],
               ].map(([count, label]) => (
                 <View key={label} style={nd.summaryItem}>
@@ -657,6 +783,20 @@ export function ConnectionsScreen({
                 Save a profile shortcut or authorize an account. Only supported,
                 permitted content can sync.
               </Text>
+              <SmallAction
+                title="How public imports use data"
+                icon={ExternalLink}
+                disabled={!!busy}
+                onPress={() =>
+                  void run("open-import-notice", async () => {
+                    const current = capture();
+                    if (current())
+                      await Linking.openURL(
+                        "https://ziipa.com/network-imports",
+                      );
+                  })
+                }
+              />
               <NetworkGrid>
                 {hub.providers.map((value) => (
                   <View
@@ -702,7 +842,11 @@ export function ConnectionsScreen({
                         />
                         <Text style={n.badgeText}>
                           {value.status === "connected"
-                            ? "Authorized account"
+                            ? readImportProviders.has(value.provider)
+                              ? value.can_sync
+                                ? "Public imports ready"
+                                : "Read consent saved"
+                              : "Authorized account"
                             : value.status === "linked"
                               ? "Public profile linked"
                               : "Not linked"}
@@ -833,7 +977,10 @@ export function ConnectionsScreen({
                         accessibilityLabel={`Open ${item.title || "post"} on ${networkInfo[item.provider].name}`}
                         onPress={() =>
                           void run("open", () =>
-                            openPlatform(item.provider, item.url),
+                            openPlatform(
+                              item.provider,
+                              discoveryPostUrl(item) || "",
+                            ),
                           )
                         }
                         style={[n.account, desktop && nd.card, desktopCard]}
@@ -846,9 +993,9 @@ export function ConnectionsScreen({
                           </View>
                           <ExternalLink size={17} color={color.muted} />
                         </View>
-                        {!!item.thumbnail_url && (
+                        {!!discoveryThumbnailUrl(item) && (
                           <Image
-                            source={{ uri: item.thumbnail_url }}
+                            source={{ uri: discoveryThumbnailUrl(item)! }}
                             style={{
                               height: 190,
                               width: "100%",
@@ -872,7 +1019,7 @@ export function ConnectionsScreen({
                   ) : (
                     <Empty
                       title="Bring your feeds together"
-                      body="Link a Bluesky public profile, then sync to see recent posts here. Other networks remain shortcuts until their integration is enabled. Nothing is scraped from private feeds."
+                      body="Link Bluesky or a public YouTube channel, or authorize an eligible Meta/TikTok public import target when its integration is ready. Explicitly sync to see permitted posts here. Private feeds are not imported."
                     />
                   )
                 ) : people.length ? (
@@ -926,7 +1073,14 @@ export function ConnectionsScreen({
                 )}
               </NetworkGrid>
               {tab === "people" && (
-                <View style={[n.account, { backgroundColor: themeValue("#27153D", color.accentSoft) }]}>
+                <View
+                  style={[
+                    n.account,
+                    {
+                      backgroundColor: themeValue("#27153D", color.accentSoft),
+                    },
+                  ]}
+                >
                   <Text style={[styles.heading, { fontSize: 22 }]}>
                     Bring your people to Ziipa
                   </Text>
@@ -1112,7 +1266,9 @@ export function ConnectionsScreen({
               <Text style={n.accountName}>{networkInfo[selected].scope}</Text>
               <Text style={styles.small}>
                 {account.status === "connected"
-                  ? "Provider authorization active"
+                  ? readImportProviders.has(selected)
+                    ? "Read consent saved · check import status"
+                    : "Provider authorization active"
                   : "Public profile shortcut"}
               </Text>
             </View>
@@ -1120,6 +1276,9 @@ export function ConnectionsScreen({
           <Text style={styles.body}>
             {account.connection_notice || networkInfo[selected].sync}
           </Text>
+          {!!account.import_detail && (
+            <Text style={styles.small}>{account.import_detail}</Text>
+          )}
           <Field
             label="Profile URL or handle"
             value={linkValue}
@@ -1140,13 +1299,118 @@ export function ConnectionsScreen({
             title={
               guest
                 ? "Sign in to authorize account"
-                : "Connect account with provider"
+                : readImportProviders.has(selected)
+                  ? "Set up read-only public imports"
+                  : "Check public import readiness"
             }
             icon={ShieldCheck}
             secondary
             disabled={!!busy}
             onPress={() => void run("connect", connect)}
           />
+          {!!authorizationLink && (
+            <Action
+              title="Continue read-only authorization"
+              icon={ShieldCheck}
+              disabled={!!busy}
+              onPress={() =>
+                void run("authorize-import", async () => {
+                  const current = capture();
+                  if (!current()) return;
+                  const url = importAuthorizationUrl(
+                    selected,
+                    authorizationLink,
+                    canonicalApiOrigin,
+                    __DEV__,
+                  );
+                  await Linking.openURL(url);
+                  if (current())
+                    setNotice(
+                      "Complete read-only consent in the browser, then return and refresh import status. No sync or publishing was started.",
+                    );
+                })
+              }
+            />
+          )}
+          {!!portalLink && (
+            <Action
+              title="Continue in Ziipa portal"
+              icon={ExternalLink}
+              disabled={!!busy}
+              onPress={() =>
+                void run("open-import-portal", async () => {
+                  const current = capture();
+                  if (!current()) return;
+                  await Linking.openURL(portalLink);
+                  if (current())
+                    setNotice(
+                      "Sign in to the same Ziipa account in the portal and explicitly connect public imports. Return here and refresh import status afterward.",
+                    );
+                })
+              }
+            />
+          )}
+          {readImportProviders.has(selected) && (
+            <Action
+              secondary
+              title="Refresh import status"
+              icon={RefreshCw}
+              disabled={!!busy}
+              onPress={() =>
+                void run("refresh-import", async () => {
+                  const current = capture();
+                  const next = await api<NetworkHub>("/api/social/hub");
+                  if (!current()) return;
+                  setHub(next);
+                  setAuthorizationLink("");
+                  await refresh();
+                  if (current())
+                    setNotice(
+                      "Import status refreshed. Select a public target, then sync explicitly when available.",
+                    );
+                })
+              }
+            />
+          )}
+          {!!targetOptions.error && <Notice error text={targetOptions.error} />}
+          {targetOptions.rows.length > 0 && (
+            <View style={[styles.panel, { gap: 8 }]}>
+              <Text style={styles.label}>Public import target</Text>
+              <Text style={styles.small}>
+                Select one authorized account or Page. Changing the target
+                clears its old imported snapshot; sync is a separate action.
+              </Text>
+              {targetOptions.rows.map((target) => (
+                <Action
+                  key={target.id}
+                  secondary
+                  title={`${target.id === account.selected_import_target_id ? "Selected · " : "Select · "}${target.name}`}
+                  icon={
+                    target.id === account.selected_import_target_id
+                      ? Check
+                      : Users
+                  }
+                  disabled={
+                    !!busy || target.id === account.selected_import_target_id
+                  }
+                  onPress={() =>
+                    void run("select-import-target", () =>
+                      selectImportTarget(target.id),
+                    )
+                  }
+                />
+              ))}
+            </View>
+          )}
+          {!!account.import_requirements?.length && (
+            <View style={{ gap: 5 }}>
+              {account.import_requirements.map((detail) => (
+                <Text key={detail} style={styles.small}>
+                  {detail}
+                </Text>
+              ))}
+            </View>
+          )}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <SmallAction
               title="Open platform"
@@ -1290,217 +1554,241 @@ export function ConnectionsScreen({
   );
 }
 
-const n = themedStyles(() => StyleSheet.create({
-  hero: {
-    padding: 21,
-    borderRadius: 26,
-    backgroundColor: themeValue("#251438", color.accentSoft),
-    borderWidth: 1,
-    borderColor: themeValue("#573375", color.border),
-    gap: 16,
-  },
-  networkIcon: {
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: "#FFFFFF30",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  initial: { color: "white", fontFamily: font.bold, fontSize: 17 },
-  statRow: {
-    flexDirection: "row",
-    borderTopWidth: 1,
-    borderColor: themeValue("#56356B", color.border),
-    paddingTop: 16,
-  },
-  stat: { flex: 1, alignItems: "center", gap: 2 },
-  statValue: { color: color.text, fontFamily: font.semibold, fontSize: 24 },
-  statLabel: { fontFamily: font.regular, color: themeValue("#BFAACE", color.muted), fontSize: 12 },
-  tabs: {
-    borderRadius: 26,
-    padding: 6,
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: themeValue("#0D0915", color.panel),
-    flexDirection: "row",
-    gap: 4,
-  },
-  tab: {
-    flex: 1,
-    gap: 5,
-    paddingVertical: 12,
-    borderRadius: 21,
-    alignItems: "center",
-  },
-  selectedTab: { backgroundColor: color.purple, borderColor: "#966CD3" },
-  tabText: { color: color.muted, fontFamily: font.medium, fontSize: 12 },
-  previewNote: {
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "center",
-    paddingHorizontal: 4,
-  },
-  textLink: { color: themeValue("#CAABFA", color.muted), fontFamily: font.semibold, fontSize: 13 },
-  account: {
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: 22,
-    padding: 17,
-    gap: 13,
-    backgroundColor: themeValue("#1B1526", color.panel),
-  },
-  accountName: { color: color.text, fontFamily: font.semibold, fontSize: 18 },
-  badge: { flexDirection: "row", gap: 7, alignItems: "center" },
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  badgeText: { color: color.muted, fontFamily: font.medium, fontSize: 11 },
-  subtle: {
-    color: color.faint,
-    fontFamily: font.regular,
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  smallAction: {
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: themeValue("#241B31", color.panel),
-    borderRadius: 19,
-    minHeight: 40,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    gap: 7,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  smallActionText: { color: color.text, fontFamily: font.medium, fontSize: 12 },
-  privacyNote: { flexDirection: "row", gap: 12, padding: 10 },
-  avatar: { width: 46, height: 46, borderRadius: 23 },
-  placeholderAvatar: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: color.raised,
-  },
-  roundButton: {
-    height: 43,
-    width: 43,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: color.purple,
-  },
-}));
+const n = themedStyles(() =>
+  StyleSheet.create({
+    hero: {
+      padding: 21,
+      borderRadius: 26,
+      backgroundColor: themeValue("#251438", color.accentSoft),
+      borderWidth: 1,
+      borderColor: themeValue("#573375", color.border),
+      gap: 16,
+    },
+    networkIcon: {
+      borderRadius: 25,
+      borderWidth: 1,
+      borderColor: "#FFFFFF30",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    initial: { color: "white", fontFamily: font.bold, fontSize: 17 },
+    statRow: {
+      flexDirection: "row",
+      borderTopWidth: 1,
+      borderColor: themeValue("#56356B", color.border),
+      paddingTop: 16,
+    },
+    stat: { flex: 1, alignItems: "center", gap: 2 },
+    statValue: { color: color.text, fontFamily: font.semibold, fontSize: 24 },
+    statLabel: {
+      fontFamily: font.regular,
+      color: themeValue("#BFAACE", color.muted),
+      fontSize: 12,
+    },
+    tabs: {
+      borderRadius: 26,
+      padding: 6,
+      borderWidth: 1,
+      borderColor: color.border,
+      backgroundColor: themeValue("#0D0915", color.panel),
+      flexDirection: "row",
+      gap: 4,
+    },
+    tab: {
+      flex: 1,
+      gap: 5,
+      paddingVertical: 12,
+      borderRadius: 21,
+      alignItems: "center",
+    },
+    selectedTab: { backgroundColor: color.purple, borderColor: "#966CD3" },
+    tabText: { color: color.muted, fontFamily: font.medium, fontSize: 12 },
+    previewNote: {
+      flexDirection: "row",
+      gap: 10,
+      alignItems: "center",
+      paddingHorizontal: 4,
+    },
+    textLink: {
+      color: themeValue("#CAABFA", color.muted),
+      fontFamily: font.semibold,
+      fontSize: 13,
+    },
+    account: {
+      borderWidth: 1,
+      borderColor: color.border,
+      borderRadius: 22,
+      padding: 17,
+      gap: 13,
+      backgroundColor: themeValue("#1B1526", color.panel),
+    },
+    accountName: { color: color.text, fontFamily: font.semibold, fontSize: 18 },
+    badge: { flexDirection: "row", gap: 7, alignItems: "center" },
+    dot: { width: 6, height: 6, borderRadius: 3 },
+    badgeText: { color: color.muted, fontFamily: font.medium, fontSize: 11 },
+    subtle: {
+      color: color.faint,
+      fontFamily: font.regular,
+      fontSize: 11,
+      lineHeight: 16,
+    },
+    smallAction: {
+      borderWidth: 1,
+      borderColor: color.border,
+      backgroundColor: themeValue("#241B31", color.panel),
+      borderRadius: 19,
+      minHeight: 40,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      flexDirection: "row",
+      gap: 7,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    smallActionText: {
+      color: color.text,
+      fontFamily: font.medium,
+      fontSize: 12,
+    },
+    privacyNote: { flexDirection: "row", gap: 12, padding: 10 },
+    avatar: { width: 46, height: 46, borderRadius: 23 },
+    placeholderAvatar: {
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: color.raised,
+    },
+    roundButton: {
+      height: 43,
+      width: 43,
+      borderRadius: 22,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: color.purple,
+    },
+  }),
+);
 
-const nd = themedStyles(() => StyleSheet.create({
-  page: { padding: 28, paddingBottom: 48, alignItems: "center", gap: 0 },
-  workspace: { width: "100%", maxWidth: 1340, gap: 18 },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 18,
-    paddingBottom: 4,
-  },
-  eyebrow: {
-    color: color.faint,
-    fontFamily: font.medium,
-    fontSize: 10,
-    letterSpacing: 1.7,
-  },
-  title: {
-    color: color.text,
-    fontFamily: font.bold,
-    fontSize: 28,
-    lineHeight: 34,
-    letterSpacing: -0.6,
-  },
-  summary: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    gap: 24,
-    paddingVertical: 15,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: color.border,
-  },
-  summaryItem: { flexDirection: "row", gap: 7, alignItems: "center" },
-  summaryValue: { color: color.text, fontFamily: font.semibold, fontSize: 18 },
-  summaryLabel: { color: color.muted, fontFamily: font.regular, fontSize: 12 },
-  summaryNote: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-    marginLeft: "auto",
-    flexShrink: 1,
-  },
-  tabs: {
-    alignSelf: "flex-start",
-    borderRadius: 9,
-    padding: 4,
-    gap: 4,
-    backgroundColor: themeValue("#191323", color.panel),
-  },
-  tab: {
-    flex: 0,
-    flexDirection: "row",
-    borderRadius: 6,
-    paddingVertical: 9,
-    paddingHorizontal: 18,
-    gap: 8,
-  },
-  selectedTab: { backgroundColor: themeValue("#39224F", color.accentSoft) },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "stretch",
-    gap: 16,
-  },
-  card: {
-    borderRadius: 11,
-    padding: 17,
-    gap: 12,
-    backgroundColor: themeValue("#191421", color.panel),
-    minWidth: 0,
-  },
-  smallAction: {
-    borderRadius: 7,
-    minHeight: 34,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-  },
-  modalBackdrop: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 28,
-    backgroundColor: "#000A",
-  },
-  dialog: {
-    width: 540,
-    maxWidth: "100%",
-    maxHeight: "90%",
-    borderRadius: 14,
-    backgroundColor: color.bg,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  dialogHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 22,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: color.border,
-  },
-  dialogTitle: { color: color.text, fontFamily: font.semibold, fontSize: 19 },
-  close: {
-    width: 32,
-    height: 32,
-    borderRadius: 7,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: color.panel,
-  },
-  dialogBody: { padding: 22, gap: 15 },
-}));
+const nd = themedStyles(() =>
+  StyleSheet.create({
+    page: { padding: 28, paddingBottom: 48, alignItems: "center", gap: 0 },
+    workspace: { width: "100%", maxWidth: 1340, gap: 18 },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 18,
+      paddingBottom: 4,
+    },
+    eyebrow: {
+      color: color.faint,
+      fontFamily: font.medium,
+      fontSize: 10,
+      letterSpacing: 1.7,
+    },
+    title: {
+      color: color.text,
+      fontFamily: font.bold,
+      fontSize: 28,
+      lineHeight: 34,
+      letterSpacing: -0.6,
+    },
+    summary: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "center",
+      gap: 24,
+      paddingVertical: 15,
+      borderTopWidth: 1,
+      borderBottomWidth: 1,
+      borderColor: color.border,
+    },
+    summaryItem: { flexDirection: "row", gap: 7, alignItems: "center" },
+    summaryValue: {
+      color: color.text,
+      fontFamily: font.semibold,
+      fontSize: 18,
+    },
+    summaryLabel: {
+      color: color.muted,
+      fontFamily: font.regular,
+      fontSize: 12,
+    },
+    summaryNote: {
+      flexDirection: "row",
+      gap: 8,
+      alignItems: "center",
+      marginLeft: "auto",
+      flexShrink: 1,
+    },
+    tabs: {
+      alignSelf: "flex-start",
+      borderRadius: 9,
+      padding: 4,
+      gap: 4,
+      backgroundColor: themeValue("#191323", color.panel),
+    },
+    tab: {
+      flex: 0,
+      flexDirection: "row",
+      borderRadius: 6,
+      paddingVertical: 9,
+      paddingHorizontal: 18,
+      gap: 8,
+    },
+    selectedTab: { backgroundColor: themeValue("#39224F", color.accentSoft) },
+    grid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "stretch",
+      gap: 16,
+    },
+    card: {
+      borderRadius: 11,
+      padding: 17,
+      gap: 12,
+      backgroundColor: themeValue("#191421", color.panel),
+      minWidth: 0,
+    },
+    smallAction: {
+      borderRadius: 7,
+      minHeight: 34,
+      paddingVertical: 7,
+      paddingHorizontal: 10,
+    },
+    modalBackdrop: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 28,
+      backgroundColor: "#000A",
+    },
+    dialog: {
+      width: 540,
+      maxWidth: "100%",
+      maxHeight: "90%",
+      borderRadius: 14,
+      backgroundColor: color.bg,
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    dialogHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 22,
+      paddingVertical: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: color.border,
+    },
+    dialogTitle: { color: color.text, fontFamily: font.semibold, fontSize: 19 },
+    close: {
+      width: 32,
+      height: 32,
+      borderRadius: 7,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: color.panel,
+    },
+    dialogBody: { padding: 22, gap: 15 },
+  }),
+);

@@ -220,7 +220,8 @@ function MobileDiscoverScreen({
             }}
           >
             <Text style={[styles.small, { fontSize: 11 }]}>
-              Ziipa + {discovery.networkCount} Bluesky public posts in Discover
+              Ziipa + {discovery.networkCount} connected-network public posts in
+              Discover
             </Text>
           </Pressable>
         )}

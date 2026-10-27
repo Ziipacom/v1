@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     social_twitch_client_id: str = ''
     social_youtube_client_id: str = ''
     social_public_sync_enabled: bool = True
+    social_facebook_imports_enabled: bool = False
+    social_facebook_imports_approved: bool = False
+    social_instagram_imports_enabled: bool = False
+    social_instagram_imports_approved: bool = False
+    social_tiktok_imports_enabled: bool = False
+    social_tiktok_imports_approved: bool = False
+    social_youtube_imports_enabled: bool = False
+    social_youtube_api_key: str = Field(default='', repr=False)
+    social_youtube_daily_budget: int = Field(default=3000, ge=3, le=4500)
     social_invite_url: str = 'https://ziipa.com'
     environment: str = 'development'
     release: str = 'local'
@@ -220,12 +229,15 @@ def current_user(request: Request, session: Session = Depends(db)):
         and ((len(path_parts) == 5 and path_parts[4] == 'end')
              or (len(path_parts) == 6 and path_parts[4:] == ['destinations', 'twitch'])))
     gallery_disable = (request.method == 'POST' and path_parts == ['api', 'creator', 'gallery', 'disable'])
+    social_disconnect = (request.method == 'POST' and len(path_parts) == 4 and path_parts[:2] == ['api', 'social']
+        and path_parts[2] in ('bluesky', 'facebook', 'instagram', 'tiktok', 'twitch', 'youtube') and path_parts[3] == 'disconnect')
     # Privacy, sign-out, consent revocation and reporting remain available
     # during maintenance. Twitch enablement has its own fresh route-level guard;
     # detaching or stopping a stream must remain possible during maintenance.
     if (request.method not in {'GET', 'HEAD', 'OPTIONS'}
             and not live_cleanup
             and not gallery_disable
+            and not social_disconnect
             and not request.url.path.startswith(('/api/account/', '/api/auth/',
                 '/api/mobile/auth/', '/api/notifications/', '/api/safety/'))):
         require_mutations_open(session, user)
@@ -392,6 +404,8 @@ from notification_api import router as notification_router
 app.include_router(notification_router)
 from social_publishing import router as publishing_router
 app.include_router(publishing_router)
+from social_read_imports import router as social_read_router
+app.include_router(social_read_router)
 from render_api import router as render_router
 app.include_router(render_router)
 from personal_media import router as personal_media_router

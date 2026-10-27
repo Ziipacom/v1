@@ -14,6 +14,7 @@ import {
 import { ReelMedia } from "./reel-media";
 import { DiscoveryNetworkPreview } from "./discovery-network-card";
 import type { DiscoveryEntry } from "../lib/discovery-feed";
+import { discoveryProviderName } from "../lib/discovery-feed";
 import type { NetworkMedia } from "../lib/network-hub";
 import { useDevicePreferences } from "./device-preferences";
 import { pageAtOffset, isPlayableMedia } from "../lib/domain";
@@ -169,7 +170,7 @@ export function StudioFeed({
                 accessibilityLabel={
                   entry.source === "ziipa"
                     ? `Open ${entry.item.title} in Gallery feed`
-                    : `Open ${entry.media.title || "public post"} on Bluesky`
+                    : `Open ${entry.media.title || "public post"} on ${discoveryProviderName(entry.media.provider)}`
                 }
                 disabled={
                   editing || (entry.source === "network" && !onOpenNetwork)
@@ -268,7 +269,7 @@ export function StudioFeed({
             accessibilityLabel={
               currentItem
                 ? `Open ${currentItem.title}`
-                : `Open original Bluesky post`
+                : `Open original ${discoveryProviderName(currentNetwork!.provider)} post`
             }
             onPress={openCurrent}
             style={s.details}
@@ -278,19 +279,19 @@ export function StudioFeed({
                 ? currentItem.demo
                   ? currentItem.label
                   : "ZIIPA · CREATOR POST"
-                : "BLUESKY · IMPORTED PUBLIC POST"}
+                : `${discoveryProviderName(currentNetwork!.provider)} · IMPORTED PUBLIC POST`}
             </Text>
             <Text numberOfLines={1} style={s.creator}>
               {currentItem?.creator ||
                 currentNetwork?.author ||
                 currentNetwork?.handle ||
-                "Bluesky account"}
+                "Network account"}
             </Text>
             <Text numberOfLines={2} style={s.title}>
               {currentItem?.title ||
                 currentNetwork?.title ||
                 currentNetwork?.text ||
-                "Public Bluesky post"}
+                "Public network post"}
             </Text>
             {currentItem?.id === "demo-sintel" && (
               <Text style={s.credit}>
@@ -299,7 +300,8 @@ export function StudioFeed({
             )}
             {!!currentNetwork && (
               <Text style={s.credit}>
-                Public snapshot · Opens original on Bluesky
+                Public snapshot · Opens original on{" "}
+                {discoveryProviderName(currentNetwork.provider)}
               </Text>
             )}
           </Pressable>

@@ -15,6 +15,7 @@ import {
   discoveryPostUrl,
 } from "./discovery-feed";
 import type { NetworkHub, NetworkMedia } from "./network-hub";
+import { useNetworkSnapshotExpiry } from "./use-network-snapshot-expiry";
 
 // A non-security ordering seed shared by mounted Discover/Gallery surfaces.
 // It holds no media, account identifier, token, or persisted profile preference.
@@ -56,6 +57,7 @@ export function useDiscoveryFeed() {
     error: string;
   } | null>(null);
   const visible = network?.identity === identity ? network : null;
+  const expiryKey = useNetworkSnapshotExpiry(visible?.hub || null);
   const active = useRef(true);
   useEffect(() => {
     active.current = true;
@@ -116,7 +118,7 @@ export function useDiscoveryFeed() {
         seed,
         guest,
       ),
-    [data.items, data.preferences, visible?.hub, seed, guest],
+    [data.items, data.preferences, visible?.hub, seed, guest, expiryKey],
   );
   const refreshFeed = useCallback(async () => {
     if (!active.current || current.current !== identity) return;

@@ -27,6 +27,12 @@ export type NetworkAccount = {
   media_count: number;
   people_count: number;
   connection_notice: string;
+  import_targets?: { id: string; name: string; kind: string; url: string }[];
+  selected_import_target_id?: string | null;
+  import_requirements?: string[];
+  import_detail?: string;
+  /** Public metadata validity deadline; never an OAuth token expiry or credential. */
+  snapshot_expires_at?: string | null;
 };
 export type NetworkMedia = {
   id: string;
@@ -57,8 +63,10 @@ export type NetworkHub = {
   notice: string;
 };
 export type ConnectResult = {
-  status: "setup_required" | "authorization_required";
+  status:
+    "setup_required" | "authorization_required" | "browser_sign_in_required";
   auth_url: string | null;
+  connect_via_portal?: string | null;
   detail: string;
   requirements?: string[];
 };
@@ -84,29 +92,29 @@ export const networkInfo: Record<
     name: "Instagram",
     home: "https://www.instagram.com",
     placeholder: "@yourname",
-    scope: "Professional media · Reels",
-    sync: "Authorized professional accounts can expose their own media. Instagram does not offer a full private home-feed or friend-list import here.",
+    scope: "Public professional media · Reels",
+    sync: "Read-only public imports require an authorized professional Instagram account and explicit account selection. Private home feeds and friend lists are not imported.",
   },
   tiktok: {
     name: "TikTok",
     home: "https://www.tiktok.com",
     placeholder: "@yourname",
-    scope: "Your videos · approved posting",
-    sync: "TikTok requires approved Login Kit and posting products. Display access covers your own videos, not your private feed or all friends.",
+    scope: "Your public videos",
+    sync: "Public-video imports require approved Login Kit and Display API video.list consent. Posting permission does not grant read access, and private feeds or friends are not imported.",
   },
   facebook: {
     name: "Facebook",
     home: "https://www.facebook.com",
     placeholder: "Page name or profile URL",
-    scope: "Managed Pages · posts",
-    sync: "Publishing targets authorized Facebook Pages. Personal timelines and complete friend lists cannot be imported as one universal feed.",
+    scope: "Managed Pages · public posts",
+    sync: "Public imports require read-only permission for a managed Facebook Page and an explicit Page selection. Personal timelines and private friend lists are not imported.",
   },
   youtube: {
     name: "YouTube",
     home: "https://www.youtube.com",
     placeholder: "@yourchannel",
-    scope: "Your uploads · subscriptions",
-    sync: "A Google-authorized integration can read uploads and subscriptions with the right scopes. This build provides profile shortcuts until that adapter is enabled.",
+    scope: "Public channel video metadata",
+    sync: "Link a public YouTube channel and explicitly sync its public uploads when the server adapter is ready. Private or unlisted videos and subscriptions are not imported. A saved link does not verify ownership.",
   },
   twitch: {
     name: "Twitch",

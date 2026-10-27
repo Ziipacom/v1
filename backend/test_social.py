@@ -102,8 +102,8 @@ def test_links_do_not_grant_oauth_or_publishing_and_are_isolated(client):
     assert client.post('/api/social/instagram/sync').status_code == 409
     ready = client.post('/api/social/instagram/connect').json()
     assert ready['status'] == 'setup_required' and ready['auth_url'] is None
-    assert 'does not grant publishing permission' in ready['detail']
-    assert 'Publishing accounts' in ready['detail']
+    assert 'No personal timeline, private feed or posting permission' in ready['detail']
+    assert ready['requirements'] and ready.get('connect_via_portal') is None
     hub = client.get('/api/social/hub').json()
     assert hub['invite_url'] == 'https://ziipa.com'
     assert len(hub['providers']) == 6
@@ -169,7 +169,7 @@ def test_same_handle_reconnect_exposes_new_public_revision_and_clears_snapshot(c
 
 @pytest.mark.parametrize('revision', [None, 'legacy-private-value', 123])
 def test_provider_revision_is_only_a_public_link_uuid(revision):
-    row = SimpleNamespace(data={'profile_url': 'https://bsky.app/profile/artist.bsky.social',
+    row = SimpleNamespace(provider='bluesky', data={'profile_url': 'https://bsky.app/profile/artist.bsky.social',
         'auth_type': 'public_profile', 'revision': revision, 'oauth_token': 'DO_NOT_EXPOSE'})
     result = social.serialize_provider('bluesky', row)
     assert result['revision'] is None

@@ -82,6 +82,9 @@ export default function AccountDeletion() {
                 Settings. For help, contact{' '}
                 <a href="mailto:hello@ziipa.com">hello@ziipa.com</a>.
               </p>
+              <p style={{ marginTop: 16 }}>
+                <Link href="/network-imports">How public network imports use data</Link>
+              </p>
               <form
                 className="ziipa-form"
                 onSubmit={submit}

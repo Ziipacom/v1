@@ -140,8 +140,8 @@ export function StudioScreen({
           networkNotice={
             discovery.networkError ||
             (discovery.networkCount
-              ? "Ziipa + Bluesky public snapshots"
-              : "Ziipa member creations · Link and sync Bluesky in Networks for public imports.")
+              ? "Ziipa + connected-network public snapshots"
+              : "Ziipa member creations · Connect and sync supported public imports in Networks.")
           }
           onOpen={(item) =>
             navigation.navigate("Watch", {

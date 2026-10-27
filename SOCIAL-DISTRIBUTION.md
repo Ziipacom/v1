@@ -17,9 +17,58 @@ This is a bounded snapshot, not an import of every historical post, an authorize
 personalized home timeline, or background synchronization. Profile handles are
 resolved to a DID on the first successful sync; subsequent syncs use that DID.
 
-Facebook, Instagram, TikTok, Twitch and YouTube profile links can be saved and
-opened now. Their public-link hub does not import authenticated feeds or graphs.
-Public profile linking does not collect passwords or tokens.
+Facebook, Instagram, TikTok, Twitch and YouTube profile shortcuts can be saved
+without granting account access. Discover also supports the explicit public-read
+imports below when their server configuration and provider approvals are ready.
+Creating a developer account, saving a shortcut or passing mocked tests does not
+make an integration live. These new adapters have not completed live provider
+acceptance: Meta developer/permission review, TikTok Login Kit/Display products
+and scopes, and YouTube project/API-key setup must be verified before activation.
+No new provider product, approval flag or paid plan is enabled by this code.
+
+### Importing public posts into Discover
+
+| Provider | Required read consent and eligible source | Imported metadata lifetime |
+| --- | --- | --- |
+| Bluesky | Link a public profile, then Sync; ownership remains unverified | Existing bounded public-author snapshot behavior |
+| YouTube | Link a public channel, then Sync when the server adapter is enabled; ownership remains unverified | At most 24 hours |
+| Facebook | Separate read-only Facebook Login consent, then explicitly select a published managed Page | At most 24 hours |
+| Instagram | Separate read-only Facebook Login consent, then explicitly select a professional account linked to a published managed Page | At most 24 hours |
+| TikTok | Separate Login Kit/Display API consent for basic identity and public videos, then explicitly select the authorized account | At most 6 hours |
+
+In **Connected networks**, choose **Set up read-only public imports**. A setup
+message lists missing requirements; it is not a connected state. When ready,
+**Continue read-only authorization** opens Ziipa's one-time consent handoff.
+After provider consent, return, choose **Refresh import status**, select the
+authorized public import target, and choose **Sync public content**. Target
+selection clears the previous snapshot and never starts a sync. Read consent
+and import-target selection grant no publishing permission.
+
+Android uses **Continue in Ziipa portal**. Sign in to the same Ziipa account in
+that browser, explicitly connect there, then return to Android and refresh its
+import status. No bearer token or password is passed in the portal URL. Nothing
+automatically requests consent, imports posts or publishes on a user's behalf.
+
+Discover mixes the visible Ziipa catalog with this account's permitted imported
+snapshots. Ziipa media opens its existing Gallery feed post. An imported card
+keeps its provider/author attribution and opens the validated original post on
+that network; it does not become an owned Ziipa upload with Ziipa engagement.
+Imports fetch bounded metadata and optional allowlisted public thumbnails, not
+audio/video files. They do not import private home feeds, messages, friends,
+private/unlisted YouTube videos, or all historical content. A missing/expired
+thumbnail has a text fallback rather than a fabricated media preview.
+
+Meta, TikTok and YouTube posts and API-derived account labels are cached only in
+Redis under the owner/provider/link revision. Expiry or a missing cache returns
+no imported posts; there is no database snapshot fallback. Web and Android stop
+displaying expired snapshots with local deadline timers, without background API
+polling. Explicit Sync refreshes eligible metadata. Disconnect/relink, target
+changes, withdrawn permissions or disabled adapters invalidate the former
+snapshot. Disconnect removes Ziipa's local read connection/cache; it does not
+delete external posts, revoke an entire provider application, or disconnect a
+separate publishing grant. Consent IDs and encrypted read credentials remain
+server-side until local disconnection/account deletion; API metadata does not.
+
 The separate **Publishing accounts** flow now implements OAuth and consented
 video delivery for YouTube, TikTok, Facebook Pages, linked professional Instagram
 accounts and Bluesky. Twitch has authorized channel/live controls and a bounded
@@ -48,12 +97,17 @@ also enforce origin checks and request limits.
 - `POST /api/social/{provider}/link`: `{handle?, profile_url?}`; validates the
   selected platform and canonicalizes its profile URL. It never requests the
   supplied URL. Editing an identity discards the previous identity's snapshot.
-- `POST /api/social/{provider}/connect`: a truthful `setup_required` result with
-  `auth_url: null` and operator setup requirements; it does not fake connection.
-- `POST /api/social/{provider}/sync`: refreshes the public Bluesky snapshot and
-  returns the hub. Other providers return an actionable integration-required
-  response, not fabricated feeds. Failed public syncs retain the last successful
-  snapshot with an explicit error and last-success timestamp.
+- `POST /api/social/{provider}/connect`: returns `setup_required`,
+  `authorization_required` with a one-time Ziipa read-consent URL, or
+  `browser_sign_in_required` with the fixed `/portal` handoff. These responses
+  never declare OAuth completed. Unsupported adapters return setup requirements.
+- `POST /api/social/{provider}/import-target`: Meta/TikTok owner-only
+  `{target_id, revision}` selects one server-verified consent target. It rotates
+  the link revision and clears old imported metadata, without syncing.
+- `POST /api/social/{provider}/sync`: explicitly refreshes a supported public
+  snapshot and returns the hub. Missing setup/consent produces an actionable
+  error. Expired/withdrawn/invalid metadata cannot reappear after failure;
+  unchanged eligible snapshots may remain only within their validity deadline.
 - `POST /api/social/{provider}/disconnect`: deletes that profile and imported
   snapshot, and stops pending distribution state for the provider. Published
   history is retained. Repeating disconnect is safe.
@@ -63,11 +117,12 @@ also enforce origin checks and request limits.
   external signed URL. Even another user's published media cannot be exported
   through this owner-only handoff endpoint.
 
-Connections and snapshots reuse the existing `creator_connections.data` JSON
-column, with a version and revision marker. No schema migration or new backend
-dependency is needed. Account data export includes the sanitized hub; account
-deletion removes its links and snapshots. Disconnecting a profile does not
-delete content already published on the external network.
+Connections reuse `creator_connections.data` with a version/revision marker.
+Bluesky retains its existing snapshot storage; new Meta/TikTok/YouTube API
+metadata uses expiring Redis records. Encrypted read credentials are purpose-
+and owner-bound separately from publishing credentials. No new schema migration
+or backend dependency is required for read imports. Account export includes the
+sanitized hub; deletion removes the local connections and current cached data.
 
 ### Public sync safeguards
 
@@ -101,6 +156,81 @@ Official source contracts:
 - [Bluesky public-profile lexicon](https://github.com/bluesky-social/atproto/blob/main/lexicons/app/bsky/actor/getProfile.json)
 - [AT Protocol permission requests](https://atproto.com/guides/permission-requests)
 - [Twitch OAuth authorization and token validation](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/)
+- [YouTube public video resources](https://developers.google.com/youtube/data/reference/rest/v3/videos)
+- [TikTok Display API and permissions](https://developers.tiktok.com/docs/en/display-api-overview)
+- [TikTok video metadata and expiring cover images](https://developers.tiktok.com/docs/en/tiktok-api-v2-video-object)
+
+### Operator configuration for read imports
+
+All new flags default off. Set these only on the API server, after the relevant
+provider product/permission review; a flag is an operator assertion, not an
+approval issued by the platform. Keep credentials out of `EXPO_PUBLIC_*`, client
+bundles, clipboard output and account export.
+
+```dotenv
+SOCIAL_FACEBOOK_IMPORTS_ENABLED=false
+SOCIAL_FACEBOOK_IMPORTS_APPROVED=false
+SOCIAL_INSTAGRAM_IMPORTS_ENABLED=false
+SOCIAL_INSTAGRAM_IMPORTS_APPROVED=false
+SOCIAL_TIKTOK_IMPORTS_ENABLED=false
+SOCIAL_TIKTOK_IMPORTS_APPROVED=false
+SOCIAL_YOUTUBE_IMPORTS_ENABLED=false
+SOCIAL_YOUTUBE_API_KEY=
+SOCIAL_YOUTUBE_DAILY_BUDGET=3000
+```
+
+YouTube requires the enabled Data API and a server-held key restricted to that
+API. Each bounded channel import reserves three units from Ziipa's shared UTC
+daily budget; the setting is capped at 4500. Provider/project quotas can also
+stop an import. Do not add billing or request paid capacity to bypass a limit.
+
+Meta/TikTok reuse the stable server `PUBLISHING_ENCRYPTION_KEY` and application
+credentials (`PUBLISHING_META_CLIENT_ID`, `PUBLISHING_META_CLIENT_SECRET`,
+`PUBLISHING_META_GRAPH_VERSION`; or `PUBLISHING_TIKTOK_CLIENT_KEY` and
+`PUBLISHING_TIKTOK_CLIENT_SECRET`). Read credentials use a separate encryption
+purpose and consent flow; existing publishing permission does not satisfy read
+consent. Facebook requests `pages_show_list,pages_read_engagement`; Instagram
+adds `instagram_basic`; TikTok requests `user.info.basic,video.list`.
+
+Use a fixed, approved cookie-bearing browser origin for the complete consent
+chain. For the website's same-origin API proxy this is
+`PUBLISHING_API_ORIGIN=https://ziipa.com`, also included in
+`PUBLISHING_APPROVED_ORIGINS`; `PUBLIC_APP_URL=https://ziipa.com` supplies the
+native `/portal` handoff. The browser start, authorize and callback must keep
+the same sign-in/binding cookies. Do not widen cookie domains to work around an
+origin mismatch. Register these separate read callbacks with the provider:
+
+```text
+https://ziipa.com/api/social/oauth/facebook/callback
+https://ziipa.com/api/social/oauth/instagram/callback
+https://ziipa.com/api/social/oauth/tiktok/callback
+```
+
+Keep these routes uncached and redact OAuth query strings/cookies from proxy
+logs. These are separate from `/api/publishing/oauth/...` callbacks and never
+request publishing scopes. Provider activation still needs a real consent,
+target, public-only import, expiry and withdrawal test before being called live.
+
+The public `/network-imports` page documents this feature's data path and links
+to Google privacy, YouTube terms and provider access controls. It is not a full
+Ziipa privacy policy or terms of use. Before public provider activation, the
+owner must finalize and publish the complete privacy/terms documents, confirm
+the actual operator/contact/retention details, and implement any provider-required
+policy agreement flow. Existing in-app policy drafts and an informational feature
+notice do not satisfy that remaining activation review. No terms are accepted
+on a user's behalf by this implementation.
+
+### Shared frontend verification
+
+Discovery, Networks and consent/expiry UI live in `mobile/src` and are shared
+by Expo web and Android. From `mobile`, `npm.cmd run typecheck` and
+`npm.cmd test` include the `discovery-feed`, `discovery-state`, `network-imports`,
+`connections-imports-ui` and existing `network` tests. From `frontend`,
+`npm.cmd test` checks the website/proxy and anonymous gallery; it does not
+replace the shared mobile UI suite. API coverage includes `test_social.py`
+and `test_social_read_imports.py`, with isolated storage and mocked provider
+responses. Passing these checks verifies implemented behavior, not live provider
+approval or physical-phone consent handoff.
 
 The mobile Creator Studio now stores one Ziipa source creation with its trim,
 caption, overlay, soundtrack, metadata, and selected distribution targets. The

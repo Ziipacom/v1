@@ -124,6 +124,7 @@ function importedHub() {
   Object.assign(result.providers[0], {
     status: "linked",
     auth_type: "public_profile",
+    can_sync: true,
     revision: "link-a",
     handle: "author.bsky.social",
     profile_url: "https://bsky.app/profile/author.bsky.social",
@@ -183,6 +184,15 @@ function feedHook() {
       };
     if (name === "../provider") return { useZiipa: () => context };
     if (name === "./discovery-feed") return discovery;
+    if (name === "./use-network-snapshot-expiry")
+      return compile(
+        "../src/lib/use-network-snapshot-expiry.ts",
+        (dependency) => {
+          if (dependency === "react") return runtime.react;
+          if (dependency === "./discovery-feed") return discovery;
+          throw new Error(dependency);
+        },
+      );
     throw new Error(name);
   });
   const render = (flush = true) =>
@@ -297,6 +307,98 @@ test("explicit refresh changes the mix but failed reads retain the same account'
   ui.unmount();
 });
 
+test("all supported connection revisions and permission withdrawal invalidate former snapshots before failed reads", async () => {
+  for (const provider of [
+    "facebook",
+    "instagram",
+    "tiktok",
+    "youtube",
+  ] as const) {
+    const ui = feedHook(),
+      value = emptyNetworkHub();
+    const account = value.providers.find((row) => row.provider === provider)!;
+    const urls = {
+      facebook: "https://www.facebook.com/123/posts/456",
+      instagram: "https://www.instagram.com/p/ABC/",
+      tiktok: "https://www.tiktok.com/@creator/video/123",
+      youtube: "https://www.youtube.com/watch?v=aBcDeFg_-12",
+    };
+    Object.assign(account, {
+      status: "connected",
+      auth_type: "oauth",
+      can_sync: true,
+      revision: "grant-a",
+      selected_import_target_id: "mine",
+      import_targets: [
+        { id: "mine", name: "My account", kind: "account", url: "" },
+      ],
+      snapshot_expires_at: new Date(Date.now() + 3600000).toISOString(),
+    });
+    account.capabilities.public_feed = true;
+    value.media = [
+      { ...media, provider, id: "same-id", kind: "video", url: urls[provider] },
+    ];
+    ui.context.data.connections = value.providers;
+    ui.render();
+    ui.requests[0].result.resolve(value);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(ui.render().networkCount, 1, provider);
+    const changed = { ...account, revision: "grant-b", can_sync: false };
+    ui.context.data.connections = value.providers.map((row) =>
+      row.provider === provider ? changed : row,
+    );
+    assert.equal(
+      ui.render(false).networkCount,
+      0,
+      `${provider} invalidates before effects`,
+    );
+    ui.render();
+    ui.requests
+      .at(-1)!
+      .result.reject(new Error("new permission state unavailable"));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(ui.render().networkCount, 0);
+    ui.unmount();
+  }
+});
+
+test("a focused public snapshot disappears at its local deadline without another API or provider request", async () => {
+  const ui = feedHook(),
+    value = emptyNetworkHub();
+  const account = value.providers.find((row) => row.provider === "youtube")!;
+  Object.assign(account, {
+    status: "linked",
+    auth_type: "public_profile",
+    can_sync: true,
+    snapshot_expires_at: new Date(Date.now() + 500).toISOString(),
+    revision: "public-a",
+  });
+  account.capabilities.public_feed = true;
+  value.media = [
+    {
+      ...media,
+      provider: "youtube",
+      id: "clip",
+      kind: "video",
+      url: "https://www.youtube.com/watch?v=aBcDeFg_-12",
+    },
+  ];
+  ui.context.data.connections = value.providers;
+  ui.render();
+  ui.requests[0].result.resolve(value);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(ui.render().networkCount, 1);
+  await new Promise<void>((resolve) => setTimeout(resolve, 550));
+  assert.equal(ui.render().networkCount, 0);
+  assert.equal(
+    ui.requests.length,
+    1,
+    "expiry is a local mask, not a polling request",
+  );
+  assert.equal(ui.refreshes(), 0);
+  ui.unmount();
+});
+
 function flatten(value: any): Node[] {
   if (Array.isArray(value)) return value.flatMap(flatten);
   return !value || typeof value !== "object" || !value.props
@@ -349,6 +451,7 @@ test("Studio Discover's media surface opens Ziipa's existing feed and attributed
         }),
       };
     if (name === "../lib/domain") return domain;
+    if (name === "../lib/discovery-feed") return discovery;
     if (name === "../theme")
       return {
         useTheme() {},

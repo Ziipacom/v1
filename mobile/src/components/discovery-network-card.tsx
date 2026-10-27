@@ -9,7 +9,10 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { ExternalLink } from "lucide-react-native";
-import { discoveryThumbnailUrl } from "../lib/discovery-feed";
+import {
+  discoveryProviderName,
+  discoveryThumbnailUrl,
+} from "../lib/discovery-feed";
 import type { NetworkMedia } from "../lib/network-hub";
 import { color, font, styles } from "../theme";
 
@@ -28,7 +31,7 @@ export function DiscoveryNetworkPreview({ media }: { media: NetworkMedia }) {
           source={{ uri: url }}
           cachePolicy="memory"
           contentFit="contain"
-          accessibilityLabel="Public Bluesky post thumbnail"
+          accessibilityLabel={`Public ${discoveryProviderName(media.provider)} post thumbnail`}
           style={StyleSheet.absoluteFill}
           onError={() => setFailed(url)}
         />
@@ -47,7 +50,9 @@ export function DiscoveryNetworkPreview({ media }: { media: NetworkMedia }) {
             numberOfLines={5}
             style={[styles.body, { textAlign: "center" }]}
           >
-            {media.text || media.title || "Open the original Bluesky post"}
+            {media.text ||
+              media.title ||
+              `Open the original ${discoveryProviderName(media.provider)} post`}
           </Text>
         </View>
       )}
@@ -67,7 +72,7 @@ export function DiscoveryNetworkCard({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Open ${media.title || "public post"} by ${media.author || media.handle || "Bluesky account"} on Bluesky`}
+      accessibilityLabel={`Open ${media.title || "public post"} by ${media.author || media.handle || "network account"} on ${discoveryProviderName(media.provider)}`}
       onPress={() => onOpen(media)}
       style={[
         {
@@ -87,17 +92,17 @@ export function DiscoveryNetworkCard({
         <View style={{ flexDirection: "row", gap: 7, alignItems: "center" }}>
           <ExternalLink size={14} color={color.lime} />
           <Text style={[styles.small, { color: color.lime }]}>
-            Bluesky · {media.kind}
+            {discoveryProviderName(media.provider)} · {media.kind}
           </Text>
         </View>
         <Text
           numberOfLines={3}
           style={{ fontFamily: font.semibold, color: color.text, fontSize: 16 }}
         >
-          {media.title || media.text || "Public Bluesky post"}
+          {media.title || media.text || "Public post"}
         </Text>
         <Text numberOfLines={1} style={styles.small}>
-          {media.author || media.handle || "Bluesky account"}
+          {media.author || media.handle || "Network account"}
         </Text>
         <Text style={[styles.small, { fontSize: 11 }]}>
           Imported public snapshot · Opens original

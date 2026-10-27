@@ -1,0 +1,18 @@
+.page { min-height: 100vh; padding: 30px 22px 55px; }
+.content { max-width: 850px; margin: 0 auto; }
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 48px; }
+.nav :global(.brand-logo) { width: 145px; }
+.nav :global(.brand-logo img) { display: block; width: 100%; height: auto; }
+.content h1 { font-size: clamp(32px, 5vw, 49px); line-height: 1.15; margin: 12px 0 23px; }
+.content h2 { font-size: 24px; line-height: 1.35; margin: 0 0 16px; }
+.content section { margin-top: 34px; }
+.content p, .content li { line-height: 1.8; color: #d7cfe1; font-size: 16px; }
+.content p { margin: 13px 0; }
+.content ul { padding-left: 23px; }
+.content li { margin: 12px 0; }
+.content a { color: #d9c2ff; text-decoration: underline; text-underline-offset: 3px; }
+.content a:focus-visible { outline: 2px solid #b4ee00; outline-offset: 5px; }
+.eyebrow { color: #b4ee00 !important; letter-spacing: 1.3px; font-size: 11px !important; }
+.intro { font-size: 19px !important; }
+.footer { border-top: 1px solid #473452; margin-top: 40px; padding-top: 24px; display: flex; gap: 22px; flex-wrap: wrap; }
+@media (max-width: 480px) { .page { padding: 22px 18px 40px; } .nav { margin-bottom: 32px; gap: 16px; } .nav :global(.brand-logo) { width: 125px; } }

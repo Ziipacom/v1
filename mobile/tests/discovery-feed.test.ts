@@ -7,9 +7,11 @@ import {
   discoveryThumbnailUrl,
   filterDiscoveryEntries,
   importedDiscoveryMedia,
+  nextDiscoverySnapshotExpiry,
 } from "../src/lib/discovery-feed.ts";
 import { emptyNetworkHub, type NetworkMedia } from "../src/lib/network-hub.ts";
 import { emptyPreferences, type Item } from "../src/lib/types.ts";
+import type { SocialProvider } from "../src/lib/types.ts";
 
 const item = (id: string, patch: Partial<Item> = {}): Item => ({
   id,
@@ -48,6 +50,7 @@ const hub = (...media: NetworkMedia[]) => {
   Object.assign(result.providers[0], {
     status: "linked",
     auth_type: "public_profile",
+    can_sync: true,
     sync_status: "synced",
   });
   result.media = media;
@@ -231,4 +234,198 @@ test("external post destinations and thumbnails are fixed public provider origin
   ]) {
     assert.equal(discoveryThumbnailUrl(post("bad", { thumbnail_url })), null);
   }
+});
+
+const importedPost = (provider: SocialProvider): NetworkMedia =>
+  post("shared", {
+    id: "shared",
+    provider,
+    kind: "video",
+    url:
+      (
+        {
+          facebook: "https://www.facebook.com/123/posts/456",
+          instagram: "https://www.instagram.com/reel/ABC_-123/",
+          tiktok: "https://www.tiktok.com/@creator/video/1234567890",
+          youtube: "https://www.youtube.com/watch?v=aBcDeFg_-12",
+        } as Partial<Record<SocialProvider, string>>
+      )[provider] || post().url,
+    thumbnail_url:
+      (
+        {
+          facebook:
+            "https://scontent.xx.fbcdn.net/image.jpg?oh=public-signature&oe=public-expiry",
+          instagram: "https://scontent.cdninstagram.com/image.jpg",
+          tiktok:
+            "https://p16-sign-sg.tiktokcdn.com/image.jpg?x-expires=123&x-signature=public",
+          youtube: "https://i.ytimg.com/vi/aBcDeFg_-12/hqdefault.jpg",
+        } as Partial<Record<SocialProvider, string>>
+      )[provider] || post().thumbnail_url,
+  });
+
+test("Meta, TikTok, YouTube and Bluesky keep attributed identities distinct and require an eligible public-read connection", () => {
+  const value = emptyNetworkHub();
+  const providers: SocialProvider[] = [
+    "facebook",
+    "instagram",
+    "tiktok",
+    "youtube",
+    "bluesky",
+  ];
+  value.media = providers.map(importedPost);
+  for (const account of value.providers) {
+    if (account.provider === "twitch") continue;
+    Object.assign(account, {
+      status: "connected",
+      auth_type: "oauth",
+      can_sync: true,
+      snapshot_expires_at: new Date(Date.now() + 3600000).toISOString(),
+      selected_import_target_id: "own-account",
+      import_targets: [
+        { id: "own-account", name: "My account", kind: "account", url: "" },
+      ],
+    });
+    account.capabilities.public_feed = true;
+  }
+  const all = discoveryEntries([], value, emptyPreferences, 5);
+  assert.equal(all.length, 5);
+  assert.equal(new Set(all.map((entry) => entry.id)).size, 5);
+  assert.equal(filterDiscoveryEntries(all, { query: "youtube" }).length, 1);
+  assert.equal(filterDiscoveryEntries(all, { query: "instagram" }).length, 1);
+  for (const account of value.providers) {
+    if (account.provider === "twitch") continue;
+    const before = discoveryConnectionIdentity(value.providers);
+    account.can_sync = false;
+    assert.notEqual(discoveryConnectionIdentity(value.providers), before);
+    assert.equal(
+      importedDiscoveryMedia(value).some(
+        (row) => row.provider === account.provider,
+      ),
+      false,
+    );
+    account.can_sync = true;
+    account.capabilities.public_feed = false;
+    assert.equal(
+      importedDiscoveryMedia(value).some(
+        (row) => row.provider === account.provider,
+      ),
+      false,
+    );
+    account.capabilities.public_feed = true;
+    account.status = "linked";
+    account.auth_type = "public_profile";
+    assert.equal(
+      importedDiscoveryMedia(value).some(
+        (row) => row.provider === account.provider,
+      ),
+      ["youtube", "bluesky"].includes(account.provider),
+    );
+  }
+});
+
+test("public snapshots expire locally, malformed deadlines and missing OAuth target consent stay hidden", () => {
+  const value = emptyNetworkHub(),
+    account = value.providers.find((row) => row.provider === "youtube")!;
+  const now = Date.parse("2026-10-27T12:00:00Z");
+  Object.assign(account, {
+    status: "linked",
+    auth_type: "public_profile",
+    can_sync: true,
+    snapshot_expires_at: "2026-10-27T13:00:00Z",
+  });
+  account.capabilities.public_feed = true;
+  value.media = [importedPost("youtube")];
+  assert.equal(importedDiscoveryMedia(value, now).length, 1);
+  assert.equal(nextDiscoverySnapshotExpiry(value, now), now + 3600000);
+  assert.equal(importedDiscoveryMedia(value, now + 3600000).length, 0);
+  for (const snapshot_expires_at of [
+    null,
+    "invalid",
+    "2026-10-28T12:00:01Z",
+    "2026-10-27T13:00:00+09:00",
+  ])
+    assert.equal(
+      importedDiscoveryMedia(
+        { ...value, providers: [{ ...account, snapshot_expires_at }] },
+        now,
+      ).length,
+      0,
+    );
+  const meta = {
+    ...account,
+    provider: "facebook" as const,
+    status: "connected" as const,
+    auth_type: "oauth" as const,
+    selected_import_target_id: "foreign",
+    import_targets: [{ id: "mine", name: "My Page", kind: "page", url: "" }],
+  };
+  assert.equal(
+    importedDiscoveryMedia(
+      { ...value, providers: [meta], media: [importedPost("facebook")] },
+      now,
+    ).length,
+    0,
+  );
+  meta.selected_import_target_id = "mine";
+  assert.equal(
+    importedDiscoveryMedia(
+      { ...value, providers: [meta], media: [importedPost("facebook")] },
+      now,
+    ).length,
+    1,
+  );
+});
+
+test("provider-specific original links reject profiles, redirects, tracking and credential-bearing alternatives", () => {
+  for (const provider of [
+    "facebook",
+    "instagram",
+    "tiktok",
+    "youtube",
+  ] as const) {
+    const media = importedPost(provider);
+    assert.equal(discoveryPostUrl(media), media.url);
+    assert.equal(discoveryThumbnailUrl(media), media.thumbnail_url);
+    for (const url of [
+      media.url + "#token",
+      media.url + (media.url.includes("?") ? "&" : "?") + "access_token=secret",
+      media.url.replace("https://", "https://secret@"),
+      media.url.replace("https://", "http://"),
+      media.url.replace(".com", ".com.evil.test"),
+      media.url.replace(".com", ".com:444"),
+      "https://www.youtube.com/redirect?q=https://evil.test",
+      "https://www.instagram.com/accounts/login/",
+    ])
+      assert.equal(
+        discoveryPostUrl({ ...media, url }),
+        null,
+        `${provider}: ${url}`,
+      );
+    for (const thumbnail_url of [
+      media.thumbnail_url! +
+        (media.thumbnail_url!.includes("?") ? "&" : "?") +
+        "access_token=secret",
+      media.thumbnail_url!.replace("https://", "https://secret@"),
+      "https://api.ziipa.com/api/creator/media/private",
+      "https://cdninstagram.com.evil.test/image.jpg",
+    ])
+      assert.equal(discoveryThumbnailUrl({ ...media, thumbnail_url }), null);
+  }
+  const youtube = importedPost("youtube");
+  assert.equal(
+    discoveryPostUrl({ ...youtube, url: youtube.url + "&v=anotherId12" }),
+    null,
+  );
+  assert.equal(
+    discoveryPostUrl({
+      ...youtube,
+      url: "https://www.youtube.com/watch?v=short",
+    }),
+    null,
+  );
+  assert.equal(
+    discoveryPostUrl({ ...youtube, url: "https://www.youtube.com/@channel" }),
+    null,
+  );
+  assert.equal(discoveryPostUrl(importedPost("twitch")), null);
 });

@@ -35,6 +35,8 @@ export type SocialProvider =
 export type SocialConnection = {
   provider: SocialProvider;
   revision?: string | null;
+  snapshot_expires_at?: string | null;
+  selected_import_target_id?: string | null;
   name: string;
   capability: string;
   status: "connected" | "linked" | "disconnected" | "action_required";

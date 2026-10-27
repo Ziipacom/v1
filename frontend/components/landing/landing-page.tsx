@@ -607,6 +607,7 @@ export default function LandingPage() {
               <a href="#faq">Your questions</a>
               <a href="#waitlist">Join the waitlist</a>
               <a href="mailto:hello@ziipa.com">Contact us</a>
+              <Link href="/network-imports">Public imports & data</Link>
             </div>
             <div className="zl-footer-download">
               <h3>Your world, wherever you go.</h3>
