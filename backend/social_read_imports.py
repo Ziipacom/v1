@@ -63,6 +63,15 @@ def enabled(provider):
         and getattr(settings, f'social_{provider}_imports_approved', False))
 
 
+def login_configuration_id(provider):
+    if provider not in ('facebook', 'instagram'):
+        return ''
+    try:
+        return adapter.meta_login_configuration_id(getattr(settings, f'social_{provider}_login_config_id', ''))
+    except adapter.ReadFailure:
+        raise HTTPException(503, 'Configure a valid numeric Facebook Login for Business user-token configuration ID before connecting.') from None
+
+
 def readiness(provider):
     requirements = []
     if provider not in READ_PROVIDERS:
@@ -75,6 +84,10 @@ def readiness(provider):
     else:
         if not vault.config.meta_client_id or not vault.config.meta_client_secret or not re.fullmatch(r'v[1-9][0-9]{0,2}\.0', vault.config.meta_graph_version or ''):
             requirements.append('Registered Meta application and an explicitly supported Graph version')
+        try:
+            login_configuration_id(provider)
+        except HTTPException:
+            requirements.append('Valid numeric Facebook Login for Business user-token configuration ID, or empty for classic login')
     try:
         vault.encryption_key()
     except HTTPException:
@@ -257,6 +270,8 @@ def profile_identity(row):
 
 
 def verify_browser(provider, request, record, session):
+    if record.get('login_config_id', '') != login_configuration_id(provider):
+        raise HTTPException(409, 'The read login configuration changed. Start read authorization again.')
     token = request.cookies.get('ziipa_session', '')
     binding = request.cookies.get('ziipa_read_oauth_' + provider, '')
     if (record.get('provider') != provider or request.headers.get('authorization') or not token or not binding
@@ -301,6 +316,7 @@ def begin(provider, request, response, user, session):
     ticket, binding = secrets.token_urlsafe(40), secrets.token_urlsafe(40)
     row = provider_connection(provider, user, session)
     store_state('ticket', ticket, {'owner_id': user.id, 'provider': provider, 'link_identity': profile_identity(row),
+        'login_config_id': login_configuration_id(provider),
         'session_hash': hashlib.sha256(request.cookies['ziipa_session'].encode()).hexdigest(),
         'binding_hash': hashlib.sha256(binding.encode()).hexdigest()})
     response.set_cookie('ziipa_read_oauth_' + provider, binding, max_age=STATE_TTL, httponly=True, secure=True,
@@ -318,7 +334,8 @@ async def authorize(provider: str, request: Request, ticket: str = Query(min_len
     state, verifier = secrets.token_urlsafe(40), secrets.token_urlsafe(40)
     store_state('callback', state, {**record, 'verifier': verifier})
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
-    response = RedirectResponse(adapter.authorization_url(provider, vault.config, callback_url(provider), state, challenge), status_code=302)
+    response = RedirectResponse(adapter.authorization_url(provider, vault.config, callback_url(provider), state, challenge,
+        login_config_id=record.get('login_config_id', '')), status_code=302)
     response.headers.update({'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
     return response
 

@@ -172,6 +172,8 @@ SOCIAL_FACEBOOK_IMPORTS_ENABLED=false
 SOCIAL_FACEBOOK_IMPORTS_APPROVED=false
 SOCIAL_INSTAGRAM_IMPORTS_ENABLED=false
 SOCIAL_INSTAGRAM_IMPORTS_APPROVED=false
+SOCIAL_FACEBOOK_LOGIN_CONFIG_ID=
+SOCIAL_INSTAGRAM_LOGIN_CONFIG_ID=
 SOCIAL_TIKTOK_IMPORTS_ENABLED=false
 SOCIAL_TIKTOK_IMPORTS_APPROVED=false
 SOCIAL_YOUTUBE_IMPORTS_ENABLED=false
@@ -191,6 +193,31 @@ credentials (`PUBLISHING_META_CLIENT_ID`, `PUBLISHING_META_CLIENT_SECRET`,
 purpose and consent flow; existing publishing permission does not satisfy read
 consent. Facebook requests `pages_show_list,pages_read_engagement`; Instagram
 adds `instagram_basic`; TikTok requests `user.info.basic,video.list`.
+
+For **Facebook Login for Business**, create separate **General login / User
+access token** configurations: Facebook uses exactly `pages_show_list` and
+`pages_read_engagement`; Instagram adds `instagram_basic`. Store their numeric
+public configuration IDs in `SOCIAL_FACEBOOK_LOGIN_CONFIG_ID` and
+`SOCIAL_INSTAGRAM_LOGIN_CONFIG_ID`. Each optional value is empty or a positive
+numeric ID of at most 50 digits. Configured IDs are sent as `config_id` in the
+read-consent dialog, without a `scope` parameter; the saved provider
+configuration supplies those permissions. Empty values retain the existing
+classic scope-based flow. Configuration IDs do not enable imports or replace
+Meta review, granted-permission checks, eligible asset ownership or explicit
+target selection. Do not add posting permissions to these read configurations.
+This follows Meta's [Login for Business manual-dialog guidance](https://developers.facebook.com/documentation/facebook-login/facebook-login-for-business#invoke-a--login-dialog).
+The General login configurations use user tokens; no system-user SDK response
+override is added to the manual redirect flow. The new app dashboard currently
+lists Graph `v26.0`; select and verify `PUBLISHING_META_GRAPH_VERSION` explicitly
+for the deployed app during gated live acceptance. The existing default is not
+changed automatically, and field compatibility still needs that live check.
+
+Only finite-lived **user access tokens** are supported. System-user token
+configurations are unsupported; the adapter exchanges and validates a user token
+before saving a read grant. The effective configuration ID is bound to each
+one-time ticket and callback state. Changing it during a pending consent flow
+requires restarting authorization, including when switching to/from classic
+login. Existing grants and the separate publishing configuration are unchanged.
 
 Use a fixed, approved cookie-bearing browser origin for the complete consent
 chain. For the website's same-origin API proxy this is

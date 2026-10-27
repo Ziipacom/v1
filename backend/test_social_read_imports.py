@@ -32,6 +32,8 @@ def configured(client, monkeypatch):
     for field in ('meta_client_id', 'meta_client_secret', 'tiktok_client_key', 'tiktok_client_secret'):
         monkeypatch.setattr(imports.vault.config, field, 'synthetic-not-a-provider-secret')
     monkeypatch.setattr(imports.vault.config, 'meta_graph_version', 'v25.0')
+    for provider in ('facebook', 'instagram'):
+        monkeypatch.setattr(core.settings, f'social_{provider}_login_config_id', '')
     register_creator(client)
     return client
 
@@ -94,11 +96,149 @@ def authorize(client, provider):
     redirect = client.get(url, follow_redirects=False)
     assert redirect.status_code == 302
     query = parse_qs(urlsplit(redirect.headers['location']).query)
-    assert set(query['scope'][0].split(',')) == adapters.scopes(provider)
-    assert 'video.publish' not in query['scope'][0] and 'pages_manage_posts' not in query['scope'][0]
+    configuration = imports.login_configuration_id(provider)
+    if configuration:
+        assert query['config_id'] == [configuration] and 'scope' not in query
+    else:
+        assert 'config_id' not in query and set(query['scope'][0].split(',')) == adapters.scopes(provider)
+        assert 'video.publish' not in query['scope'][0] and 'pages_manage_posts' not in query['scope'][0]
     callback = client.get(f'/api/social/oauth/{provider}/callback', params={'state': query['state'][0], 'code': 'one-use-code'})
     assert callback.status_code == 200
     return query['state'][0]
+
+
+@pytest.mark.parametrize('provider,configuration', [('facebook', '100000000000001'), ('instagram', '100000000000002')])
+def test_business_login_uses_only_the_selected_provider_configuration_and_preserves_read_scope_checks(configured, monkeypatch, provider, configuration):
+    monkeypatch.setattr(core.settings, 'social_facebook_login_config_id', '100000000000001')
+    monkeypatch.setattr(core.settings, 'social_instagram_login_config_id', '100000000000002')
+    calls = install(monkeypatch, provider=provider)
+    start = configured.post(f'/api/social/{provider}/connect', json={'config_id': '999999999999999'})
+    assert start.status_code == 200 and start.json()['status'] == 'authorization_required'
+    redirect = configured.get(start.json()['auth_url'], follow_redirects=False)
+    assert redirect.status_code == 302
+    query = parse_qs(urlsplit(redirect.headers['location']).query)
+    assert query['config_id'] == [configuration] and 'scope' not in query
+    assert query['response_type'] == ['code'] and query['client_id'] == ['synthetic-not-a-provider-secret']
+    assert query['redirect_uri'] == [f'https://api.ziipa.com/api/social/oauth/{provider}/callback']
+    assert len(query['state'][0]) == 54 and not calls
+    result = configured.get(f'/api/social/oauth/{provider}/callback', params={'state': query['state'][0], 'code': 'synthetic-code'})
+    assert result.status_code == 200 and calls
+    row = connection(provider)
+    assert row.data['auth_type'] == 'oauth' and row.data['selected_import_target_id'] is None
+    assert 'read_cipher' in row.data and configuration not in json.dumps(row.data)
+
+
+@pytest.mark.parametrize('provider', ['facebook', 'instagram'])
+def test_classic_meta_authorization_url_keeps_exact_read_scopes_without_configuration(provider):
+    config = SimpleNamespace(meta_client_id='synthetic-app', meta_graph_version='v25.0')
+    query = parse_qs(urlsplit(adapters.authorization_url(provider, config, 'https://ziipa.com/callback', 'state', 'challenge')).query)
+    assert query == {'client_id': ['synthetic-app'], 'response_type': ['code'], 'redirect_uri': ['https://ziipa.com/callback'],
+        'state': ['state'], 'auth_type': ['rerequest'], 'scope': [','.join(sorted(adapters.scopes(provider)))]}
+
+
+@pytest.mark.parametrize('provider,denied', [('facebook', 'pages_read_engagement'), ('instagram', 'instagram_basic')])
+def test_business_configuration_does_not_bypass_provider_read_permission_checks(configured, monkeypatch, provider, denied):
+    monkeypatch.setattr(core.settings, f'social_{provider}_login_config_id', '100000000000001')
+    def missing_permission(request):
+        if request.url.path.endswith('/me/permissions'):
+            return httpx.Response(200, json={'data': [{'permission': permission,
+                'status': 'declined' if permission == denied else 'granted'} for permission in adapters.scopes(provider)]})
+    calls = install(monkeypatch, provider=provider, hook=missing_permission)
+    start = configured.post(f'/api/social/{provider}/connect').json()
+    redirect = configured.get(start['auth_url'], follow_redirects=False)
+    state = parse_qs(urlsplit(redirect.headers['location']).query)['state'][0]
+    result = configured.get(f'/api/social/oauth/{provider}/callback', params={'state': state, 'code': 'synthetic-code'})
+    assert result.status_code == 502 and calls and connection(provider) is None
+    assert 'PRIVATE_META' not in result.text and configured.get('/api/social/hub').json()['media'] == []
+
+
+@pytest.mark.parametrize('value', [None, True, 123, '0', '0123', '-1', ' 123', '123\n', '123&scope=extra', '9' * 51])
+def test_invalid_business_configuration_never_enters_an_authorization_url(value):
+    config = SimpleNamespace(meta_client_id='synthetic-app', meta_graph_version='v25.0')
+    with pytest.raises(adapters.ReadFailure):
+        adapters.authorization_url('facebook', config, 'https://ziipa.com/callback', 'state', 'challenge', login_config_id=value)
+
+
+@pytest.mark.parametrize('provider', ['facebook', 'instagram'])
+def test_optional_configuration_settings_are_bounded_numeric_and_empty_by_default(provider):
+    from pydantic import ValidationError
+    field = f'social_{provider}_login_config_id'
+    assert core.Settings(_env_file=None, **{field: ''}).model_dump()[field] == ''
+    assert core.Settings(_env_file=None, **{field: '9' * 50}).model_dump()[field] == '9' * 50
+    for value in ('0', '01', '1&scope=extra', '1\n', '9' * 51, None, True):
+        with pytest.raises(ValidationError):
+            core.Settings(_env_file=None, **{field: value})
+
+
+@pytest.mark.parametrize('provider', ['facebook', 'instagram'])
+def test_invalid_configuration_blocks_readiness_without_cookie_or_outbound_consent(configured, monkeypatch, provider):
+    monkeypatch.setattr(core.settings, f'social_{provider}_login_config_id', 'invalid&configuration')
+    monkeypatch.setattr(imports.vault, 'api_client', lambda: pytest.fail('No provider request is permitted'))
+    result = configured.post(f'/api/social/{provider}/connect')
+    assert result.status_code == 200 and result.json()['status'] == 'setup_required'
+    assert result.json()['auth_url'] is None and 'invalid&configuration' not in result.text
+    assert 'ziipa_read_oauth_' not in result.headers.get('set-cookie', '') and connection(provider) is None
+
+
+@pytest.mark.parametrize('stage', ['ticket', 'callback'])
+@pytest.mark.parametrize('before,after', [('', '100000000000001'), ('100000000000001', ''), ('100000000000001', '100000000000002')])
+def test_changing_effective_login_configuration_requires_restart_before_provider_traffic(configured, monkeypatch, stage, before, after):
+    monkeypatch.setattr(core.settings, 'social_facebook_login_config_id', before)
+    calls = install(monkeypatch, provider='facebook')
+    url = configured.post('/api/social/facebook/connect').json()['auth_url']
+    if stage == 'ticket':
+        monkeypatch.setattr(core.settings, 'social_facebook_login_config_id', after)
+        result = configured.get(url, follow_redirects=False)
+    else:
+        redirect = configured.get(url, follow_redirects=False)
+        state = parse_qs(urlsplit(redirect.headers['location']).query)['state'][0]
+        monkeypatch.setattr(core.settings, 'social_facebook_login_config_id', after)
+        result = configured.get('/api/social/oauth/facebook/callback', params={'state': state, 'code': 'synthetic-code'})
+    assert result.status_code == 409 and 'configuration changed' in result.json()['detail']
+    assert not calls and connection('facebook') is None
+
+
+def test_other_provider_configuration_does_not_invalidate_unchanged_facebook_consent(configured, monkeypatch):
+    monkeypatch.setattr(core.settings, 'social_facebook_login_config_id', '100000000000001')
+    install(monkeypatch, provider='facebook')
+    url = configured.post('/api/social/facebook/connect').json()['auth_url']
+    monkeypatch.setattr(core.settings, 'social_instagram_login_config_id', '100000000000002')
+    redirect = configured.get(url, follow_redirects=False)
+    query = parse_qs(urlsplit(redirect.headers['location']).query)
+    result = configured.get('/api/social/oauth/facebook/callback', params={'state': query['state'][0], 'code': 'synthetic-code'})
+    assert result.status_code == 200 and connection('facebook').data['auth_type'] == 'oauth'
+
+
+def test_configuration_change_during_exchange_cannot_save_a_late_grant(configured, monkeypatch):
+    monkeypatch.setattr(core.settings, 'social_facebook_login_config_id', '100000000000001')
+    def interrupt(request):
+        if request.url.path.endswith('/oauth/access_token'):
+            monkeypatch.setattr(core.settings, 'social_facebook_login_config_id', '100000000000002')
+    install(monkeypatch, provider='facebook', hook=interrupt)
+    url = configured.post('/api/social/facebook/connect').json()['auth_url']
+    redirect = configured.get(url, follow_redirects=False)
+    query = parse_qs(urlsplit(redirect.headers['location']).query)
+    result = configured.get('/api/social/oauth/facebook/callback', params={'state': query['state'][0], 'code': 'synthetic-code'})
+    assert result.status_code == 409 and connection('facebook') is None
+
+
+@pytest.mark.parametrize('expiry', [None, 0])
+def test_business_flow_rejects_missing_or_nonpositive_token_lifetimes(configured, monkeypatch, expiry):
+    monkeypatch.setattr(core.settings, 'social_facebook_login_config_id', '100000000000001')
+    install(monkeypatch, provider='facebook', hook=lambda request: httpx.Response(200,
+        json={'access_token': 'SYNTHETIC_NONEXPIRING_TOKEN', 'expires_in': expiry}) if request.url.path.endswith('/oauth/access_token') else None)
+    url = configured.post('/api/social/facebook/connect').json()['auth_url']
+    redirect = configured.get(url, follow_redirects=False)
+    state = parse_qs(urlsplit(redirect.headers['location']).query)['state'][0]
+    result = configured.get('/api/social/oauth/facebook/callback', params={'state': state, 'code': 'synthetic-code'})
+    assert result.status_code == 502 and 'SYNTHETIC_NONEXPIRING_TOKEN' not in result.text and connection('facebook') is None
+
+
+def test_business_configuration_does_not_enable_an_unapproved_import_flow(configured, monkeypatch):
+    monkeypatch.setattr(core.settings, 'social_facebook_login_config_id', '100000000000001')
+    monkeypatch.setattr(core.settings, 'social_facebook_imports_approved', False)
+    result = configured.post('/api/social/facebook/connect')
+    assert result.status_code == 200 and result.json()['status'] == 'setup_required' and result.json()['auth_url'] is None
 
 
 @pytest.mark.parametrize('provider,target_id', [('tiktok', 'account-subject'), ('facebook', '222'), ('instagram', '333')])

@@ -40,8 +40,10 @@ class Settings(BaseSettings):
     social_public_sync_enabled: bool = True
     social_facebook_imports_enabled: bool = False
     social_facebook_imports_approved: bool = False
+    social_facebook_login_config_id: str = Field(default='', max_length=50, pattern=r'^(?:[1-9][0-9]{0,49})?$')
     social_instagram_imports_enabled: bool = False
     social_instagram_imports_approved: bool = False
+    social_instagram_login_config_id: str = Field(default='', max_length=50, pattern=r'^(?:[1-9][0-9]{0,49})?$')
     social_tiktok_imports_enabled: bool = False
     social_tiktok_imports_approved: bool = False
     social_youtube_imports_enabled: bool = False

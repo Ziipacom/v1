@@ -115,14 +115,25 @@ async def request_json(client, method, url, **kwargs):
         raise ReadFailure('The provider response could not be verified. Retry later.') from None
 
 
-def authorization_url(provider, config, redirect_uri, state, challenge):
+def meta_login_configuration_id(value):
+    if not isinstance(value, str) or not re.fullmatch(r'(?:[1-9][0-9]{0,49})?', value):
+        raise ReadFailure('Configure a valid numeric Facebook Login for Business user-token configuration ID before connecting.')
+    return value
+
+
+def authorization_url(provider, config, redirect_uri, state, challenge, *, login_config_id=''):
     if provider == 'tiktok':
         return 'https://www.tiktok.com/v2/auth/authorize/?' + urlencode({
             'client_key': config.tiktok_client_key, 'response_type': 'code', 'scope': ','.join(sorted(scopes(provider))),
             'redirect_uri': redirect_uri, 'state': state, 'code_challenge': challenge, 'code_challenge_method': 'S256'})
-    return f'https://www.facebook.com/{config.meta_graph_version}/dialog/oauth?' + urlencode({
-        'client_id': config.meta_client_id, 'response_type': 'code', 'scope': ','.join(sorted(scopes(provider))),
-        'redirect_uri': redirect_uri, 'state': state, 'auth_type': 'rerequest'})
+    configuration = meta_login_configuration_id(login_config_id)
+    params = {'client_id': config.meta_client_id, 'response_type': 'code',
+        'redirect_uri': redirect_uri, 'state': state, 'auth_type': 'rerequest'}
+    if configuration:
+        params['config_id'] = configuration
+    else:
+        params['scope'] = ','.join(sorted(scopes(provider)))
+    return f'https://www.facebook.com/{config.meta_graph_version}/dialog/oauth?' + urlencode(params)
 
 
 async def meta_targets(client, provider, access, config):
