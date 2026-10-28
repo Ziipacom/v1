@@ -77,6 +77,7 @@ function galleryUI(
     runEffects?: boolean;
     width?: number;
     appearance?: "dark" | "light";
+    platform?: "android" | "ios" | "web";
   } = {},
 ) {
   const source = readFileSync(
@@ -183,7 +184,7 @@ function galleryUI(
           currentState: "active",
           addEventListener: () => ({ remove() {} }),
         },
-        Platform: { OS: "android" },
+        Platform: { OS: options.platform || "android" },
         useWindowDimensions: () => ({ width: options.width || 390 }),
         StyleSheet: { create: (value: unknown) => value },
         Animated: {
@@ -342,6 +343,7 @@ async function withGalleryClock(
     front: () => string;
   }) => void,
   count = 2,
+  platform: "android" | "ios" | "web" = "android",
 ) {
   const names = [
     "window",
@@ -385,9 +387,15 @@ async function withGalleryClock(
     innerWidth: 1200,
     addEventListener() {},
     removeEventListener() {},
+    matchMedia: () => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    }),
   });
   replace("document", {
     visibilityState: "visible",
+    hasFocus: () => true,
     addEventListener() {},
     removeEventListener() {},
   });
@@ -404,7 +412,7 @@ async function withGalleryClock(
     desktop
       ? "components/desktop-featured-gallery"
       : "components/gallery-slider",
-    { desktop, runEffects: true },
+    { desktop, runEffects: true, platform },
   );
   const name = desktop ? "DesktopFeaturedGallery" : "GallerySlider";
   const props = {
@@ -605,6 +613,66 @@ test("Repeated Gallery loading reports cannot extend the fixed platform deadline
       );
     });
   }
+});
+
+test("Cold iPhone stills retain their decoder beyond 22 seconds but cannot hold rotation past 32 seconds", async () => {
+  for (const platform of ["ios", "web"] as const) {
+    await withGalleryClock(
+      false,
+      ({ render, tick, front }) => {
+        tick(21999);
+        render();
+        assert.equal(front(), "first");
+        tick(1);
+        render();
+        if (platform === "web") {
+          assert.equal(front(), "second", "the web loading bound stays at22s");
+          return;
+        }
+        assert.equal(
+          front(),
+          "first",
+          "iPhone source preparation and the bounded decoder retry can still be pending",
+        );
+        render()
+          .find((node) => node.type === "GalleryStillPreview")!
+          .props.onStatus("loading");
+        render();
+        tick(9999);
+        render();
+        assert.equal(front(), "first");
+        tick(1);
+        render();
+        assert.equal(front(), "second", "loading remains bounded at32s");
+      },
+      2,
+      platform,
+    );
+  }
+});
+
+test("A late iPhone still settling after the old loading limit gets its full seven-second display interval", async () => {
+  await withGalleryClock(
+    false,
+    ({ render, tick, front }) => {
+      tick(30750);
+      const still = render().find(
+        (node) => node.type === "GalleryStillPreview",
+      )!;
+      assert.equal(front(), "first");
+      assert.equal(still.props.item.id, "second");
+      still.props.onStatus("ready");
+      render();
+      tick(6999);
+      render();
+      assert.equal(front(), "first");
+      tick(1);
+      render();
+      assert.equal(front(), "second");
+    },
+    2,
+    "ios",
+  );
 });
 
 test("Gallery manual selection bypasses the loading hold and prior-scene statuses cannot settle new stills", async () => {
@@ -1063,6 +1131,99 @@ test("Wide desktop Gallery keeps the three-slot stack without replacing its hero
       );
     }
   }
+});
+
+test("iPhone side cards stay in the front card's plane and paint behind its opaque surface", () => {
+  const source = [
+    creation("front", "video", {
+      media_url: "/media/sintel-trailer.mp4",
+      content_type: "video/mp4",
+    }),
+    creation("next", "games", {
+      media_url: "/media/sintel-trailer.mp4",
+      content_type: "video/mp4",
+    }),
+    creation("previous", "nft", { content_type: "image/jpeg" }),
+  ];
+  for (const platform of ["ios", "android", "web"] as const)
+    for (const width of [377, 430])
+      for (const count of [1, 2, 3]) {
+        const opened: string[] = [];
+        const ui = galleryUI("components/gallery-slider", { platform, width });
+        const nodes = ui.render("GallerySlider", {
+          items: source.slice(0, count),
+          label: "All creations",
+          onOpen: (item: Item) => opened.push(item.id),
+        });
+        const front = nodes.find(
+          (node) => node.props.testID === "gallery-front-creation",
+        )!;
+        const directChildren = (node: Node) =>
+          [node.props.children].flat(Infinity).filter(Boolean) as Node[];
+        const scene = nodes.find(
+          (node) => node.type === "View" && directChildren(node).includes(front),
+        )!;
+        const siblings = directChildren(scene);
+        const sides = siblings.filter((node) =>
+          node.props?.testID?.startsWith("gallery-neighbor-"),
+        );
+        assert.equal(sides.length, 2, "both real and empty side slots remain");
+        assert.equal(siblings.at(-1), front, "the front is painted last");
+        assert.equal(scene.props.style.transform, undefined);
+        assert.match(front.props.style.backgroundColor, /^#[\da-f]{6}$/i);
+        assert.equal(front.props.style.opacity, undefined);
+        assert.equal(front.props.style.transform, undefined);
+        assert.equal(front.props.style.overflow, "hidden");
+        for (const side of sides) {
+          assert.ok(side.props.style.zIndex < front.props.style.zIndex);
+          const transforms = side.props.style.transform;
+          if (platform === "ios") {
+            assert.ok(
+              transforms.every((transform: Record<string, unknown>) =>
+                Object.keys(transform).every((key) =>
+                  ["skewY", "scale"].includes(key),
+                ),
+              ),
+              "iOS neighbors cannot project a 3D layer across the front",
+            );
+            assert.ok(transforms.some((entry: any) => entry.scale < 1));
+            const angle = transforms.find((entry: any) => entry.skewY)?.skewY;
+            assert.ok(Number.parseFloat(angle) !== 0, "angled cards remain");
+            assert.equal(
+              Math.sign(Number.parseFloat(angle)),
+              side.props.testID.includes("left") ? 1 : -1,
+            );
+          } else {
+            assert.ok(
+              transforms.some((entry: any) => entry.perspective > 0),
+              "existing Android/web perspective is preserved",
+            );
+          }
+        }
+        assert.equal(nodes.filter((node) => node.type === "ReelMedia").length, 1);
+        assert.equal(
+          nodes.filter((node) => node.type === "GalleryStillPreview").length,
+          count - 1,
+        );
+        front.props.onPress();
+        assert.deepEqual(opened, ["front"]);
+        const next = nodes.find(
+          (node) => node.props.accessibilityLabel === "Next gallery creation",
+        );
+        assert.equal(!!next, count > 1, "navigation remains available");
+        if (next) {
+          next.props.onPress();
+          const advanced = ui.render("GallerySlider", {
+            items: source.slice(0, count),
+            label: "All creations",
+            onOpen() {},
+          });
+          assert.equal(
+            advanced.find((node) => node.type === "ReelMedia")!.props.item.id,
+            "next",
+          );
+        }
+      }
 });
 
 test("Front Gallery silhouettes stay opaque above neighboring images in narrow/wide layouts and both themes", () => {

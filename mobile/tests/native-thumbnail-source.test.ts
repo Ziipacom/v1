@@ -47,7 +47,7 @@ function fixture(
       },
     },
   );
-  Object.defineProperty(response, "url", { value: options.url || signed });
+  Object.defineProperty(response, "url", { value: options.url || uri });
   const requests: Request[] = [];
   const fetcher: NativeThumbnailFetcher = async (url, init) => {
     requests.push(new Request(url, init));
@@ -56,8 +56,25 @@ function fixture(
   return { response, fetcher, requests, canceled: () => cancelCalls };
 }
 
-test("protected source resolves a one-byte streaming response into an uncached signed source without account headers", async () => {
-  const f = fixture();
+function redirectFixture(
+  targetOptions: Parameters<typeof fixture>[0] = {},
+  location = signed,
+) {
+  const redirect = fixture({ status: 307, headers: { location } });
+  const target = fixture({ url: signed, ...targetOptions });
+  const requests: Request[] = [];
+  const fetcher: NativeThumbnailFetcher = async (url, init) => {
+    requests.push(new Request(url, init));
+    assert.ok(requests.length <= 2, "Only one explicit redirect may be read");
+    return requests.length === 1
+      ? redirect.fetcher(url, init)
+      : target.fetcher(url, init);
+  };
+  return { redirect, target, requests, fetcher };
+}
+
+test("protected source resolves one inspected redirect without sending account headers to storage", async () => {
+  const f = redirectFixture();
   const result = await prepareNativeThumbnailSource(
     source,
     freshSignal(),
@@ -65,16 +82,22 @@ test("protected source resolves a one-byte streaming response into an uncached s
     origins,
   );
   assert.deepEqual(result, { uri: signed, useCaching: false });
-  assert.equal(f.requests.length, 1);
+  assert.equal(f.requests.length, 2);
+  assert.equal(f.requests[0].url, uri);
   assert.equal(f.requests[0].headers.get("range"), "bytes=0-0");
   assert.equal(
     f.requests[0].headers.get("authorization"),
     "Bearer fixture.token",
   );
   assert.equal(f.requests[0].credentials, "omit");
-  assert.equal(f.requests[0].redirect, "follow");
+  assert.equal(f.requests[0].redirect, "manual");
+  assert.equal(f.requests[1].url, signed);
+  assert.deepEqual([...f.requests[1].headers], [["range", "bytes=0-0"]]);
+  assert.equal(f.requests[1].credentials, "omit");
+  assert.equal(f.requests[1].redirect, "error");
   assert.equal("headers" in (result as object), false);
-  assert.equal(f.response.bodyUsed, true);
+  assert.equal(f.redirect.canceled(), 1);
+  assert.equal(f.target.response.bodyUsed, true);
 });
 
 test("a same-source private range response preserves its original authorized source", async () => {
@@ -88,6 +111,8 @@ test("a same-source private range response preserves its original authorized sou
     ),
     source,
   );
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.requests[0].redirect, "manual");
 });
 
 test("bundled and local URI sources do no network work", async () => {
@@ -164,11 +189,44 @@ test("redirect destination cannot downgrade, leak credentials or escape signed R
       "22222222-2222-4222-8222-222222222222",
     ),
   ]) {
-    const f = fixture({ url });
+    const f = redirectFixture({}, url);
     await assert.rejects(
       prepareNativeThumbnailSource(source, freshSignal(), f.fetcher, origins),
     );
+    assert.equal(f.requests.length, 1);
+    assert.equal(f.redirect.canceled(), 1);
+  }
+});
+
+test("manual API responses cannot silently follow to another source", async () => {
+  const f = fixture({ url: signed });
+  await assert.rejects(
+    prepareNativeThumbnailSource(source, freshSignal(), f.fetcher, origins),
+  );
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.canceled(), 1);
+});
+
+test("only the expected private 307 hop is followed and storage cannot redirect again", async () => {
+  for (const status of [301, 302, 303, 308]) {
+    const f = fixture({ status, headers: { location: signed } });
+    await assert.rejects(
+      prepareNativeThumbnailSource(source, freshSignal(), f.fetcher, origins),
+    );
+    assert.equal(f.requests.length, 1);
     assert.equal(f.canceled(), 1);
+  }
+  for (const options of [
+    { status: 307, headers: { location: signed } },
+    { url: signed.replace("private/video.mp4", "private/other.mp4") },
+  ]) {
+    const f = redirectFixture(options);
+    await assert.rejects(
+      prepareNativeThumbnailSource(source, freshSignal(), f.fetcher, origins),
+    );
+    assert.equal(f.requests.length, 2);
+    assert.equal(f.requests[1].headers.has("authorization"), false);
+    assert.equal(f.target.canceled(), 1);
   }
 });
 
@@ -253,6 +311,24 @@ test("owner abort cancels a pending body and cannot publish a late capability", 
   assert.equal(f.requests[0].signal.aborted, true);
 });
 
+test("owner abort during storage validation cancels both hops without publishing the signed source", async () => {
+  const owner = new AbortController();
+  const f = redirectFixture({ neverFinish: true });
+  const pending = prepareNativeThumbnailSource(
+    source,
+    owner.signal,
+    f.fetcher,
+    origins,
+  );
+  while (!f.target.response.bodyUsed) await Promise.resolve();
+  owner.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(f.requests.length, 2);
+  assert.equal(f.redirect.canceled(), 1);
+  assert.equal(f.target.canceled(), 1);
+  assert.ok(f.requests.every((request) => request.signal.aborted));
+});
+
 test("late fetch responses after owner abort are canceled even if fetch ignores abort", async () => {
   const owner = new AbortController();
   const f = fixture();
@@ -303,6 +379,56 @@ test("five-second deadline rejects non-cooperative requests and aborts their sig
     expire();
     await assert.rejects(pending, { name: "TimeoutError" });
     assert.equal(requestedSignal.aborted, true);
+  } finally {
+    globalThis.setTimeout = realTimeout;
+    globalThis.clearTimeout = realClear;
+  }
+});
+
+test("the same five-second deadline bounds the storage hop and cancels its late response", async () => {
+  const realTimeout = globalThis.setTimeout;
+  const realClear = globalThis.clearTimeout;
+  let expire!: () => void;
+  let timers = 0;
+  let finish!: (response: Response) => void;
+  const first = fixture({ status: 307, headers: { location: signed } });
+  const late = fixture({ url: signed });
+  let requests = 0;
+  let storageSignal!: AbortSignal;
+  globalThis.setTimeout = ((fn: () => void, ms: number) => {
+    assert.equal(ms, nativeThumbnailSourceTimeoutMs);
+    timers++;
+    expire = fn;
+    return 1;
+  }) as unknown as typeof setTimeout;
+  globalThis.clearTimeout = (() => undefined) as typeof clearTimeout;
+  try {
+    const pending = prepareNativeThumbnailSource(
+      source,
+      freshSignal(),
+      async (url, init) => {
+        requests++;
+        if (requests === 1) return first.fetcher(url, init);
+        assert.equal(url, signed);
+        assert.deepEqual(init.headers, { Range: "bytes=0-0" });
+        assert.equal(init.redirect, "error");
+        storageSignal = init.signal;
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      },
+      origins,
+    );
+    while (requests < 2) await Promise.resolve();
+    assert.equal(timers, 1);
+    expire();
+    await assert.rejects(pending, { name: "TimeoutError" });
+    assert.equal(storageSignal.aborted, true);
+    finish(late.response);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(first.canceled(), 1);
+    assert.equal(late.canceled(), 1);
+    assert.equal(requests, 2);
   } finally {
     globalThis.setTimeout = realTimeout;
     globalThis.clearTimeout = realClear;

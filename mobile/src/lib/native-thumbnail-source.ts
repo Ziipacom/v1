@@ -27,7 +27,7 @@ export type NativeThumbnailFetcher = (
     headers: Record<string, string>;
     signal: AbortSignal;
     credentials: "omit";
-    redirect: "follow";
+    redirect: "manual" | "error";
   },
 ) => Promise<NativeThumbnailResponse>;
 
@@ -81,9 +81,10 @@ function requestCancellation(cancel: () => Promise<void>) {
 }
 
 /**
- * Resolve one authenticated private-media hop before Android's independent
- * metadata retriever opens it. Only one response byte is consumed. A signed R2
- * capability stays in memory and is never paired with the account's bearer.
+ * Resolve one authenticated private-media hop before a native thumbnail decoder
+ * opens it. Redirects are inspected before a second request, so the account's
+ * bearer never reaches storage. Only one media byte is consumed; the signed R2
+ * capability stays in memory and is never paired with account headers.
  */
 export async function prepareNativeThumbnailSource(
   source: VideoSource,
@@ -136,16 +137,19 @@ export async function prepareNativeThumbnailSource(
     if (signal.aborted || controller.signal.aborted)
       throw preparationError("AbortError");
   };
-  try {
-    assertActive();
+  const request = async (
+    requestUri: string,
+    headers: Record<string, string>,
+    redirect: "manual" | "error",
+  ) => {
     const pending = Promise.resolve().then(() => {
       assertActive();
-      return fetcher(uri, {
+      return fetcher(requestUri, {
         method: "GET",
-        headers: { Authorization: entries[0][1], Range: "bytes=0-0" },
+        headers,
         signal: controller.signal,
         credentials: "omit",
-        redirect: "follow",
+        redirect,
       });
     });
     // A late/non-cooperative fetch must not leave a private response streaming.
@@ -156,8 +160,31 @@ export async function prepareNativeThumbnailSource(
       },
       () => undefined,
     );
-    response = await Promise.race([pending, canceled]);
+    const next = await Promise.race([pending, canceled]);
     assertActive();
+    return next;
+  };
+  try {
+    response = await request(
+      uri,
+      { Authorization: entries[0][1], Range: "bytes=0-0" },
+      "manual",
+    );
+    // Manual fetch must expose the original response. Never trust an already
+    // followed redirect or allow an authenticated request to pick a new origin.
+    if (response.url !== uri) throw preparationError();
+    let finalUri = uri;
+    if (response.status === 307) {
+      const location = response.headers.get("location");
+      if (!location || !isSignedR2Url(location)) throw preparationError();
+      const redirectBody = response.body;
+      if (redirectBody) requestCancellation(() => redirectBody.cancel());
+      response = undefined;
+      finalUri = location;
+      response = await request(finalUri, { Range: "bytes=0-0" }, "error");
+      // The signed storage capability gets one request and cannot redirect.
+      if (response.url !== finalUri) throw preparationError();
+    }
     const range = response.headers.get("content-range");
     const rangeMatch = /^bytes 0-0\/([1-9]\d*)$/.exec(range || "");
     const length = response.headers.get("content-length");
@@ -176,9 +203,6 @@ export async function prepareNativeThumbnailSource(
       !response.body
     )
       throw preparationError();
-    const finalUrl = urlWithoutCredentials(response.url);
-    const sameSource = response.url === uri;
-    if (!sameSource && !isSignedR2Url(response.url)) throw preparationError();
     reader = response.body.getReader();
     let bytes = 0;
     for (;;) {
@@ -191,7 +215,9 @@ export async function prepareNativeThumbnailSource(
     }
     if (bytes !== 1) throw preparationError();
     assertActive();
-    return sameSource ? source : { uri: finalUrl.href, useCaching: false };
+    return finalUri === uri
+      ? source
+      : { uri: urlWithoutCredentials(finalUri).href, useCaching: false };
   } catch (error) {
     throw preparationError(
       error instanceof Error &&

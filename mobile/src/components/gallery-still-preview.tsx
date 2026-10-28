@@ -479,19 +479,19 @@ type ThumbnailProps = {
 function VideoThumbnailJob(props: ThumbnailProps) {
   return Platform.OS === "web" ? (
     <WebThumbnailJob {...props} />
-  ) : Platform.OS === "android" &&
+  ) : (Platform.OS === "android" || Platform.OS === "ios") &&
     typeof props.source === "object" &&
     props.source !== null &&
     "uri" in props.source &&
     /^https?:\/\//i.test(props.source.uri || "") ? (
-    <AndroidThumbnailJob {...props} />
+    <PreparedNativeThumbnailJob {...props} />
   ) : (
     <NativeThumbnailJob {...props} />
   );
 }
 
-/** Resolve the private API hop before Android opens its separate metadata decoder. */
-function AndroidThumbnailJob(props: ThumbnailProps) {
+/** Native image generators should open the resolved storage source directly. */
+function PreparedNativeThumbnailJob(props: ThumbnailProps) {
   const latest = useRef(props);
   latest.current = props;
   const [prepared, setPrepared] = useState<{

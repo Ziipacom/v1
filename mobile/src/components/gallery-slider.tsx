@@ -298,7 +298,7 @@ export function GallerySlider({
     // captures away immediately, releasing their side owner before it painted.
     // Loading remains bounded from the original mount, even after retries.
     const deadline = stillPending
-      ? window.startedAt + (Platform.OS === "android" ? 32000 : 22000)
+      ? window.startedAt + (Platform.OS === "web" ? 22000 : 32000)
       : window.settledAt! + 7000;
     const timer = setTimeout(() => advance(1), Math.max(0, deadline - now));
     return () => clearTimeout(timer);
@@ -363,11 +363,20 @@ export function GallerySlider({
               borderColor: "#82659F",
               opacity: neighbor ? 0.82 : 0.58,
               zIndex: 1,
-              transform: [
-                { perspective: 900 },
-                { rotateY: offset < 0 ? "17deg" : "-17deg" },
-                { scale: 0.94 },
-              ],
+              // Perspective-rotated iOS neighbors can cross the flat front
+              // card despite their lower zIndex. Keep the angled silhouette
+              // in one plane so neighbors cannot cover its copy.
+              transform:
+                Platform.OS === "ios"
+                  ? [
+                      { skewY: offset < 0 ? "3deg" : "-3deg" },
+                      { scale: 0.94 },
+                    ]
+                  : [
+                      { perspective: 900 },
+                      { rotateY: offset < 0 ? "17deg" : "-17deg" },
+                      { scale: 0.94 },
+                    ],
             };
             return neighbor ? (
               <Pressable

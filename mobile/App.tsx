@@ -8,6 +8,7 @@ import { ZiipaProvider } from "./src/provider";
 import { Navigation } from "./src/navigation";
 import { ScrollbarStyle } from "./src/components/scrollbar-style";
 import { PlatformNotice } from "./src/components/platform-notice";
+import { AppFrame } from "./src/components/app-frame";
 import { DevicePreferencesProvider } from "./src/components/device-preferences";
 import { AppearanceProvider, AppearanceChrome } from "./src/components/appearance-provider";
 
@@ -68,10 +69,9 @@ export default function App() {
         <ScrollbarStyle />
         <AppearanceChrome />
         <ZiipaProvider>
-          <View style={{ flex: 1 }}>
-            <PlatformNotice />
+          <AppFrame notice={<PlatformNotice />}>
             <Navigation />
-          </View>
+          </AppFrame>
         </ZiipaProvider>
       </SafeAreaProvider>
       </AppearanceProvider>

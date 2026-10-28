@@ -19,7 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import { color, font, styles, themedStyles, useTheme } from "../theme";
-import { conceptsEnabled } from "../lib/config";
+import { conceptsEnabled, iosLimitedTestflight } from "../lib/config";
 import type { Category } from "../lib/types";
 import { useDesktopLayout } from "./desktop-layout";
 
@@ -34,7 +34,9 @@ export const worlds: {
   { id: "music", title: "Music & Film", icon: Music2 },
   { id: "nft", title: "NFTs", icon: Hexagon, concept: true },
   { id: "store", title: "Store", icon: Store, concept: true },
-].filter((w) => conceptsEnabled || !w.concept) as {
+// Category navigation is distinct from enabling a service. Keep the iPhone
+// beta's menu/dock complete; wallet/import actions retain their own guards.
+].filter((w) => conceptsEnabled || iosLimitedTestflight || !w.concept) as {
   id: Category;
   title: string;
   icon: LucideIcon;

@@ -44,6 +44,130 @@ test("profile read failure retains confirmed images; late reads cannot replace a
   assert.equal(latest.avatar_media_id, "written");
 });
 
+function syncReads() {
+  let token = "owner";
+  const applied: ProfileImages[] = [];
+  const reads: {
+    token: string;
+    resolve: (profile: ProfileImages) => void;
+    reject: (error: Error) => void;
+  }[] = [];
+  const sync = createProfileImageSync({
+    currentToken: () => token,
+    read: (owner) =>
+      new Promise<ProfileImages>((resolve, reject) => {
+        reads.push({ token: owner, resolve, reject });
+      }),
+    apply: (profile) => {
+      applied.push(profile);
+    },
+  });
+  return {
+    sync,
+    reads,
+    applied,
+    account(next: string) {
+      token = next;
+    },
+  };
+}
+
+test("concurrent profile refreshes share only their pending read, not a successful cached result", async () => {
+  const { sync, reads, applied } = syncReads();
+  const first = sync.refresh("owner");
+  assert.equal(sync.refresh("owner"), first);
+  assert.equal(sync.refresh("owner"), first);
+  assert.equal(reads.length, 1);
+  reads[0].resolve(images("current"));
+  assert.equal(await first, true);
+  assert.equal(applied.length, 1);
+  const next = sync.refresh("owner");
+  assert.notEqual(next, first);
+  assert.equal(reads.length, 2);
+  reads[1].resolve(images("changed-on-other-device"));
+  await next;
+  assert.equal(applied.at(-1)?.avatar_media_id, "changed-on-other-device");
+});
+
+test("shared refresh failure keeps confirmed artwork and permits a new request", async () => {
+  const { sync, reads, applied } = syncReads();
+  sync.record(images("confirmed"), "owner");
+  const first = sync.refresh("owner");
+  const second = sync.refresh("owner");
+  const failedFirst = assert.rejects(first, /offline/);
+  const failedSecond = assert.rejects(second, /offline/);
+  reads[0].reject(new Error("offline"));
+  await Promise.all([failedFirst, failedSecond]);
+  assert.equal(reads.length, 1);
+  assert.deepEqual(
+    applied.map((profile) => profile.avatar_media_id),
+    ["confirmed"],
+  );
+  const retry = sync.refresh("owner");
+  assert.equal(reads.length, 2);
+  reads[1].resolve(images("restored"));
+  await retry;
+  assert.equal(applied.at(-1)?.avatar_media_id, "restored");
+});
+
+test("a confirmed artwork write prevents sharing or applying a read from before the mutation", async () => {
+  const { sync, reads, applied } = syncReads();
+  const before = sync.refresh("owner");
+  sync.record(images("saved"), "owner");
+  const after = sync.refresh("owner");
+  assert.notEqual(after, before);
+  assert.equal(reads.length, 2);
+  reads[1].resolve(images("saved-current"));
+  await after;
+  reads[0].resolve(images("before-save"));
+  assert.equal(await before, false);
+  assert.deepEqual(
+    applied.map((profile) => profile.avatar_media_id),
+    ["saved", "saved-current"],
+  );
+});
+
+test("forced refresh and bootstrap boundaries start fresh reads and retain request ordering", async () => {
+  for (const boundary of ["force", "bootstrap"] as const) {
+    const { sync, reads, applied } = syncReads();
+    const before = sync.refresh("owner");
+    const bootstrap = boundary === "bootstrap" ? sync.beginBootstrap() : null;
+    const after = sync.refresh("owner", { force: boundary === "force" });
+    assert.notEqual(after, before);
+    assert.equal(sync.refresh("owner"), after);
+    assert.equal(reads.length, 2);
+    if (bootstrap !== null)
+      assert.equal(sync.acceptBootstrap(bootstrap, "owner"), true);
+    reads[1].resolve(images("newer-read"));
+    await after;
+    reads[0].resolve(images("older-read"));
+    assert.equal(await before, false);
+    assert.deepEqual(
+      applied.map((profile) => profile.avatar_media_id),
+      ["newer-read"],
+    );
+  }
+});
+
+test("an old account's completion cannot apply artwork or clear a new account's pending read", async () => {
+  const { sync, reads, applied, account } = syncReads();
+  const old = sync.refresh("owner");
+  account("other");
+  sync.invalidate();
+  assert.equal(await sync.refresh("owner"), false);
+  const current = sync.refresh("other");
+  reads[0].resolve(images("old-owner"));
+  assert.equal(await old, false);
+  assert.equal(sync.refresh("other"), current);
+  assert.equal(reads.length, 2);
+  reads[1].resolve(images("other-owner"));
+  await current;
+  assert.deepEqual(
+    applied.map((profile) => profile.avatar_media_id),
+    ["other-owner"],
+  );
+});
+
 /** Execute the actual provider with an in-memory account server and Activity events. */
 function providerUI() {
   const code = ts.transpileModule(
@@ -326,6 +450,35 @@ test("cold app/update hydration and background resume use saved server artwork f
       ui.calls.filter((call) => call.path === "/api/creator/profile").length,
       1,
     );
+    assert.ok(ui.calls.every((call) => call.body === undefined));
+  } finally {
+    ui.unmount();
+  }
+});
+
+test("screen-focus and foreground profile requests share one real provider API read", async () => {
+  const ui = providerUI();
+  try {
+    const value = await restored(ui);
+    let finish!: (profile: ProfileImages) => void;
+    ui.deferProfile(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const focusRead = value.refreshProfileImages();
+    ui.activity("background");
+    ui.activity("active");
+    const repeatedFocus = value.refreshProfileImages();
+    assert.equal(
+      ui.calls.filter((call) => call.path === "/api/creator/profile").length,
+      1,
+    );
+    finish(images("shared-current"));
+    await Promise.all([focusRead, repeatedFocus]);
+    await tick();
+    assert.equal(ui.render().data.profile.avatar_media_id, "shared-current");
     assert.ok(ui.calls.every((call) => call.body === undefined));
   } finally {
     ui.unmount();
