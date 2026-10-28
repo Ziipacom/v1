@@ -313,7 +313,7 @@ export function StudioScreen({
               label={`Browse ${world?.title}`}
               size={42}
               onPress={() =>
-                navigation.navigate("Main", { category: selected })
+                selected === "store" ? navigation.navigate("Store") : navigation.navigate("Main", { category: selected })
               }
             >
               <WorldGlyph id={selected} size={21} media />

@@ -242,5 +242,7 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
         'reward_distributions': export_settlement_data(session, user.id),
         'administration': export_admin_account_data(session, user.id),
         'public_gallery': export_gallery(session, user.id),
+        'store': __import__('marketplace').export_store(session, user.id),
+        'services': __import__('commerce_billing').export_billing(session, user.id),
         'comments': [{'id': r.id, 'item_id': r.item_id, 'body': r.body, 'created_at': r.created_at.isoformat()} for r in session.scalars(select(CreatorComment).where(CreatorComment.owner_id == user.id))],
     }

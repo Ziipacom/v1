@@ -438,3 +438,8 @@ app.include_router(platform_router)
 from public_gallery import owner_router as gallery_owner_router, public_router as public_gallery_router
 app.include_router(gallery_owner_router)
 app.include_router(public_gallery_router)
+from marketplace import router as store_router
+app.include_router(store_router)
+from commerce_billing import router as services_router, webhooks as billing_webhooks
+app.include_router(services_router)
+app.include_router(billing_webhooks)

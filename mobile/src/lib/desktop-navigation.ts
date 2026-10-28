@@ -31,6 +31,7 @@ const screens = {
   messages: "Inbox",
   notifications: "NotificationMessages",
   profile: "Profile",
+  store: "Store",
   updates: "Notifications",
   settings: "Settings",
   admin: "Administration",
@@ -101,6 +102,15 @@ function project(
   };
   const id = (key: string) => put(key, identifier(input[key]));
   switch (view) {
+    case "store":
+      put("tab", choice(input.tab, ["browse", "sell", "services"]));
+      if (input.sellerId !== undefined) {
+        if (typeof input.sellerId === "number" && Number.isSafeInteger(input.sellerId) && input.sellerId > 0)
+          params.sellerId = input.sellerId;
+        else if (typeof input.sellerId === "string" && /^[1-9]\d{0,9}$/.test(input.sellerId)) params.sellerId = Number(input.sellerId);
+        else valid = false;
+      }
+      break;
     case "explore":
     case "studio":
     case "library":

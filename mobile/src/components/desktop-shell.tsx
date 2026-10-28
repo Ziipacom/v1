@@ -37,6 +37,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Store,
   UserRound,
   Wallet,
   Workflow,
@@ -334,6 +335,12 @@ export function DesktopShell({
     },
   ];
   const account: NavItem[] = [
+    {
+      label: "Store & services",
+      Icon: Store,
+      name: "Store",
+      active: route.name === "Store",
+    },
     {
       label: "Wallet & rewards",
       Icon: Wallet,

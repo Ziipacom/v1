@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "currency": "USD",
+  "pricing_status": "draft",
+  "plans": [
+    {"id":"free","name":"Free","monthly_price_cents":0,"storage_gib":1,"summary":"Create, edit, publish and explore with the existing free allowances."},
+    {"id":"creator","name":"Creator","monthly_price_cents":799,"storage_gib":10,"summary":"Proposed: more storage, listing capacity and AI assistance."},
+    {"id":"studio","name":"Studio","monthly_price_cents":1999,"storage_gib":50,"summary":"Proposed: larger libraries and expanded creation and automation allowances."},
+    {"id":"storage_10","name":"10 GB storage","monthly_price_cents":199,"storage_gib":10,"summary":"Proposed storage add-on. The highest storage allowance applies; packages do not stack."},
+    {"id":"storage_50","name":"50 GB storage","monthly_price_cents":499,"storage_gib":50,"summary":"Proposed storage add-on. Existing files remain when an allowance expires; new uploads use the current limit."}
+  ],
+  "features": [
+    {"id":"storage","name":"Media storage","cost_driver":"Stored bytes, operations and delivery bandwidth","free":"Current account cap: 1 GiB; per-file cap: 100 MB","upgrade":"10 / 50 GiB account capacity","status":"available","activation":"Verified subscription, project capacity and provider budget approval"},
+    {"id":"listing_copy","name":"Create for Me","cost_driver":"Text-model inference","free":"Four requests per ten minutes, shared provider daily cap","upgrade":"Larger monthly allowance after cost review","status":"available","activation":"Explicit text consent; inference must be ready"},
+    {"id":"music","name":"AI music composition","cost_driver":"Language-model inference and generated-audio storage","free":"Existing short instrumental composer and offline option","upgrade":"Longer arrangements and larger generation allowance","status":"limited","activation":"Provider capacity, expanded score validation and measured cost"},
+    {"id":"captions","name":"Automatic captions","cost_driver":"Speech inference, source-audio processing and storage","free":"Existing bounded speech-to-caption workflow","upgrade":"More transcription minutes","status":"limited","activation":"Metered minutes and provider budget"},
+    {"id":"narration","name":"AI voice narration","cost_driver":"Speech generation and audio storage","free":"Only configured, available voices","upgrade":"More narration characters and voice choices","status":"provider_required","activation":"Working speech provider and per-character budget"},
+    {"id":"voice_clone","name":"Voice cloning","cost_driver":"Voice-model training, consent verification and inference","free":"No live clone provider","upgrade":"Opt-in verified own-voice cloning","status":"unavailable","activation":"Consent, abuse controls, working provider and measured cost; not sold yet"},
+    {"id":"rendering","name":"Video exports","cost_driver":"Worker CPU/GPU time, output storage and delivery","free":"Production renderer recovery pending","upgrade":"More render minutes and higher output limits","status":"unavailable","activation":"Worker recovery, acceptance tests and capacity; not sold yet"},
+    {"id":"automation","name":"Agentic automation","cost_driver":"Inference, scheduled jobs, retries and provider operations","free":"Interactive planning and current manual tools","upgrade":"More active workflows and execution allowance","status":"limited","activation":"Healthy workflow workers, explicit approvals and metered jobs"},
+    {"id":"imports","name":"Network imports and publishing","cost_driver":"API quotas, polling, token management and delivery","free":"Only approved, enabled provider integrations","upgrade":"More connected accounts and sync frequency","status":"limited","activation":"Provider review and permissions; payment cannot bypass approval"},
+    {"id":"live","name":"Live streaming and recordings","cost_driver":"Transcoding, streaming minutes, recording storage and egress","free":"Configured provider allowances only","upgrade":"More live and recording minutes","status":"limited","activation":"Measured provider minutes and a hard project spending cap"},
+    {"id":"product_art","name":"Product display artwork","cost_driver":"Uploaded image storage; optional future image-model inference","free":"Editable photo, title, descriptor and price overlays","upgrade":"Optional generated backgrounds after provider setup","status":"available","activation":"Seller-approved facts; original photo remains identifiable"},
+    {"id":"commerce","name":"Creator storefronts","cost_driver":"Payment processing, tax handling, payouts, disputes and fulfillment","free":"Storefront and draft listings","upgrade":"Higher listing limits and optional seller tools","status":"checkout_required","activation":"Seller onboarding, verified payments, delivery and marketplace terms"},
+    {"id":"web3","name":"IPFS and minting","cost_driver":"Pinning storage, RPC requests and network fees","free":"Configured testnet tools only","upgrade":"More pinning capacity after launch review","status":"limited","activation":"Contract deployment and wallet confirmation; no ownership guarantee"},
+    {"id":"notifications","name":"Notifications and messaging","cost_driver":"Email, push delivery, message storage and abuse prevention","free":"Current in-app updates and available messaging","upgrade":"Optional larger campaign allowance","status":"limited","activation":"Provider configuration, recipient consent and delivery limits"}
+  ]
+}

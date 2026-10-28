@@ -535,6 +535,7 @@ export function WatchScreen({
       <CategoryDock
         selected={category}
         onSelect={(id) => {
+          if (id === "store") { navigation.navigate("Store"); return; }
           navigation.setParams({ itemId: undefined, category: id });
           setCategory(id);
           setIndex(0);

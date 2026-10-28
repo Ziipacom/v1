@@ -75,7 +75,8 @@ def usage(session, owner_id: int | None, *, exclude_reservation_id=None):
 
 
 def available_bytes(session, owner_id: int, *, exclude_reservation_id=None):
-    owner_remaining = config.owner_max_bytes - usage(session, owner_id, exclude_reservation_id=exclude_reservation_id)
+    from commerce_billing import storage_limit
+    owner_remaining = storage_limit(session, owner_id, config.owner_max_bytes) - usage(session, owner_id, exclude_reservation_id=exclude_reservation_id)
     if owner_remaining < 0:
         raise MediaAdmissionError(413, 'Account media storage limit reached. This upload or export is not admitted.')
     if config.project_max_bytes:

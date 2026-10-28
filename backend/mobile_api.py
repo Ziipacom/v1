@@ -247,6 +247,10 @@ async def delete_account(data: DeleteAccount, user: User = Depends(current_user)
     delete_rewards_data(session, user.id)
     from public_gallery import delete_gallery
     delete_gallery(session, user.id)
+    from marketplace import delete_store
+    from commerce_billing import delete_billing
+    delete_store(session, user.id)
+    delete_billing(session, user.id)
     from social_read_imports import delete_account_metadata
     delete_account_metadata(session, user.id)
     item_ids = list(session.scalars(select(CreatorItem.id).where(CreatorItem.owner_id == user.id)))

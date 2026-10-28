@@ -190,6 +190,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
       },
     });
   const forgetSession = useCallback(async () => {
+    void import("./lib/service-purchases").then(module => module.clearPurchaseIdentity()).catch(() => {});
     webGalleryStillCache.clear();
     setStillCacheLease(null);
     clearDraftMedia();

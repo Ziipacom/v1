@@ -19,6 +19,7 @@ import { WelcomeScreen, LoginScreen } from "./screens/auth";
 import { DiscoverScreen } from "./screens/discovery";
 import { StudioScreen } from "./screens/studio";
 import { ProfileScreen } from "./screens/profile";
+import { StoreScreen } from "./screens/store";
 import { MediaOSScreen } from "./screens/media-os";
 import { WatchScreen } from "./screens/watch";
 import { UtilityScreen } from "./screens/utility";
@@ -276,6 +277,11 @@ function NavigationContent() {
                   headerShown: false,
                   title: "Creator Studio · Ziipa",
                 }}
+              />
+              <Stack.Screen
+                name="Store"
+                component={StoreScreen}
+                options={{ title: "Ziipa Store" }}
               />
               <Stack.Screen
                 name="Profile"

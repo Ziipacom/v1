@@ -19,7 +19,7 @@ export function isIosLimitedBeta(platform: string, scope: string | undefined) {
 }
 
 export type InternalBetaAction =
-  "registration" | "wallet" | "network-import" | "remote-push";
+  "registration" | "wallet" | "network-import" | "remote-push" | "purchase";
 export function assertInternalBetaAction(
   locked: boolean,
   action: InternalBetaAction,
@@ -34,6 +34,8 @@ export function assertInternalBetaAction(
       "New network connections, authorization and imports are unavailable in this private iPhone beta. Existing authorizations can still be disconnected.",
     "remote-push":
       "Remote push enrollment is unavailable in this private iPhone beta. In-app notifications and privacy preferences remain available.",
+    purchase:
+      "Purchases are unavailable in this limited iPhone beta. Proposed service packages can be reviewed without buying.",
   }[action];
   throw new Error(message);
 }
@@ -51,6 +53,8 @@ export function assertInternalBetaRequest(
   if (/%|\\|\/\/|[\x00-\x20]/.test(route) || /\/\.{1,2}(?:\/|$)/.test(route))
     throw new Error("This private beta cannot use an ambiguous API route.");
   const canonical = route.replace(/\/$/, "").toLowerCase();
+  if (method.toUpperCase() !== "GET" && canonical === "/api/services/purchase-context")
+    assertInternalBetaAction(true, "purchase");
   if (/^\/api\/(?:mobile\/)?auth\/register$/.test(canonical))
     assertInternalBetaAction(true, "registration");
   if (

@@ -581,7 +581,7 @@ export function ProfileScreen({
       </ScrollView>
       <CategoryDock
         selected={category}
-        onSelect={setCategory}
+        onSelect={(id) => id === "store" ? navigation.navigate("Store") : setCategory(id)}
         onInbox={() => navigation.navigate("Utility", { kind: "inbox" })}
       />
       {sheet && (

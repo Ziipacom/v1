@@ -176,6 +176,7 @@ const config: ExpoConfig = {
     "expo-asset",
     "expo-font",
     "expo-image",
+    "./plugins/with-commerce.cjs",
   ],
   extra: {
     ...(projectId ? { eas: { projectId } } : {}),

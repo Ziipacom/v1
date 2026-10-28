@@ -50,7 +50,7 @@ function nodes(value: unknown): Element[] {
 test("limited iPhone beta keeps every category in the shared menu and bottom dock without enabling concepts", () => {
   const ui = categoryUI(true);
   assert.deepEqual(ui.worlds.map((world: any) => world.id), ["games", "live", "music", "nft", "store"]);
-  assert.deepEqual(ui.worlds.filter((world: any) => world.concept).map((world: any) => world.id), ["live", "nft", "store"]);
+  assert.deepEqual(ui.worlds.filter((world: any) => world.concept).map((world: any) => world.id), ["live", "nft"]);
   const selected: string[] = [];
   let inbox = 0;
   const rendered = ui.CategoryDock({ selected: "all", onSelect: (id: string) => selected.push(id), onInbox: () => inbox++ });
@@ -64,7 +64,7 @@ test("limited iPhone beta keeps every category in the shared menu and bottom doc
   }
 });
 
-test("ordinary release and concept-preview category policies remain unchanged", () => {
-  assert.deepEqual(categoryUI(false).worlds.map((world: any) => world.id), ["games", "music"]);
+test("Store is available in ordinary releases while unimplemented concepts remain gated", () => {
+  assert.deepEqual(categoryUI(false).worlds.map((world: any) => world.id), ["games", "music", "store"]);
   assert.deepEqual(categoryUI(false, true).worlds.map((world: any) => world.id), ["games", "live", "music", "nft", "store"]);
 });

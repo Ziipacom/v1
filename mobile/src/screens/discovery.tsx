@@ -67,6 +67,7 @@ function MobileDiscoverScreen({
     query,
   );
   function select(id: Category) {
+    if (id === "store") { navigation.navigate("Store"); return; }
     navigation.setParams({ category: id });
   }
   function reset() {

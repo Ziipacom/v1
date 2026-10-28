@@ -33,7 +33,7 @@ export const worlds: {
   { id: "live", title: "Live Feed", icon: Video, concept: true },
   { id: "music", title: "Music & Film", icon: Music2 },
   { id: "nft", title: "NFTs", icon: Hexagon, concept: true },
-  { id: "store", title: "Store", icon: Store, concept: true },
+  { id: "store", title: "Store", icon: Store },
 // Category navigation is distinct from enabling a service. Keep the iPhone
 // beta's menu/dock complete; wallet/import actions retain their own guards.
 ].filter((w) => conceptsEnabled || iosLimitedTestflight || !w.concept) as {
