@@ -32,6 +32,7 @@ import { color, font, styles, useTheme } from "../theme";
 import { Action, Empty, Field, Notice, Pill } from "../components/ui";
 import { FloatButton, Sheet } from "../components/floating";
 import { useDesktopLayout } from "../components/desktop-layout";
+import { Disclosure } from "../components/disclosure";
 import { uploadMedia } from "../lib/api";
 import { iosLimitedTestflight } from "../lib/config";
 import { useStorePhotoSource } from "../lib/store-photo-source";
@@ -69,7 +70,10 @@ function ProductDisplay({
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [path, session?.access_token]);
   useEffect(() => {
-    if (source) { setFailed(false); return; }
+    if (source) {
+      setFailed(false);
+      return;
+    }
     if (!path) return;
     const timer = setTimeout(() => setFailed(true), 15000);
     return () => clearTimeout(timer);
@@ -147,16 +151,20 @@ function Toggle({
   value,
   title,
   onChange,
+  disabled = false,
 }: {
   value: boolean;
   title: string;
   onChange: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       onPress={onChange}
+      disabled={disabled}
       accessibilityRole="checkbox"
-      accessibilityState={{ checked: value }}
+      accessibilityState={{ checked: value, disabled }}
+      aria-checked={value}
       style={{ flexDirection: "row", gap: 10, alignItems: "center", minHeight: 46 }}
     >
       <View
@@ -216,7 +224,9 @@ function ScopedStoreScreen({ navigation, route }: NativeStackScreenProps<RootSta
   const [photoPaths, setPhotoPaths] = useState<Record<string, string>>({});
   const [purchaseContext, setPurchaseContext] = useState<PurchaseContext | null>(null);
   const [options, setOptions] = useState<PurchaseOption[]>([]);
-  const [showFeatures, setShowFeatures] = useState(false);
+  const [openSellPanel, setOpenSellPanel] = useState<string | null>(null);
+  const [openServicePanel, setOpenServicePanel] = useState<string | null>(null);
+  const [openFeature, setOpenFeature] = useState<string | null>(null);
   const scope = useRef({ token: session?.access_token, alive: true });
   scope.current.token = session?.access_token;
   const operation = useRef(false);
@@ -234,26 +244,30 @@ function ScopedStoreScreen({ navigation, route }: NativeStackScreenProps<RootSta
   const validFor = (token: string | undefined) =>
     scope.current.alive && scope.current.token === token;
 
-  const loadAccount = useCallback(async () => {
-    const token = session?.access_token;
-    const results = await Promise.allSettled([
-      api<StoreMine>("/api/store/mine"),
-      api<Services>("/api/services/catalog"),
-    ]);
-    if (!validFor(token)) return;
-    if (results[0].status === "fulfilled") {
-      setMine(results[0].value);
-      setStore(results[0].value.storefront);
-    }
-    if (results[1].status === "fulfilled") setServices(results[1].value);
-    for (const result of results)
-      if (result.status === "rejected")
-        setError(
-          result.reason instanceof Error
-            ? result.reason.message
-            : "Store could not load. Retry shortly.",
-        );
-  }, [api, session?.access_token]);
+  const loadAccount = useCallback(
+    async (reloadStore = false) => {
+      const token = session?.access_token;
+      const results = await Promise.allSettled([
+        api<StoreMine>("/api/store/mine"),
+        api<Services>("/api/services/catalog"),
+      ]);
+      if (!validFor(token)) return;
+      if (results[0].status === "fulfilled") {
+        setMine(results[0].value);
+        const confirmedStore = results[0].value.storefront;
+        setStore((current) => (reloadStore || current === null ? confirmedStore : current));
+      }
+      if (results[1].status === "fulfilled") setServices(results[1].value);
+      for (const result of results)
+        if (result.status === "rejected")
+          setError(
+            result.reason instanceof Error
+              ? result.reason.message
+              : "Store could not load. Retry shortly.",
+          );
+    },
+    [api, session?.access_token],
+  );
   const loadMarket = useCallback(
     async (after?: number) => {
       if (!session || guest) return;
@@ -331,8 +345,9 @@ function ScopedStoreScreen({ navigation, route }: NativeStackScreenProps<RootSta
       if (validFor(token)) setBusy("");
     }
   }
-  const update = <K extends keyof ListingDraft>(key: K, value: ListingDraft[K]) =>
-    setDraft((previous) => ({ ...previous, [key]: value }));
+  const update = <K extends keyof ListingDraft>(key: K, value: ListingDraft[K]) => {
+    if (!operation.current) setDraft((previous) => ({ ...previous, [key]: value }));
+  };
   const switchTab = (value: typeof tab) => {
     setTab(value);
     navigation.setParams({ tab: value });
@@ -449,19 +464,22 @@ function ScopedStoreScreen({ navigation, route }: NativeStackScreenProps<RootSta
             onPress={() => {
               setError("");
               setPhotoEpoch((value) => value + 1);
-              void loadAccount();
+              void loadAccount(true);
               void loadMarket();
             }}
           />
         </View>
-        <View accessibilityRole="tablist" style={{ flexDirection: "row", gap: 8 }}>
+        <View
+          accessibilityRole="tablist"
+          style={{ flexDirection: "row", borderBottomWidth: 1, borderBottomColor: color.border }}
+        >
           {(
             [
-              { id: "browse", title: "Marketplace", Icon: ShoppingBag },
-              { id: "sell", title: "Sell", Icon: Store },
-              { id: "services", title: "Services", Icon: Sparkles },
+              { id: "browse", title: "Marketplace" },
+              { id: "sell", title: "Sell" },
+              { id: "services", title: "Services" },
             ] as const
-          ).map(({ id, title, Icon }) => (
+          ).map(({ id, title }) => (
             <Pressable
               key={id}
               accessibilityRole="tab"
@@ -469,23 +487,18 @@ function ScopedStoreScreen({ navigation, route }: NativeStackScreenProps<RootSta
               onPress={() => switchTab(id)}
               style={{
                 flex: 1,
-                flexDirection: "row",
-                gap: 7,
-                minHeight: 48,
-                justifyContent: "center",
+                minHeight: 46,
                 alignItems: "center",
-                borderRadius: 28,
-                backgroundColor: tab === id ? color.purple : color.panel,
-                borderWidth: 1,
-                borderColor: color.border,
+                justifyContent: "center",
+                borderBottomWidth: 2,
+                borderBottomColor: tab === id ? color.purple : "transparent",
               }}
             >
-              <Icon size={18} color={tab === id ? "#FFF" : color.text} />
               <Text
                 style={{
-                  fontSize: 13,
-                  fontFamily: font.semibold,
-                  color: tab === id ? "#FFF" : color.text,
+                  fontSize: 15,
+                  fontFamily: tab === id ? font.semibold : font.regular,
+                  color: tab === id ? color.text : color.muted,
                 }}
               >
                 {title}
@@ -540,6 +553,7 @@ function ScopedStoreScreen({ navigation, route }: NativeStackScreenProps<RootSta
             <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 9 }}>
               <View style={{ flex: 1 }}>
                 <Field
+                  editable={!busy}
                   label="Search the marketplace"
                   placeholder="Music, films, art, merch…"
                   value={query}
@@ -594,6 +608,7 @@ function ScopedStoreScreen({ navigation, route }: NativeStackScreenProps<RootSta
                 <View style={{ flexDirection: "row", gap: 12 }}>
                   <View style={{ flex: 1 }}>
                     <Field
+                      editable={!busy}
                       label="Min USD"
                       value={minimum}
                       onChangeText={setMinimum}
@@ -602,6 +617,7 @@ function ScopedStoreScreen({ navigation, route }: NativeStackScreenProps<RootSta
                   </View>
                   <View style={{ flex: 1 }}>
                     <Field
+                      editable={!busy}
                       label="Max USD"
                       value={maximum}
                       onChangeText={setMaximum}
@@ -683,493 +699,657 @@ function ScopedStoreScreen({ navigation, route }: NativeStackScreenProps<RootSta
 
         {tab === "sell" && (
           <>
-            <View style={group}>
-              <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
-                <Store color={color.lime} size={24} />
-                <Text style={[styles.heading, { fontSize: 23 }]}>Your mini storefront</Text>
+            <View style={styles.between}>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={[styles.heading, { fontSize: 23 }]}>Your storefront</Text>
+                <Text style={styles.small}>
+                  {draft.title || "Build a listing, one step at a time."}
+                </Text>
               </View>
-              {store ? (
-                <>
-                  <Field
-                    label="Store name"
-                    value={store.name}
-                    maxLength={70}
-                    onChangeText={(name) => setStore({ ...store, name })}
-                  />
-                  <Field
-                    label="About your store"
-                    value={store.description}
-                    maxLength={500}
-                    multiline
-                    onChangeText={(description) => setStore({ ...store, description })}
-                  />
-                  <Toggle
-                    value={store.enabled}
-                    title="Show my published products in Ziipa Store"
-                    onChange={() => setStore({ ...store, enabled: !store.enabled })}
-                  />
-                  <Action
-                    title="Save storefront"
-                    icon={Check}
-                    busy={busy === "Saving storefront"}
-                    disabled={!!busy}
-                    secondary
-                    onPress={() =>
-                      void run("Saving storefront", async () => {
-                        const saved = await api<Storefront>("/api/store/storefront", store);
-                        setStore(saved);
-                        await loadAccount();
-                        setMessage("Storefront saved to your account.");
-                      })
-                    }
-                  />
-                </>
-              ) : (
-                <Action title="Load storefront" secondary onPress={() => void loadAccount()} />
-              )}
+              <FloatButton
+                label="New product"
+                icon={Plus}
+                onPress={() => {
+                  if (operation.current) return;
+                  newProduct();
+                  setOpenSellPanel("details");
+                }}
+              />
             </View>
-            <View style={group}>
-              <View style={styles.between}>
-                <Text style={[styles.heading, { fontSize: 23 }]}>Create for Me</Text>
-                <Sparkles color={color.lime} size={25} />
-              </View>
-              <Text style={styles.small}>
-                Describe your product. Ziipa can draft your title, description, store name and
-                display caption for you to review.
-              </Text>
-              <Field
-                label="What would you like to sell?"
-                placeholder="My original 5-track ambient EP, WAV download, personal listening license…"
-                value={prompt}
-                onChangeText={setPrompt}
-                maxLength={1600}
-                multiline
-              />
-              <Toggle
-                value={consent}
-                title="Send this text to Ziipa’s AI provider to prepare suggestions."
-                onChange={() => setConsent(!consent)}
-              />
-              <Action
+            <View style={{ gap: 10 }}>
+              <Disclosure
+                title="Storefront"
+                detail={store?.name || "Name, description and visibility"}
+                icon={Store}
+                expanded={openSellPanel === "store"}
+                onToggle={() => setOpenSellPanel(openSellPanel === "store" ? null : "store")}
+              >
+                <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+                  <Store color={color.lime} size={24} />
+                  <Text style={[styles.heading, { fontSize: 23 }]}>Your mini storefront</Text>
+                </View>
+                {store ? (
+                  <>
+                    <Field
+                      editable={!busy}
+                      label="Store name"
+                      value={store.name}
+                      maxLength={70}
+                      onChangeText={(name) => setStore({ ...store, name })}
+                    />
+                    <Field
+                      editable={!busy}
+                      label="About your store"
+                      value={store.description}
+                      maxLength={500}
+                      multiline
+                      onChangeText={(description) => setStore({ ...store, description })}
+                    />
+                    <Toggle
+                      disabled={!!busy}
+                      value={store.enabled}
+                      title="Show my published products in Ziipa Store"
+                      onChange={() => setStore({ ...store, enabled: !store.enabled })}
+                    />
+                    <Action
+                      title="Save storefront"
+                      icon={Check}
+                      busy={busy === "Saving storefront"}
+                      disabled={!!busy}
+                      secondary
+                      onPress={() =>
+                        void run("Saving storefront", async () => {
+                          const saved = await api<Storefront>("/api/store/storefront", store);
+                          setStore(saved);
+                          await loadAccount();
+                          setMessage("Storefront saved to your account.");
+                        })
+                      }
+                    />
+                  </>
+                ) : (
+                  <Action title="Load storefront" secondary onPress={() => void loadAccount()} />
+                )}
+              </Disclosure>
+              <Disclosure
                 title="Create for Me"
-                icon={Sparkles}
-                disabled={!!busy || !consent || prompt.trim().length < 8}
-                busy={busy === "Preparing suggestions"}
-                onPress={() =>
-                  void run("Preparing suggestions", async () => {
-                    const value = await api<{ suggestion: Suggestion }>("/api/store/suggest", {
-                      prompt,
-                      kind: draft.kind,
-                      consent: true,
-                    });
-                    setSuggestion(value.suggestion);
-                  })
+                detail={
+                  suggestion
+                    ? "AI draft ready for review"
+                    : "Describe it. Review the suggested copy."
                 }
-              />
-              {suggestion && (
-                <View style={{ backgroundColor: color.bg, padding: 15, borderRadius: 14, gap: 10 }}>
-                  <Text style={styles.label}>Review the AI draft</Text>
-                  <Text style={[styles.body, { fontFamily: font.bold }]}>{suggestion.title}</Text>
-                  <Text style={styles.body}>{suggestion.description}</Text>
-                  <Text style={styles.small}>
-                    Store: {suggestion.storefront_name} · {suggestion.descriptor}
-                  </Text>
-                  <Action
-                    title="Use these suggestions"
-                    secondary
+                icon={Sparkles}
+                expanded={openSellPanel === "ai"}
+                onToggle={() => setOpenSellPanel(openSellPanel === "ai" ? null : "ai")}
+              >
+                <View style={styles.between}>
+                  <Text style={[styles.heading, { fontSize: 23 }]}>Create for Me</Text>
+                  <Sparkles color={color.lime} size={25} />
+                </View>
+                <Text style={styles.small}>
+                  Describe your product. Ziipa can draft your title, description, store name and
+                  display caption for you to review.
+                </Text>
+                <Field
+                  editable={!busy}
+                  label="What would you like to sell?"
+                  placeholder="My original 5-track ambient EP, WAV download, personal listening license…"
+                  value={prompt}
+                  onChangeText={setPrompt}
+                  maxLength={1600}
+                  multiline
+                />
+                <Toggle
+                  disabled={!!busy}
+                  value={consent}
+                  title="Send this text to Ziipa’s AI provider to prepare suggestions."
+                  onChange={() => setConsent(!consent)}
+                />
+                <Action
+                  title="Create for Me"
+                  icon={Sparkles}
+                  disabled={!!busy || !consent || prompt.trim().length < 8}
+                  busy={busy === "Preparing suggestions"}
+                  onPress={() =>
+                    void run("Preparing suggestions", async () => {
+                      const value = await api<{ suggestion: Suggestion }>("/api/store/suggest", {
+                        prompt,
+                        kind: draft.kind,
+                        consent: true,
+                      });
+                      setSuggestion(value.suggestion);
+                    })
+                  }
+                />
+                {suggestion && (
+                  <View
+                    style={{ backgroundColor: color.bg, padding: 15, borderRadius: 14, gap: 10 }}
+                  >
+                    <Text style={styles.label}>Review the AI draft</Text>
+                    <Text style={[styles.body, { fontFamily: font.bold }]}>{suggestion.title}</Text>
+                    <Text style={styles.body}>{suggestion.description}</Text>
+                    <Text style={styles.small}>
+                      Store: {suggestion.storefront_name} · {suggestion.descriptor}
+                    </Text>
+                    <Action
+                      title="Use these suggestions"
+                      secondary
+                      onPress={() => {
+                        setDraft((previous) => ({
+                          ...previous,
+                          title: suggestion.title,
+                          description: suggestion.description,
+                          descriptor: suggestion.descriptor,
+                          overlay: "editorial",
+                        }));
+                        if (store && store.revision === 0)
+                          setStore({ ...store, name: suggestion.storefront_name });
+                        setSuggestion(null);
+                        setMessage(
+                          "Suggestions applied to your editable draft. Review the facts before publishing.",
+                        );
+                      }}
+                    />
+                  </View>
+                )}
+              </Disclosure>
+              <Disclosure
+                title="Product details"
+                detail={draft.title || "Title, category, condition and price"}
+                icon={Package}
+                expanded={openSellPanel === "details"}
+                onToggle={() => setOpenSellPanel(openSellPanel === "details" ? null : "details")}
+              >
+                {" "}
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <Pill
+                    title="Digital media"
+                    active={draft.kind === "digital"}
                     onPress={() => {
-                      setDraft((previous) => ({
-                        ...previous,
-                        title: suggestion.title,
-                        description: suggestion.description,
-                        descriptor: suggestion.descriptor,
-                        overlay: "editorial",
-                      }));
-                      if (store && store.revision === 0)
-                        setStore({ ...store, name: suggestion.storefront_name });
-                      setSuggestion(null);
-                      setMessage(
-                        "Suggestions applied to your editable draft. Review the facts before publishing.",
-                      );
+                      update("kind", "digital");
+                      update("condition", "not_applicable");
+                    }}
+                  />
+                  <Pill
+                    title="Merchandise"
+                    active={draft.kind === "merchandise"}
+                    onPress={() => {
+                      update("kind", "merchandise");
+                      update("category", "merch");
                     }}
                   />
                 </View>
-              )}
-            </View>
-            <View style={group}>
-              <View style={styles.between}>
-                <Text style={[styles.heading, { fontSize: 23 }]}>
-                  {draft.id ? "Edit product" : "New product"}
-                </Text>
-                <FloatButton label="New product" icon={Plus} onPress={newProduct} />
-              </View>
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <Pill
-                  title="Digital media"
-                  active={draft.kind === "digital"}
-                  onPress={() => {
-                    update("kind", "digital");
-                    update("condition", "not_applicable");
-                  }}
+                <Field
+                  editable={!busy}
+                  label="Item title"
+                  value={draft.title}
+                  onChangeText={(value) => update("title", value)}
+                  maxLength={100}
                 />
-                <Pill
-                  title="Merchandise"
-                  active={draft.kind === "merchandise"}
-                  onPress={() => {
-                    update("kind", "merchandise");
-                    update("category", "merch");
-                  }}
+                <Field
+                  editable={!busy}
+                  label="Description"
+                  value={draft.description}
+                  onChangeText={(value) => update("description", value)}
+                  multiline
+                  maxLength={3000}
                 />
-              </View>
-              <View
-                style={{
-                  maxWidth: desktop ? 420 : undefined,
-                  width: "100%",
-                  alignSelf: "center",
-                  gap: 12,
-                }}
-              >
-                <ProductDisplay
-                  large
-                  item={{ ...draft, price_cents: centsFromText(price) || 0 }}
-                  path={previewPath}
-                />
-                <Action
-                  title={busy.startsWith("Uploading photo") ? busy : "Upload product photo"}
-                  icon={ImagePlus}
-                  secondary
-                  disabled={!!busy || draft.photo_ids.length >= 6}
-                  busy={busy.startsWith("Uploading photo")}
-                  onPress={() => void run("Uploading photo", uploadPhoto)}
-                />
-              </View>
-              {!!draft.photo_ids.length && (
-                <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                  {draft.photo_ids.map((id, index) => (
-                    <Pressable
-                      key={id}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Remove product photo ${index + 1}`}
-                      onPress={() =>
-                        update(
-                          "photo_ids",
-                          draft.photo_ids.filter((value) => value !== id),
-                        )
-                      }
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: 10,
-                        borderRadius: 18,
-                        backgroundColor: color.raised,
-                      }}
-                    >
-                      <Text style={styles.small}>Photo {index + 1}</Text>
-                      <X size={15} color={color.text} />
-                    </Pressable>
+                <Text style={styles.label}>Category</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {productCategories.map((value) => (
+                    <Pill
+                      key={value.id}
+                      title={value.title}
+                      active={draft.category === value.id}
+                      onPress={() => update("category", value.id)}
+                    />
                   ))}
                 </View>
-              )}
-              <Field
-                label="Item title"
-                value={draft.title}
-                onChangeText={(value) => update("title", value)}
-                maxLength={100}
-              />
-              <Field
-                label="Description"
-                value={draft.description}
-                onChangeText={(value) => update("description", value)}
-                multiline
-                maxLength={3000}
-              />
-              <Text style={styles.label}>Category</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                {productCategories.map((value) => (
-                  <Pill
-                    key={value.id}
-                    title={value.title}
-                    active={draft.category === value.id}
-                    onPress={() => update("category", value.id)}
+                <Field
+                  editable={!busy}
+                  label="Price · USD"
+                  value={price}
+                  onChangeText={setPrice}
+                  placeholder="0.00"
+                  keyboardType="decimal-pad"
+                  maxLength={10}
+                />
+                {draft.kind === "merchandise" && (
+                  <>
+                    <Text style={styles.label}>Condition</Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                      {(
+                        [
+                          ["new", "New"],
+                          ["like_new", "Like new"],
+                          ["good", "Good"],
+                          ["fair", "Fair"],
+                        ] as const
+                      ).map(([id, title]) => (
+                        <Pill
+                          key={id}
+                          title={title}
+                          active={draft.condition === id}
+                          onPress={() => update("condition", id)}
+                        />
+                      ))}
+                    </View>
+                  </>
+                )}
+                <Action
+                  title="Next: Photos & display"
+                  secondary
+                  onPress={() => setOpenSellPanel("photos")}
+                />
+              </Disclosure>
+              <Disclosure
+                title="Photos & display"
+                detail={`${draft.photo_ids.length} photos · editable title and price overlays`}
+                icon={ImagePlus}
+                expanded={openSellPanel === "photos"}
+                onToggle={() => setOpenSellPanel(openSellPanel === "photos" ? null : "photos")}
+              >
+                {" "}
+                <View
+                  style={{
+                    maxWidth: desktop ? 420 : undefined,
+                    width: "100%",
+                    alignSelf: "center",
+                    gap: 12,
+                  }}
+                >
+                  <ProductDisplay
+                    large
+                    item={{ ...draft, price_cents: centsFromText(price) || 0 }}
+                    path={previewPath}
                   />
-                ))}
-              </View>
-              <Field
-                label="Price · USD"
-                value={price}
-                onChangeText={setPrice}
-                placeholder="0.00"
-                keyboardType="decimal-pad"
-                maxLength={10}
-              />
-              {draft.kind === "merchandise" && (
-                <>
-                  <Text style={styles.label}>Condition</Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                    {(
-                      [
-                        ["new", "New"],
-                        ["like_new", "Like new"],
-                        ["good", "Good"],
-                        ["fair", "Fair"],
-                      ] as const
-                    ).map(([id, title]) => (
-                      <Pill
+                  <Action
+                    title={busy.startsWith("Uploading photo") ? busy : "Upload product photo"}
+                    icon={ImagePlus}
+                    secondary
+                    disabled={!!busy || draft.photo_ids.length >= 6}
+                    busy={busy.startsWith("Uploading photo")}
+                    onPress={() => void run("Uploading photo", uploadPhoto)}
+                  />
+                </View>
+                {!!draft.photo_ids.length && (
+                  <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                    {draft.photo_ids.map((id, index) => (
+                      <Pressable
                         key={id}
-                        title={title}
-                        active={draft.condition === id}
-                        onPress={() => update("condition", id)}
-                      />
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove product photo ${index + 1}`}
+                        onPress={() =>
+                          update(
+                            "photo_ids",
+                            draft.photo_ids.filter((value) => value !== id),
+                          )
+                        }
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: 10,
+                          borderRadius: 18,
+                          backgroundColor: color.raised,
+                        }}
+                      >
+                        <Text style={styles.small}>Photo {index + 1}</Text>
+                        <X size={15} color={color.text} />
+                      </Pressable>
                     ))}
                   </View>
-                </>
-              )}
-              <Field
-                label={
-                  draft.kind === "digital"
-                    ? "Delivery and license details"
-                    : "Shipping or collection details"
-                }
-                value={draft.delivery}
-                maxLength={300}
-                multiline
-                onChangeText={(value) => update("delivery", value)}
-                placeholder={
-                  draft.kind === "digital"
-                    ? "File format, delivery method and permitted use. Do not paste a private download link."
-                    : "Where you ship, estimated time and any delivery cost."
-                }
-              />
-              <Text style={styles.label}>Product display</Text>
-              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                {(
-                  [
-                    ["none", "Photo only"],
-                    ["price", "Price badge"],
-                    ["editorial", "Title + price"],
-                  ] as const
-                ).map(([id, title]) => (
-                  <Pill
-                    key={id}
-                    title={title}
-                    active={draft.overlay === id}
-                    onPress={() => update("overlay", id)}
-                  />
-                ))}
-              </View>
-              <Field
-                label="Display caption"
-                value={draft.descriptor}
-                maxLength={80}
-                onChangeText={(value) => update("descriptor", value)}
-                placeholder="Your original work, ready to discover."
-              />
-              <Toggle
-                value={draft.rights_confirmed}
-                title="I own or have permission to sell this product and its photos."
-                onChange={() => update("rights_confirmed", !draft.rights_confirmed)}
-              />
-              <Toggle
-                value={draft.adult_seller}
-                title="I am 18 or older and responsible for accurate product details."
-                onChange={() => update("adult_seller", !draft.adult_seller)}
-              />
-              <Notice text="Listings can be saved and displayed now. Checkout, paid downloads, shipping and seller payouts still need payment setup and marketplace terms before customers can buy." />
-              <Action
-                title="Save product privately"
-                secondary
-                icon={Check}
-                disabled={!!busy || !draft.title.trim()}
-                busy={busy === "Saving product"}
-                onPress={() => void run("Saving product", () => saveProduct("draft"))}
-              />
-              <Action
-                title="Publish listing to Ziipa Store"
-                icon={ArrowRight}
-                disabled={
-                  !!busy ||
-                  !draft.title.trim() ||
-                  !draft.rights_confirmed ||
-                  !draft.adult_seller ||
-                  !draft.photo_ids.length
-                }
-                busy={busy === "Publishing product"}
-                onPress={() => void run("Publishing product", () => saveProduct("published"))}
-              />
-              {!!draft.id && (
-                <View style={{ flexDirection: "row", gap: 8 }}>
-                  <View style={{ flex: 1 }}>
-                    <Action
-                      title="Mark sold"
-                      secondary
-                      disabled={!!busy}
-                      onPress={() => void run("Updating listing", () => saveProduct("sold"))}
+                )}
+                <Text style={styles.label}>Product display</Text>
+                <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                  {(
+                    [
+                      ["none", "Photo only"],
+                      ["price", "Price badge"],
+                      ["editorial", "Title + price"],
+                    ] as const
+                  ).map(([id, title]) => (
+                    <Pill
+                      key={id}
+                      title={title}
+                      active={draft.overlay === id}
+                      onPress={() => update("overlay", id)}
                     />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Action
-                      title="Archive"
-                      secondary
-                      disabled={!!busy}
-                      onPress={() => void run("Updating listing", () => saveProduct("archived"))}
-                    />
-                  </View>
+                  ))}
                 </View>
-              )}
-            </View>
-            <Text style={[styles.heading, { fontSize: 23 }]}>Your products</Text>
-            {!mine?.listings.length && (
-              <Text style={styles.small}>
-                Your saved drafts and published products will appear here on every device.
-              </Text>
-            )}
-            {mine?.listings.map((item) => (
-              <Pressable
-                key={item.id}
-                accessibilityRole="button"
-                disabled={item.status === "hidden"}
-                onPress={() => {
-                  setDraft(editListing(item));
-                  setPrice((item.price_cents / 100).toFixed(2));
-                  setPhotoPaths({});
-                  setMessage(`Editing ${item.title}. Scroll up to the product form.`);
-                }}
-                style={[group, { gap: 5, padding: 16 }]}
+                <Field
+                  editable={!busy}
+                  label="Display caption"
+                  value={draft.descriptor}
+                  maxLength={80}
+                  onChangeText={(value) => update("descriptor", value)}
+                  placeholder="Your original work, ready to discover."
+                />
+                <Action
+                  title="Next: Delivery & publish"
+                  secondary
+                  onPress={() => setOpenSellPanel("delivery")}
+                />
+              </Disclosure>
+              <Disclosure
+                title="Delivery & publish"
+                detail={
+                  draft.id
+                    ? `Saved ${draft.status} · review before publishing`
+                    : "License, delivery, rights and saving"
+                }
+                icon={Check}
+                expanded={openSellPanel === "delivery"}
+                onToggle={() => setOpenSellPanel(openSellPanel === "delivery" ? null : "delivery")}
               >
-                <Text style={[styles.body, { fontFamily: font.bold }]}>{item.title}</Text>
-                <Text style={styles.small}>
-                  {money(item.price_cents)} · {item.status} · revision {item.revision}
-                </Text>
-              </Pressable>
-            ))}
+                {" "}
+                <Field
+                  editable={!busy}
+                  label={
+                    draft.kind === "digital"
+                      ? "Delivery and license details"
+                      : "Shipping or collection details"
+                  }
+                  value={draft.delivery}
+                  maxLength={300}
+                  multiline
+                  onChangeText={(value) => update("delivery", value)}
+                  placeholder={
+                    draft.kind === "digital"
+                      ? "File format, delivery method and permitted use. Do not paste a private download link."
+                      : "Where you ship, estimated time and any delivery cost."
+                  }
+                />
+                <Toggle
+                  disabled={!!busy}
+                  value={draft.rights_confirmed}
+                  title="I own or have permission to sell this product and its photos."
+                  onChange={() => update("rights_confirmed", !draft.rights_confirmed)}
+                />
+                <Toggle
+                  disabled={!!busy}
+                  value={draft.adult_seller}
+                  title="I am 18 or older and responsible for accurate product details."
+                  onChange={() => update("adult_seller", !draft.adult_seller)}
+                />
+                <Notice text="Listings can be saved and displayed now. Checkout, paid downloads, shipping and seller payouts still need payment setup and marketplace terms before customers can buy." />
+                <Action
+                  title="Save product privately"
+                  secondary
+                  icon={Check}
+                  disabled={!!busy || !draft.title.trim()}
+                  busy={busy === "Saving product"}
+                  onPress={() => void run("Saving product", () => saveProduct("draft"))}
+                />
+                <Action
+                  title="Publish listing to Ziipa Store"
+                  icon={ArrowRight}
+                  disabled={
+                    !!busy ||
+                    !draft.title.trim() ||
+                    !draft.rights_confirmed ||
+                    !draft.adult_seller ||
+                    !draft.photo_ids.length
+                  }
+                  busy={busy === "Publishing product"}
+                  onPress={() => void run("Publishing product", () => saveProduct("published"))}
+                />
+                {!!draft.id && (
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Action
+                        title="Mark sold"
+                        secondary
+                        disabled={!!busy}
+                        onPress={() => void run("Updating listing", () => saveProduct("sold"))}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Action
+                        title="Archive"
+                        secondary
+                        disabled={!!busy}
+                        onPress={() => void run("Updating listing", () => saveProduct("archived"))}
+                      />
+                    </View>
+                  </View>
+                )}
+              </Disclosure>
+              <Disclosure
+                title="Your products"
+                detail={`${mine?.listings.length || 0} saved products and drafts`}
+                icon={ShoppingBag}
+                expanded={openSellPanel === "products"}
+                onToggle={() => setOpenSellPanel(openSellPanel === "products" ? null : "products")}
+              >
+                {" "}
+                <Text style={[styles.heading, { fontSize: 23 }]}>Your products</Text>
+                {!mine?.listings.length && (
+                  <Text style={styles.small}>
+                    Your saved drafts and published products will appear here on every device.
+                  </Text>
+                )}
+                {mine?.listings.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    accessibilityRole="button"
+                    disabled={!!busy || item.status === "hidden"}
+                    onPress={() => {
+                      setDraft(editListing(item));
+                      setPrice((item.price_cents / 100).toFixed(2));
+                      setPhotoPaths({});
+                      setOpenSellPanel("details");
+                      scrollRef.current?.scrollTo({ y: 0, animated: true });
+                      setMessage(`Editing ${item.title}.`);
+                    }}
+                    style={[group, { gap: 5, padding: 16 }]}
+                  >
+                    <Text style={[styles.body, { fontFamily: font.bold }]}>{item.title}</Text>
+                    <Text style={styles.small}>
+                      {money(item.price_cents)} · {item.status} · revision {item.revision}
+                    </Text>
+                  </Pressable>
+                ))}
+              </Disclosure>
+            </View>
           </>
         )}
 
         {tab === "services" && (
           <>
-            <View style={group}>
-              <Sparkles color={color.lime} size={27} />
-              <Text style={[styles.heading, { fontSize: 25 }]}>More room to create.</Text>
-              <Text style={styles.body}>
-                One Ziipa account, across iPhone, Android and web. Paid access is checked by the
-                server and only unlocks services that are available.
+            <View style={{ gap: 5 }}>
+              <Text style={[styles.heading, { fontSize: 23 }]}>Services</Text>
+              <Text style={styles.small}>
+                One account across iPhone, Android and web. Prices below are proposals.
               </Text>
-              {services && (
-                <Text style={styles.small}>
-                  {(services.storage.used_bytes / 1024 ** 3).toFixed(2)} GiB used of{" "}
-                  {(services.storage.limit_bytes / 1024 ** 3).toFixed(0)} GiB
-                </Text>
-              )}
-              <Notice
-                text={services?.purchase_requirements || "Loading your account allowances…"}
-              />
             </View>
-            {services?.catalog.plans.map((plan) => (
-              <View key={plan.id} style={group}>
-                <View style={styles.between}>
-                  <Text style={[styles.heading, { fontSize: 23 }]}>{plan.name}</Text>
-                  <Text style={{ color: color.lime, fontFamily: font.bold, fontSize: 20 }}>
-                    {plan.monthly_price_cents ? `${money(plan.monthly_price_cents)}/mo` : "Free"}
-                  </Text>
-                </View>
-                <Text style={styles.body}>{plan.summary}</Text>
-                <Text style={styles.small}>
-                  {plan.storage_gib} GiB storage ·{" "}
-                  {plan.id === "free"
-                    ? "Current free allowance"
-                    : "Draft proposal · not yet on sale"}
+            <View style={{ gap: 10 }}>
+              <Disclosure
+                title="Account & usage"
+                detail={
+                  services
+                    ? `${(services.storage.used_bytes / 1024 ** 3).toFixed(2)} of ${(services.storage.limit_bytes / 1024 ** 3).toFixed(0)} GiB used`
+                    : "Loading allowances…"
+                }
+                icon={Package}
+                expanded={openServicePanel === "usage"}
+                onToggle={() => setOpenServicePanel(openServicePanel === "usage" ? null : "usage")}
+              >
+                <Text style={styles.body}>
+                  Your current account allowance applies on every device. Paid access is verified by
+                  the server.
                 </Text>
-                {services.grants.some((grant) => grant.plan === plan.id) && (
-                  <Text style={{ color: color.lime }}>Verified on your account</Text>
-                )}
-                {options
-                  .filter((option) => option.plan === plan.id)
-                  .map((option) => (
+                <Notice
+                  text={services?.purchase_requirements || "Loading your account allowances…"}
+                />
+              </Disclosure>
+              {[
+                {
+                  id: "plans",
+                  title: "Creator plans",
+                  detail: "Free · Creator · Studio",
+                  storageOnly: false,
+                },
+                {
+                  id: "storage",
+                  title: "Storage add-ons",
+                  detail: "10 / 50 GiB proposals",
+                  storageOnly: true,
+                },
+              ].map(({ id, title, detail, storageOnly }) => (
+                <Disclosure
+                  key={id}
+                  title={title}
+                  detail={detail}
+                  icon={storageOnly ? Package : Sparkles}
+                  expanded={openServicePanel === id}
+                  onToggle={() => setOpenServicePanel(openServicePanel === id ? null : id)}
+                >
+                  {services?.catalog.plans
+                    .filter((plan) => storageOnly === plan.id.startsWith("storage_"))
+                    .map((plan) => (
+                      <View
+                        key={plan.id}
+                        style={{
+                          borderBottomWidth: 1,
+                          borderBottomColor: color.border,
+                          paddingVertical: 14,
+                          gap: 8,
+                        }}
+                      >
+                        <View style={styles.between}>
+                          <Text style={[styles.heading, { fontSize: 18 }]}>{plan.name}</Text>
+                          <Text style={{ color: color.lime, fontFamily: font.bold, fontSize: 17 }}>
+                            {plan.monthly_price_cents
+                              ? `${money(plan.monthly_price_cents)}/mo`
+                              : "Free"}
+                          </Text>
+                        </View>
+                        <Text style={styles.body}>{plan.summary}</Text>
+                        <Text style={styles.small}>
+                          {plan.storage_gib} GiB storage ·{" "}
+                          {plan.id === "free"
+                            ? "Current free allowance"
+                            : "Draft proposal · not yet on sale"}
+                        </Text>
+                        {services.grants.some((grant) => grant.plan === plan.id) && (
+                          <Text style={{ color: color.lime }}>Verified on your account</Text>
+                        )}
+                        {options
+                          .filter((option) => option.plan === plan.id)
+                          .map((option) => (
+                            <Action
+                              key={option.id}
+                              title={`Review ${option.price} purchase`}
+                              disabled={!!busy}
+                              onPress={() =>
+                                void run("Opening checkout", async () => {
+                                  await option.purchase();
+                                  setServices(await api<Services>("/api/services/refresh", {}));
+                                  setMessage(
+                                    "Purchase checked with the server. Your verified account access is shown above.",
+                                  );
+                                })
+                              }
+                            />
+                          ))}
+                      </View>
+                    ))}
+                </Disclosure>
+              ))}
+              <Disclosure
+                title="Feature limits"
+                detail={`${services?.catalog.features.length || 0} feature groups · free and proposed upgrades`}
+                icon={SlidersHorizontal}
+                expanded={openServicePanel === "features"}
+                onToggle={() =>
+                  setOpenServicePanel(openServicePanel === "features" ? null : "features")
+                }
+              >
+                {services?.catalog.features.map((feature) => (
+                  <Disclosure
+                    key={feature.id}
+                    title={feature.name}
+                    detail={feature.status.replaceAll("_", " ")}
+                    expanded={openFeature === feature.id}
+                    onToggle={() => setOpenFeature(openFeature === feature.id ? null : feature.id)}
+                  >
+                    <Text style={styles.body}>Free: {feature.free}</Text>
+                    <Text style={styles.body}>Proposed: {feature.upgrade}</Text>
+                    <Text style={styles.small}>{feature.activation}</Text>
+                  </Disclosure>
+                ))}
+              </Disclosure>
+              <Disclosure
+                title="Purchases & restore"
+                detail={
+                  services?.billing_enabled && !iosLimitedTestflight
+                    ? "Review store prices or restore access"
+                    : "Purchases not activated"
+                }
+                icon={ShoppingBag}
+                expanded={openServicePanel === "purchases"}
+                onToggle={() =>
+                  setOpenServicePanel(openServicePanel === "purchases" ? null : "purchases")
+                }
+              >
+                {services?.billing_enabled && !iosLimitedTestflight && (
+                  <View style={group}>
                     <Action
-                      key={option.id}
-                      title={`Review ${option.price} purchase`}
+                      title="Load available store prices"
+                      icon={ShoppingBag}
                       disabled={!!busy}
                       onPress={() =>
-                        void run("Opening checkout", async () => {
-                          await option.purchase();
-                          setServices(await api<Services>("/api/services/refresh", {}));
-                          setMessage(
-                            "Purchase checked with the server. Your verified account access is shown above.",
+                        void run("Loading purchases", async () => {
+                          const context = await api<PurchaseContext>(
+                            "/api/services/purchase-context",
+                            {
+                              platform: Platform.OS,
+                            },
                           );
+                          setPurchaseContext(context);
+                          setOptions(await serviceOptions(context));
                         })
                       }
                     />
-                  ))}
-              </View>
-            ))}
-            {services?.billing_enabled && !iosLimitedTestflight && (
-              <View style={group}>
-                <Action
-                  title="Load available store prices"
-                  icon={ShoppingBag}
-                  disabled={!!busy}
-                  onPress={() =>
-                    void run("Loading purchases", async () => {
-                      const context = await api<PurchaseContext>("/api/services/purchase-context", {
-                        platform: Platform.OS,
-                      });
-                      setPurchaseContext(context);
-                      setOptions(await serviceOptions(context));
-                    })
-                  }
-                />
-                <Action
-                  title="Restore purchases"
-                  secondary
-                  disabled={!!busy}
-                  onPress={() =>
-                    void run("Restoring purchases", async () => {
-                      const context =
-                        purchaseContext ||
-                        (await api<PurchaseContext>("/api/services/purchase-context", {
-                          platform: Platform.OS,
-                        }));
-                      await restoreServices(context);
-                      setServices(await api<Services>("/api/services/refresh", {}));
-                      setMessage("Purchase status refreshed for your Ziipa account.");
-                    })
-                  }
-                />
-                {Platform.OS !== "web" && (
-                  <Action
-                    title="Manage platform subscriptions"
-                    secondary
-                    onPress={() =>
-                      void Linking.openURL(
-                        Platform.OS === "ios"
-                          ? "https://apps.apple.com/account/subscriptions"
-                          : "https://play.google.com/store/account/subscriptions",
-                      )
-                    }
-                  />
+                    <Action
+                      title="Restore purchases"
+                      secondary
+                      disabled={!!busy}
+                      onPress={() =>
+                        void run("Restoring purchases", async () => {
+                          const context =
+                            purchaseContext ||
+                            (await api<PurchaseContext>("/api/services/purchase-context", {
+                              platform: Platform.OS,
+                            }));
+                          await restoreServices(context);
+                          setServices(await api<Services>("/api/services/refresh", {}));
+                          setMessage("Purchase status refreshed for your Ziipa account.");
+                        })
+                      }
+                    />
+                    {Platform.OS !== "web" && (
+                      <Action
+                        title="Manage platform subscriptions"
+                        secondary
+                        onPress={() =>
+                          void Linking.openURL(
+                            Platform.OS === "ios"
+                              ? "https://apps.apple.com/account/subscriptions"
+                              : "https://play.google.com/store/account/subscriptions",
+                          )
+                        }
+                      />
+                    )}
+                  </View>
                 )}
-              </View>
-            )}
-            <Action
-              title={
-                showFeatures ? "Hide feature details" : "View free limits and proposed upgrades"
-              }
-              icon={SlidersHorizontal}
-              secondary
-              onPress={() => setShowFeatures(!showFeatures)}
-            />
-            {showFeatures &&
-              services?.catalog.features.map((feature) => (
-                <View key={feature.id} style={group}>
-                  <Text style={[styles.heading, { fontSize: 20 }]}>{feature.name}</Text>
-                  <Text style={styles.body}>Free: {feature.free}</Text>
-                  <Text style={styles.body}>Proposed: {feature.upgrade}</Text>
-                  <Text style={styles.small}>
-                    {feature.status.replaceAll("_", " ")} · {feature.activation}
-                  </Text>
-                </View>
-              ))}
+
+                {(!services?.billing_enabled || iosLimitedTestflight) && (
+                  <Notice text="Purchases are not activated in this build. You can review the proposed packages without being charged." />
+                )}
+              </Disclosure>
+            </View>
           </>
         )}
       </ScrollView>

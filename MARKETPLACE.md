@@ -56,3 +56,9 @@ The current production project media cap is only 6 GiB shared. Selling a 10/50 G
 ## Promote presentation
 
 Promote now has one four-icon shortcut row: Campaigns, Calendar, Networks and Published. The release plan, media selector, private brief, publishing readiness, email/ads setup and campaign progress are individual +/− accordion panels. Only one main panel is expanded. Individual network and ad setup details also expand on demand. Brief/source/checklist state remains in the parent while a panel is collapsed; all existing authorization, save and navigation handlers remain intact.
+
+## Compact Store presentation
+
+Marketplace, Sell and Services use plain text tabs with a selected underline. Sell opens as six collapsed steps: Storefront, Create for Me, Product details, Photos & display, Delivery & publish, and Your products. Services opens as Account & usage, Creator plans, Storage add-ons, Feature limits, and Purchases & restore. Only one section is open in each tab. Product/storefront fields live in the parent and survive collapsing or switching sections; refreshing product receipts does not overwrite an unsaved storefront edit. These shared components apply to web, iOS and Android.
+
+The exported portal was checked at 390 × 844: the collapsed Services overview fits in one phone screen, product text survives switching accordion panels, and proposed plans remain reachable. Shared iOS/Android JS exports and TypeScript validation passed. These exports are not signed native binaries or real-device payment acceptance.

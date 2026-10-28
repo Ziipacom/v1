@@ -4,7 +4,15 @@ Owner request, 2026-10-28: use Meta, AdMob and Unity to serve clearly identified
 
 ## Observed Meta account
 
-The owner-supplied [Ziipa Monetization Manager](https://business.facebook.com/pub/landing?business_id=1948272116139133) was inspected read-only on 2026-10-28. It shows Application incomplete, AD placements pending and Integration pending. The form asks for at least one valid App Store or Google Play Store URL, plus the app name. Its Next action also accepts Meta's publisher/platform terms. No form was submitted and no terms were accepted. TestFlight installation alone does not supply the app-store listing requested by that form; a valid Ziipa listing must be confirmed before submission.
+The owner-supplied [Ziipa Monetization Manager](https://business.facebook.com/pub/landing?business_id=1948272116139133) asks for at least one valid App Store or Google Play Store URL, plus the app name. On 2026-10-28, Apple's App Information page confirmed app ID 6827668999, bundle ID `com.ziipa.app`, and its View on App Store link: https://apps.apple.com/us/app/ziipa/id6827668999. Distribution remains version 1.0, Prepare for Submission.
+
+The verified Apple URL and Ziipa name were entered into Meta. The owner explicitly approved accepting the displayed Audience Network Terms, Policy and Meta Platform Policy and continuing. The Next attempt did not complete: Meta reported “Unable to find or retrieve app details. Please try again later,” cleared the app name, and left Application incomplete, AD placements pending and Integration pending. No successful terms-acceptance receipt, review submission, placement or ad serving was verified. The current unreleased Apple listing is a likely explanation for the lookup failure; Meta did not state its exact cause.
+
+## Google Play account blocker
+
+The requested Play Console account, developer ID `5793486319300616308`, is restricted. Its issue details state that the profile and all apps were removed September 19, 2024 because account verification was not completed before the deadline. The console says changes will not be published. An existing appeal has a reply sent to the owner; no new appeal was submitted.
+
+The account-owner recovery flow is open at Choose an account type. It requires confirming organization/personal account type, linking a payments profile, and supplying account/public/private contact information. No account type was selected, payments profile linked, identity information transmitted, or existing unrelated app modified. Ziipa was not created or uploaded to this blocked account, and no public Google Play URL was claimed. Account verification/reinstatement and a reviewed signed Android release are prerequisites to obtaining a working public listing.
 
 ## Proposed implementation
 
