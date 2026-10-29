@@ -12,7 +12,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ArrowLeft, UserRound } from "lucide-react-native";
 import { FloatButton, Sheet } from "../components/floating";
-import { GallerySlider } from "../components/gallery-slider";
 import { Action, Notice } from "../components/ui";
 import { ProfileContentControls } from "../components/profile-content-controls";
 import { ProfileAudience } from "../components/profile-audience";
@@ -44,7 +43,6 @@ export function VisitorProfileScreen({
   const profile = result.value;
   const [collection, setCollection] = useState<ProfileCollection>("creations");
   const [grid, setGrid] = useState(false);
-  const [gallery, setGallery] = useState(false);
   const [tagOpen, setTagOpen] = useState(false);
   const [tagBusy, setTagBusy] = useState(false);
   const [limit, setLimit] = useState(20);
@@ -187,19 +185,18 @@ export function VisitorProfileScreen({
           <ProfileContentControls
             collection={collection}
             grid={grid}
-            gallery={gallery}
             visitor
-            onGallery={() => {
-              setCollection("creations");
-              setGrid(false);
-              setGallery((value) => !value);
-            }}
+            onGallery={() =>
+              navigation.navigate("CreatorGallery", {
+                creatorId: route.params?.creatorId,
+              })
+            }
             onGrid={() => {
-              setGallery(false);
-              setGrid((value) => !value);
+              setCollection("creations");
+              setGrid(true);
+              setMessage("");
             }}
             onCollection={(value) => {
-              setGallery(false);
               setCollection(value);
               setLimit(20);
               setMessage(
@@ -211,55 +208,51 @@ export function VisitorProfileScreen({
             onReset={() => {
               setCollection("creations");
               setGrid(false);
-              setGallery(false);
               setLimit(20);
               setMessage("");
               result.reload();
             }}
           />
-          {gallery && items.length > 0 && (
-            <View style={{ height: desktop ? 620 : 560 }}>
-              <GallerySlider
-                items={items}
-                label="All creations"
-                onOpen={(item) =>
+          <View
+            testID="visitor-profile-creations-feed"
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: grid ? 0 : 8,
+              marginHorizontal: grid ? -20 : 0,
+            }}
+          >
+            {items.slice(0, limit).map((item) => (
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Watch ${item.title}`}
+                onPress={() =>
                   navigation.navigate("Watch", {
                     itemId: item.id,
                     category: item.category,
                   })
                 }
-              />
-            </View>
-          )}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {!gallery &&
-              items.slice(0, limit).map((item) => (
-                <Pressable
-                  key={item.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Watch ${item.title}`}
-                  onPress={() =>
-                    navigation.navigate("Watch", {
-                      itemId: item.id,
-                      category: item.category,
-                    })
-                  }
-                  style={{
-                    width: grid ? "31.5%" : "100%",
-                    height: grid ? undefined : desktop ? 300 : 190,
-                    aspectRatio: grid ? 1 : undefined,
-                    borderRadius: grid ? 10 : 22,
-                    overflow: "hidden",
-                    backgroundColor: color.panel,
-                  }}
-                >
-                  <ProfileMediaPreview
-                    item={item}
-                    visible={activity.visible}
-                    videoActive={false}
-                    autoplay={false}
-                    allowVideoStill={activity.mountVideo}
-                  />
+                style={{
+                  width: grid ? "33.333333%" : "100%",
+                  height: grid ? undefined : desktop ? 300 : 190,
+                  aspectRatio: grid ? 1 : undefined,
+                  borderRadius: grid ? 0 : 22,
+                  borderWidth: grid ? 1 : 0,
+                  borderColor: color.bg,
+                  overflow: "hidden",
+                  backgroundColor: color.panel,
+                }}
+              >
+                <ProfileMediaPreview
+                  item={item}
+                  thumbnailOnly={grid}
+                  visible={activity.visible}
+                  videoActive={false}
+                  autoplay={false}
+                  allowVideoStill={activity.mountVideo}
+                />
+                {!grid && (
                   <View
                     pointerEvents="none"
                     style={{
@@ -290,25 +283,24 @@ export function VisitorProfileScreen({
                       {item.title}
                     </Text>
                   </View>
-                </Pressable>
-              ))}
-          </View>
-          {!gallery && items.length > limit && (
-            <Action
-              title="Load more creations"
-              secondary
-              onPress={() => setLimit((value) => value + 20)}
-            />
-          )}
-          {network.length > 0 && (
-            <Text style={styles.heading}>Connected posts</Text>
-          )}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                )}
+              </Pressable>
+            ))}
             {network.slice(0, limit).map((media) => (
               <DiscoveryNetworkCard
                 key={`${media.provider}:${media.id}`}
                 media={media}
-                style={{ width: grid ? "48.5%" : "100%" }}
+                compact={grid}
+                style={
+                  grid
+                    ? {
+                        width: "33.333333%",
+                        aspectRatio: 1,
+                        borderRadius: 0,
+                        borderColor: color.bg,
+                      }
+                    : { width: "100%" }
+                }
                 onOpen={(value) => {
                   const url = discoveryPostUrl(value);
                   if (url)
@@ -319,6 +311,13 @@ export function VisitorProfileScreen({
               />
             ))}
           </View>
+          {items.length > limit && (
+            <Action
+              title="Load more creations"
+              secondary
+              onPress={() => setLimit((value) => value + 20)}
+            />
+          )}
           {network.length > limit && (
             <Action
               title="Load more connected posts"

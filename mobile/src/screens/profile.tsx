@@ -40,7 +40,6 @@ import { SignOutButton } from "../components/account-menu";
 import { VisitorProfileScreen } from "./visitor-profile";
 import { ProfileContentControls } from "../components/profile-content-controls";
 import { ProfileAudience } from "../components/profile-audience";
-import { GallerySlider } from "../components/gallery-slider";
 import { DiscoveryNetworkCard } from "../components/discovery-network-card";
 import {
   importedDiscoveryMedia,
@@ -101,7 +100,6 @@ function OwnedProfileScreen({
   const [collection, setCollection] = useState<ProfileCollection>("creations");
   const saved = collection === "saved";
   const [grid, setGrid] = useState(false);
-  const [gallery, setGallery] = useState(false);
   const collections = useProfileCollections();
   useNetworkSnapshotExpiry(collections.value?.network || null);
   const imported =
@@ -111,7 +109,7 @@ function OwnedProfileScreen({
   const [collectionMessage, setCollectionMessage] = useState("");
   const [collectionBusy, setCollectionBusy] = useState(false);
   const [sheet, setSheet] = useState<
-    "art" | "account" | "social" | "privacy" | null
+    "art" | "account" | "social" | "privacy" | "networks" | null
   >(null);
   const [communityKind, setCommunityKind] = useState<"followers" | "following">(
     "followers",
@@ -223,7 +221,7 @@ function OwnedProfileScreen({
       : { top: scrollY, height: viewportHeight, gridTop };
   const activity = useProfilePreviewActivity(!!sheet);
   const activeVideo =
-    activity.mountVideo && !grid && !gallery
+    activity.mountVideo && !grid
       ? profileVideoSelection(items, cardBounds, viewport)
       : null;
   const createCategory: Category = category === "all" ? "video" : category;
@@ -493,26 +491,24 @@ function OwnedProfileScreen({
           <ProfileContentControls
             collection={collection}
             grid={grid}
-            gallery={gallery}
-            onGallery={() => {
+            onGallery={() =>
+              navigation.navigate("CreatorGallery", {
+                creatorId: session?.user.id,
+              })
+            }
+            onGrid={() => {
               setCollection("creations");
               setCategory("all");
-              setGrid(false);
-              setGallery((value) => !value);
-            }}
-            onGrid={() => {
-              setGallery(false);
-              setGrid((value) => !value);
+              setGrid(true);
             }}
             onCollection={(value) => {
-              setGallery(false);
               setCollection(value);
+              setCategory("all");
             }}
             onReset={() => {
               setCategory("all");
               setCollection("creations");
               setGrid(false);
-              setGallery(false);
               collections.reload();
             }}
           />
@@ -535,94 +531,81 @@ function OwnedProfileScreen({
             width: "100%",
             maxWidth: desktop ? 900 : undefined,
             alignSelf: "center",
-            paddingHorizontal: desktop ? 0 : 23,
-            gap: desktop ? 18 : 10,
+            paddingHorizontal: grid || desktop ? 0 : 23,
+            gap: grid ? 0 : desktop ? 18 : 10,
             flexDirection: "row",
             flexWrap: "wrap",
           }}
         >
-          {gallery && items.length > 0 && (
-            <View style={{ width: "100%", height: desktop ? 620 : 560 }}>
-              <GallerySlider
-                items={items}
-                label="All creations"
-                onOpen={(item) =>
+          {items.map((item) => {
+            const world = allCategories.find(
+              (entry) => entry.id === item.category,
+            );
+            const worldTitle =
+              item.category === "video" || item.category === "music"
+                ? "Music & Film"
+                : world?.title || "Creation";
+            const WorldIcon = world?.icon || Sparkles;
+            // Retained cards may keep identical geometry after a filter.
+            // Remount this measured leaf, never the scroll container.
+            return (
+              <Pressable
+                key={`${layoutKey}:${item.id}`}
+                ref={(node) => {
+                  if (Platform.OS !== "web") return;
+                  if (node)
+                    webCards.current.set(item.id, node as unknown as Element);
+                  else webCards.current.delete(item.id);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Watch ${item.title} · ${worldTitle}`}
+                onLayout={(event) => {
+                  const { y, height } = event.nativeEvent.layout;
+                  if (layoutIdentity.current !== layoutKey) return;
+                  setCardLayouts((previous) => {
+                    if (layoutIdentity.current !== layoutKey) return previous;
+                    const values =
+                      previous.key === layoutKey ? previous.values : {};
+                    return values[item.id]?.top === y &&
+                      values[item.id]?.height === height
+                      ? previous
+                      : {
+                          key: layoutKey,
+                          values: {
+                            ...values,
+                            [item.id]: { top: y, height },
+                          },
+                        };
+                  });
+                }}
+                onPress={() =>
                   navigation.navigate("Watch", {
                     itemId: item.id,
                     category: item.category,
                   })
                 }
-              />
-            </View>
-          )}
-          {!gallery &&
-            items.map((item) => {
-              const world = allCategories.find(
-                (entry) => entry.id === item.category,
-              );
-              const worldTitle =
-                item.category === "video" || item.category === "music"
-                  ? "Music & Film"
-                  : world?.title || "Creation";
-              const WorldIcon = world?.icon || Sparkles;
-              // Retained cards may keep identical geometry after a filter.
-              // Remount this measured leaf, never the scroll container.
-              return (
-                <Pressable
-                  key={`${layoutKey}:${item.id}`}
-                  ref={(node) => {
-                    if (Platform.OS !== "web") return;
-                    if (node)
-                      webCards.current.set(item.id, node as unknown as Element);
-                    else webCards.current.delete(item.id);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Watch ${item.title} · ${worldTitle}`}
-                  onLayout={(event) => {
-                    const { y, height } = event.nativeEvent.layout;
-                    if (layoutIdentity.current !== layoutKey) return;
-                    setCardLayouts((previous) => {
-                      if (layoutIdentity.current !== layoutKey) return previous;
-                      const values =
-                        previous.key === layoutKey ? previous.values : {};
-                      return values[item.id]?.top === y &&
-                        values[item.id]?.height === height
-                        ? previous
-                        : {
-                            key: layoutKey,
-                            values: {
-                              ...values,
-                              [item.id]: { top: y, height },
-                            },
-                          };
-                    });
-                  }}
-                  onPress={() =>
-                    navigation.navigate("Watch", {
-                      itemId: item.id,
-                      category: item.category,
-                    })
+                style={{
+                  width: grid ? "33.333333%" : "100%",
+                  height: grid ? undefined : desktop ? 320 : 179,
+                  aspectRatio: grid ? 1 : undefined,
+                  borderRadius: grid ? 0 : desktop ? 12 : 25,
+                  overflow: "hidden",
+                  borderWidth: 1,
+                  borderColor: grid ? color.bg : "#5D506E",
+                }}
+              >
+                <ProfileMediaPreview
+                  item={item}
+                  thumbnailOnly={grid}
+                  visible={
+                    activity.visible &&
+                    profileCardVisible(cardBounds[item.id], viewport)
                   }
-                  style={{
-                    width: grid ? "31%" : "100%",
-                    height: grid ? undefined : desktop ? 320 : 179,
-                    aspectRatio: grid ? 1 : undefined,
-                    borderRadius: desktop ? 12 : 25,
-                    overflow: "hidden",
-                    borderWidth: 1,
-                    borderColor: "#5D506E",
-                  }}
-                >
-                  <ProfileMediaPreview
-                    item={item}
-                    visible={
-                      activity.visible &&
-                      profileCardVisible(cardBounds[item.id], viewport)
-                    }
-                    videoActive={activeVideo === item.id}
-                    autoplay={activity.autoplay}
-                    allowVideoStill={activity.mountVideo}
-                  />
+                  videoActive={activeVideo === item.id}
+                  autoplay={activity.autoplay}
+                  allowVideoStill={activity.mountVideo}
+                />
+                {!grid && (
                   <View
                     style={{
                       position: "absolute",
@@ -662,9 +645,10 @@ function OwnedProfileScreen({
                       {item.title}
                     </Text>
                   </View>
-                </Pressable>
-              );
-            })}
+                )}
+              </Pressable>
+            );
+          })}
           {collection === "tagged" &&
             collections.value?.tagged.map((tag) => (
               <View key={`remove-tag:${tag.id}`} style={{ width: "100%" }}>
@@ -738,7 +722,96 @@ function OwnedProfileScreen({
           {!!(collections.error || collectionMessage) && (
             <Notice text={collections.error || collectionMessage} />
           )}
-          {collection === "creations" && category === "all" && !guest && (
+          {imported.map((media) => (
+            <DiscoveryNetworkCard
+              key={`${media.provider}:${media.id}`}
+              media={media}
+              compact={grid}
+              style={
+                grid
+                  ? {
+                      width: "33.333333%",
+                      aspectRatio: 1,
+                      borderRadius: 0,
+                      borderColor: color.bg,
+                    }
+                  : { width: "100%" }
+              }
+              onOpen={(value) => {
+                const url = discoveryPostUrl(value);
+                if (url)
+                  void Linking.openURL(url).catch(() =>
+                    setCollectionMessage(
+                      "The original network post could not open.",
+                    ),
+                  );
+              }}
+            />
+          ))}
+          {!items.length && !imported.length && (
+            <View
+              testID="profile-empty-collection"
+              style={{
+                width: "100%",
+                minWidth: 0,
+                paddingHorizontal: grid ? 23 : 0,
+                paddingVertical: 22,
+                gap: 8,
+              }}
+            >
+              <Text style={[styles.heading, { fontSize: 18, flexShrink: 1 }]}>
+                {collection === "tagged"
+                  ? "Your tagged media."
+                  : saved
+                    ? "Keep your inspiration."
+                    : "Your next creation."}
+              </Text>
+              <Text style={[styles.body, { fontSize: 14, flexShrink: 1 }]}>
+                {collection === "tagged"
+                  ? "Approved public media tags appear here. New tags need your review."
+                  : saved
+                    ? "Save a creation from the floating bookmark button in the feed."
+                    : "Add a creation in Studio to start this collection."}
+              </Text>
+              <Action
+                title={saved ? "Explore creations" : "Open Studio"}
+                secondary
+                onPress={() =>
+                  saved
+                    ? navigation.navigate("Main")
+                    : navigation.navigate("Studio", {
+                        category: createCategory,
+                        edit: true,
+                      })
+                }
+              />
+            </View>
+          )}
+        </View>
+      </ScrollView>
+      <CategoryDock
+        selected={category}
+        onSelect={(id) =>
+          id === "store" ? navigation.navigate("Store") : setCategory(id)
+        }
+        onInbox={() => navigation.navigate("Utility", { kind: "inbox" })}
+      />
+      {sheet && (
+        <Sheet
+          title={
+            sheet === "networks"
+              ? "Profile network visibility"
+              : sheet === "art"
+                ? "Cover artwork"
+                : sheet === "privacy"
+                  ? "Profile privacy"
+                  : sheet === "social"
+                    ? "Your community"
+                    : "Your creative space"
+          }
+          onClose={() => setSheet(null)}
+        >
+          {sheet === "networks" ? (
             <View style={{ width: "100%", gap: 8, paddingVertical: 12 }}>
               <Text style={styles.heading}>Connected posts</Text>
               <Text style={styles.small}>
@@ -797,74 +870,7 @@ function OwnedProfileScreen({
                 }
               />
             </View>
-          )}
-          {imported.map((media) => (
-            <DiscoveryNetworkCard
-              key={`${media.provider}:${media.id}`}
-              media={media}
-              style={{ width: grid ? "48%" : "100%" }}
-              onOpen={(value) => {
-                const url = discoveryPostUrl(value);
-                if (url)
-                  void Linking.openURL(url).catch(() =>
-                    setCollectionMessage(
-                      "The original network post could not open.",
-                    ),
-                  );
-              }}
-            />
-          ))}
-          {!items.length && !imported.length && (
-            <View style={{ paddingVertical: 35, gap: 12 }}>
-              <Text style={styles.heading}>
-                {collection === "tagged"
-                  ? "Your tagged media."
-                  : saved
-                    ? "Keep your inspiration."
-                    : "Your next creation."}
-              </Text>
-              <Text style={styles.body}>
-                {collection === "tagged"
-                  ? "Approved public media tags appear here. New tags need your review."
-                  : saved
-                    ? "Save a creation from the floating bookmark button in the feed."
-                    : "Add a creation in Studio to start this collection."}
-              </Text>
-              <Action
-                title="Open Studio"
-                secondary
-                onPress={() =>
-                  navigation.navigate("Studio", {
-                    category: createCategory,
-                    edit: true,
-                  })
-                }
-              />
-            </View>
-          )}
-        </View>
-      </ScrollView>
-      <CategoryDock
-        selected={category}
-        onSelect={(id) =>
-          id === "store" ? navigation.navigate("Store") : setCategory(id)
-        }
-        onInbox={() => navigation.navigate("Utility", { kind: "inbox" })}
-      />
-      {sheet && (
-        <Sheet
-          title={
-            sheet === "art"
-              ? "Cover artwork"
-              : sheet === "privacy"
-                ? "Profile privacy"
-                : sheet === "social"
-                  ? "Your community"
-                  : "Your creative space"
-          }
-          onClose={() => setSheet(null)}
-        >
-          {sheet === "art" ? (
+          ) : sheet === "art" ? (
             <ProfileImageControls
               key={`cover:${session?.access_token || "guest"}`}
               kind="cover"
@@ -1080,6 +1086,13 @@ function OwnedProfileScreen({
                   navigation.navigate("Feeds");
                 }}
               />
+              {!guest && (
+                <Action
+                  title="Profile network visibility"
+                  secondary
+                  onPress={() => setSheet("networks")}
+                />
+              )}
               <Action
                 title="Connected networks"
                 secondary

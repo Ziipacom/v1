@@ -12,7 +12,6 @@ import { color, font } from "../theme";
 export function ProfileContentControls({
   collection,
   grid,
-  gallery,
   onCollection,
   onGrid,
   onGallery,
@@ -21,7 +20,6 @@ export function ProfileContentControls({
 }: {
   collection: ProfileCollection;
   grid: boolean;
-  gallery: boolean;
   visitor?: boolean;
   onCollection: (value: ProfileCollection) => void;
   onGrid: () => void;
@@ -37,14 +35,14 @@ export function ProfileContentControls({
     },
     {
       Icon: Images,
-      label: "Show creator gallery",
-      selected: gallery,
+      label: "Open creator Gallery",
+      selected: false,
       onPress: onGallery,
     },
     {
       Icon: Grid3X3,
-      label: grid ? "Show profile as a list" : "Show profile as a grid",
-      selected: grid,
+      label: "Show profile as a grid",
+      selected: collection === "creations" && grid,
       onPress: onGrid,
     },
     {

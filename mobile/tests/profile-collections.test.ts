@@ -7,6 +7,28 @@ import {
 } from "../src/lib/desktop-navigation.ts";
 import { trustedProfileImagePath } from "../src/lib/private-profile-image.ts";
 
+test("creator Gallery routes preserve only the validated creator ID", () => {
+  assert.equal(
+    destinationSearch("CreatorGallery", {
+      creatorId: 42,
+      token: "never-in-url",
+    }),
+    "?view=gallery&creatorId=42",
+  );
+  assert.deepEqual(destinationFromSearch("?view=gallery&creatorId=42"), {
+    screen: "CreatorGallery",
+    params: { creatorId: 42 },
+  });
+  for (const id of ["0", "-1", "../../other", "1.5", "2147483648"]) {
+    assert.equal(
+      destinationFromSearch(
+        `?view=gallery&creatorId=${encodeURIComponent(id)}`,
+      ),
+      null,
+    );
+  }
+});
+
 test("creator links use stable IDs and do not redirect samples to the viewer's own account", () => {
   assert.deepEqual(creatorProfileParams({ creator_id: 42, demo: false }), {
     creatorId: 42,

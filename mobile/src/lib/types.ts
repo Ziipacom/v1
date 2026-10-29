@@ -170,6 +170,7 @@ export type RootStack = {
     | { tab?: "overview" | "library"; query?: string; category?: Category }
     | undefined;
   Profile: { creatorId?: number } | undefined;
+  CreatorGallery: { creatorId?: number } | undefined;
   Dashboard: undefined;
   Store:
     { tab?: "browse" | "sell" | "services"; sellerId?: number } | undefined;

@@ -1433,6 +1433,112 @@ test("an unchanged first image remains visible after filtering and Saved view ch
   });
 });
 
+test("Profile controls have one selection and Gallery navigates to the creator", () => {
+  const ui = profileScreenHarness();
+  let tree = ui.render();
+  const click = (label: string) => {
+    tree
+      .find((node) => node.props.accessibilityLabel === label)!
+      .props.onPress();
+    tree = ui.render();
+  };
+  const selected = () =>
+    tree
+      .filter((node) => node.props.accessibilityState?.selected)
+      .map((node) => node.props.accessibilityLabel);
+  click("Show profile as a grid");
+  assert.deepEqual(selected(), ["Show profile as a grid"]);
+  click("Show saved creations");
+  assert.deepEqual(selected(), ["Show creations"]);
+  click("Show tagged media");
+  assert.deepEqual(selected(), ["Show tagged media"]);
+  click("Show profile as a grid");
+  assert.deepEqual(selected(), ["Show profile as a grid"]);
+  click("Show profile as a grid");
+  assert.deepEqual(
+    selected(),
+    ["Show profile as a grid"],
+    "repeated clicks stay in the chosen view",
+  );
+  click("Show tagged media");
+  click("Open creator Gallery");
+  assert.deepEqual(ui.navigations, [["CreatorGallery", { creatorId: 1 }]]);
+  assert.equal(
+    tree.some((node) => node.type === "GallerySlider"),
+    false,
+  );
+});
+
+test("Profile grid is three square thumbnail columns without caption/category overlays", () => {
+  for (const desktop of [false, true]) {
+    const ui = profileScreenHarness(desktop);
+    let tree = ui.render();
+    tree
+      .find(
+        (node) => node.props.accessibilityLabel === "Show profile as a grid",
+      )!
+      .props.onPress();
+    tree = ui.render();
+    const feed = tree.find(
+      (node) => node.props.testID === "profile-creations-feed",
+    )!;
+    const cards = profileCards(feed);
+    assert.equal(feed.props.style.gap, 0);
+    assert.equal(cards.length, 6);
+    assert.ok(
+      cards.every(
+        (card) =>
+          card.props.style.width === "33.333333%" &&
+          card.props.style.aspectRatio === 1 &&
+          card.props.style.borderRadius === 0,
+      ),
+    );
+    assert.equal(
+      tree.some((node) =>
+        ["GamesIcon", "FilmIcon", "ArtIcon"].includes(String(node.type)),
+      ),
+      false,
+    );
+    assert.equal(
+      tree.some(
+        (node) => node.type === "Text" && node.props.children === "game",
+      ),
+      false,
+    );
+    assert.ok(
+      tree
+        .filter((node) => node.type === "ProfileMediaPreview")
+        .every((node) => node.props.thumbnailOnly && !node.props.videoActive),
+    );
+    assert.equal(
+      tree.some((node) => node.props.children === "Connected posts"),
+      false,
+    );
+  }
+});
+
+test("empty Saved view stays inside the feed and leads to discovery", () => {
+  const ui = profileScreenHarness();
+  ui.preferences.saved.splice(0);
+  let tree = ui.render();
+  tree
+    .find((node) => node.props.accessibilityLabel === "Show saved creations")!
+    .props.onPress();
+  tree = ui.render();
+  const empty = tree.find(
+    (node) => node.props.testID === "profile-empty-collection",
+  )!;
+  assert.equal(empty.props.style.width, "100%");
+  assert.equal(empty.props.style.minWidth, 0);
+  tree
+    .find(
+      (node) =>
+        node.type === "Action" && node.props.title === "Explore creations",
+    )!
+    .props.onPress();
+  assert.deepEqual(ui.navigations, [["Main"]]);
+});
+
 test("Profile stacks every published creation in one scrollable column and badges use each creation's own world", () => {
   for (const desktop of [false, true]) {
     const ui = profileScreenHarness(desktop);

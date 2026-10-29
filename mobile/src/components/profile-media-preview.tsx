@@ -90,12 +90,14 @@ export function ProfileMediaPreview({
   videoActive,
   autoplay,
   allowVideoStill = false,
+  thumbnailOnly = false,
 }: {
   item: Item;
   visible: boolean;
   videoActive: boolean;
   autoplay: boolean;
   allowVideoStill?: boolean;
+  thumbnailOnly?: boolean;
 }) {
   const { session } = useZiipa();
   const identity = useMemo(
@@ -166,7 +168,7 @@ export function ProfileMediaPreview({
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       <Cover item={fallback} style={{ flex: 1 }} />
       {videoStill && <GalleryStillPreview item={item} enabled={visible} />}
-      {videoStill && (
+      {videoStill && !thumbnailOnly && (
         <View
           pointerEvents="none"
           testID="profile-video-still-play"
@@ -184,7 +186,9 @@ export function ProfileMediaPreview({
           }}
         >
           <Play color="white" size={14} strokeWidth={1.5} />
-          <Text style={{ color: "white", fontFamily: font.medium, fontSize: 10 }}>
+          <Text
+            style={{ color: "white", fontFamily: font.medium, fontSize: 10 }}
+          >
             Open to play
           </Text>
         </View>
@@ -218,20 +222,22 @@ export function ProfileMediaPreview({
           ]}
         >
           <Icon color="white" size={25} strokeWidth={1.5} />
-          <Text
-            style={{
-              color: "white",
-              fontFamily: font.medium,
-              fontSize: 11,
-              textAlign: "center",
-              paddingHorizontal: 14,
-            }}
-          >
-            {text}
-          </Text>
+          {!thumbnailOnly && (
+            <Text
+              style={{
+                color: "white",
+                fontFamily: font.medium,
+                fontSize: 11,
+                textAlign: "center",
+                paddingHorizontal: 14,
+              }}
+            >
+              {text}
+            </Text>
+          )}
         </View>
       )}
-      {video && (
+      {video && !thumbnailOnly && (
         <Text
           pointerEvents="none"
           style={{

@@ -31,6 +31,7 @@ const screens = {
   messages: "Inbox",
   notifications: "NotificationMessages",
   profile: "Profile",
+  gallery: "CreatorGallery",
   dashboard: "Dashboard",
   store: "Store",
   updates: "Notifications",
@@ -104,6 +105,7 @@ function project(
   const id = (key: string) => put(key, identifier(input[key]));
   switch (view) {
     case "profile":
+    case "gallery":
       if (input.creatorId !== undefined) {
         const value =
           typeof input.creatorId === "number"

@@ -19,6 +19,7 @@ import { WelcomeScreen, LoginScreen } from "./screens/auth";
 import { DiscoverScreen } from "./screens/discovery";
 import { StudioScreen } from "./screens/studio";
 import { ProfileScreen } from "./screens/profile";
+import { CreatorGalleryScreen } from "./screens/creator-gallery";
 import { StoreScreen } from "./screens/store";
 import { MediaOSScreen } from "./screens/media-os";
 import { WatchScreen } from "./screens/watch";
@@ -296,6 +297,14 @@ function NavigationContent() {
                 name="Dashboard"
                 component={DashboardScreen}
                 options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="CreatorGallery"
+                component={CreatorGalleryScreen}
+                options={{
+                  headerShown: false,
+                  title: "Creator Gallery · Ziipa",
+                }}
               />
               <Stack.Screen
                 name="MediaOS"

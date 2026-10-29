@@ -17,7 +17,13 @@ import type { NetworkMedia } from "../lib/network-hub";
 import { color, font, styles } from "../theme";
 
 /** A public still, never an invented Ziipa upload or a second autoplay player. */
-export function DiscoveryNetworkPreview({ media }: { media: NetworkMedia }) {
+export function DiscoveryNetworkPreview({
+  media,
+  compact = false,
+}: {
+  media: NetworkMedia;
+  compact?: boolean;
+}) {
   const url = discoveryThumbnailUrl(media);
   const [failed, setFailed] = useState<string | null>(null);
   return (
@@ -30,7 +36,7 @@ export function DiscoveryNetworkPreview({ media }: { media: NetworkMedia }) {
           key={url}
           source={{ uri: url }}
           cachePolicy="memory"
-          contentFit="contain"
+          contentFit={compact ? "cover" : "contain"}
           accessibilityLabel={`Public ${discoveryProviderName(media.provider)} post thumbnail`}
           style={StyleSheet.absoluteFill}
           onError={() => setFailed(url)}
@@ -46,14 +52,16 @@ export function DiscoveryNetworkPreview({ media }: { media: NetworkMedia }) {
           }}
         >
           <ExternalLink size={36} color={color.muted} />
-          <Text
-            numberOfLines={5}
-            style={[styles.body, { textAlign: "center" }]}
-          >
-            {media.text ||
-              media.title ||
-              `Open the original ${discoveryProviderName(media.provider)} post`}
-          </Text>
+          {!compact && (
+            <Text
+              numberOfLines={5}
+              style={[styles.body, { textAlign: "center" }]}
+            >
+              {media.text ||
+                media.title ||
+                `Open the original ${discoveryProviderName(media.provider)} post`}
+            </Text>
+          )}
         </View>
       )}
     </View>
@@ -64,10 +72,12 @@ export function DiscoveryNetworkCard({
   media,
   onOpen,
   style,
+  compact = false,
 }: {
   media: NetworkMedia;
   onOpen: (media: NetworkMedia) => void;
   style?: StyleProp<ViewStyle>;
+  compact?: boolean;
 }) {
   return (
     <Pressable
@@ -85,29 +95,38 @@ export function DiscoveryNetworkCard({
         style,
       ]}
     >
-      <View pointerEvents="none" style={{ height: 190 }}>
-        <DiscoveryNetworkPreview media={media} />
+      <View
+        pointerEvents="none"
+        style={compact ? { flex: 1 } : { height: 190 }}
+      >
+        <DiscoveryNetworkPreview media={media} compact={compact} />
       </View>
-      <View pointerEvents="none" style={{ padding: 16, gap: 7 }}>
-        <View style={{ flexDirection: "row", gap: 7, alignItems: "center" }}>
-          <ExternalLink size={14} color={color.lime} />
-          <Text style={[styles.small, { color: color.lime }]}>
-            {discoveryProviderName(media.provider)} · {media.kind}
+      {!compact && (
+        <View pointerEvents="none" style={{ padding: 16, gap: 7 }}>
+          <View style={{ flexDirection: "row", gap: 7, alignItems: "center" }}>
+            <ExternalLink size={14} color={color.lime} />
+            <Text style={[styles.small, { color: color.lime }]}>
+              {discoveryProviderName(media.provider)} · {media.kind}
+            </Text>
+          </View>
+          <Text
+            numberOfLines={3}
+            style={{
+              fontFamily: font.semibold,
+              color: color.text,
+              fontSize: 16,
+            }}
+          >
+            {media.title || media.text || "Public post"}
+          </Text>
+          <Text numberOfLines={1} style={styles.small}>
+            {media.author || media.handle || "Network account"}
+          </Text>
+          <Text style={[styles.small, { fontSize: 11 }]}>
+            Imported public snapshot · Opens original
           </Text>
         </View>
-        <Text
-          numberOfLines={3}
-          style={{ fontFamily: font.semibold, color: color.text, fontSize: 16 }}
-        >
-          {media.title || media.text || "Public post"}
-        </Text>
-        <Text numberOfLines={1} style={styles.small}>
-          {media.author || media.handle || "Network account"}
-        </Text>
-        <Text style={[styles.small, { fontSize: 11 }]}>
-          Imported public snapshot · Opens original
-        </Text>
-      </View>
+      )}
     </Pressable>
   );
 }
