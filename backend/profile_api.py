@@ -76,7 +76,7 @@ def network_collection(session, owner, *, private):
     media = [row for row in hub['media'] if row.get('provider') in allowed][:180]
     if not private:
         public_fields = ('provider', 'name', 'status', 'handle', 'profile_url', 'auth_type', 'can_sync', 'audience',
-            'capabilities', 'snapshot_expires_at', 'selected_import_target_id', 'import_targets')
+            'capabilities', 'snapshot_expires_at')
         providers = [{key: row[key] for key in public_fields if key in row} for row in providers]
     # Never include followed people, invite URLs, credentials or private feed data.
     return {'providers': providers, 'media': media, 'people': [], 'invite_url': '',

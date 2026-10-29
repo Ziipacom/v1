@@ -125,7 +125,9 @@ def test_tag_does_not_bypass_withdrawn_source_visibility(ctx):
 def test_import_sharing_is_opt_in_revisioned_and_revocable(ctx, monkeypatch):
     import social_api
     hub = {'providers': [{'provider': 'bluesky', 'name': 'Bluesky', 'can_sync': True,
-        'capabilities': {'public_feed': True}, 'sync_error': 'private connection diagnostic'}],
+        'capabilities': {'public_feed': True}, 'sync_error': 'private connection diagnostic',
+        'selected_import_target_id': 'private-selection-id',
+        'import_targets': [{'id': 'private-managed-page', 'title': 'Unshared managed account'}]}],
         'media': [{'id': 'bsky:post', 'provider': 'bluesky', 'title': 'Public post'}]}
     monkeypatch.setattr(social_api, 'build_hub', lambda user, db: hub)
     monkeypatch.setattr(social_api, 'providers_for', lambda user, db: hub['providers'])
@@ -138,6 +140,7 @@ def test_import_sharing_is_opt_in_revisioned_and_revocable(ctx, monkeypatch):
     ctx.actor['user'] = ctx.viewer
     result = ctx.client.get(f'/api/creator/profiles/{ctx.owner.id}')
     assert result.json()['network']['media'] and 'private connection diagnostic' not in result.text
+    assert 'private-selection-id' not in result.text and 'Unshared managed account' not in result.text
     ctx.actor['user'] = ctx.owner
     assert ctx.client.post('/api/creator/profile/network-sharing', json={'providers': [], 'revision': 1}).status_code == 200
     ctx.actor['user'] = ctx.viewer
