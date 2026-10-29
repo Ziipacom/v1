@@ -1,4 +1,4 @@
-# Ziipa monetization: queued after Store and Promote acceptance
+# Ziipa monetization: setup and readiness
 
 Owner request, 2026-10-28: use Meta, AdMob and Unity to serve clearly identified video ads among Discover creations and product-style ad cards among Marketplace listings. AdMob and Unity accounts will be supplied later. This document records the next phase; no ad SDK, live placement, tracking request, publisher agreement or payout setup is activated by the Store/Promote implementation.
 
@@ -7,6 +7,45 @@ Owner request, 2026-10-28: use Meta, AdMob and Unity to serve clearly identified
 The owner-supplied [Ziipa Monetization Manager](https://business.facebook.com/pub/landing?business_id=1948272116139133) asks for at least one valid App Store or Google Play Store URL, plus the app name. On 2026-10-28, Apple's App Information page confirmed app ID 6827668999, bundle ID `com.ziipa.app`, and its View on App Store link: https://apps.apple.com/us/app/ziipa/id6827668999. Distribution remains version 1.0, Prepare for Submission.
 
 The verified Apple URL and Ziipa name were entered into Meta. The owner explicitly approved accepting the displayed Audience Network Terms, Policy and Meta Platform Policy and continuing. The Next attempt did not complete: Meta reported “Unable to find or retrieve app details. Please try again later,” cleared the app name, and left Application incomplete, AD placements pending and Integration pending. No successful terms-acceptance receipt, review submission, placement or ad serving was verified. The current unreleased Apple listing is a likely explanation for the lookup failure; Meta did not state its exact cause.
+
+### Live readiness recheck · 2026-10-29
+
+The owner requested continuing Meta setup now. The existing business session
+opens correctly as **Monetization Manager – Ziipa**, business ID
+`1948272116139133`. Its Application is incomplete; AD placements and Integration
+remain pending. The form explicitly requires at least one valid app-store link.
+The app name `Ziipa` is prepared in the open form, with Next disabled while a
+valid store URL is missing. That input has not been submitted or saved as a
+completed Meta application.
+
+Both candidate public URLs were checked in the browser today:
+
+- Apple `https://apps.apple.com/us/app/ziipa/id6827668999` displays "The page
+  you're looking for can't be found."
+- Google Play `https://play.google.com/store/apps/details?id=com.ziipa.app`
+  displays "the requested URL was not found on this server."
+
+The TestFlight beta and Play Console draft are therefore not a verified store
+listing Meta can retrieve. A working Ziipa listing is the immediate prerequisite;
+no unrelated app URL, preview package, invented publisher ID or TestFlight link
+has been substituted. No new agreements, payout account, SDK, permission grant,
+placement, review submission or live ad requests were activated in this recheck.
+
+The proposed inventory remains four separately identified **Native** placements:
+`Ziipa iOS Discover Native`, `Ziipa Android Discover Native`,
+`Ziipa iOS Marketplace Native`, and `Ziipa Android Marketplace Native`.
+These are preparation names, not issued placement IDs. Discover's initial test
+interval is six organic items and Marketplace's is eight; these remain draft
+defaults until SDK test-ad and product acceptance. Web needs its own supported
+ad-serving adapter; mobile Audience Network mediation does not configure web ads.
+
+The official iOS/Android integration guides were rechecked: Meta demand uses
+bidding, with AdMob as the proposed mediation platform. After app eligibility,
+complete owner-led payout onboarding, create the actual placements, obtain
+issued IDs, configure the bidding source in AdMob, publish the provider-issued
+`app-ads.txt` entries, and verify test ads on registered devices before live
+activation. Meta's business ID and the separate social-import developer app
+credentials are not ad-placement IDs. Existing hosting remains on free plans.
 
 ## Google Play account history and current draft
 
