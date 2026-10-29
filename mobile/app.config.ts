@@ -33,15 +33,15 @@ const googleServicesFile = portal
 const encryptionDeclaration = process.env.ZIIPA_USES_NON_EXEMPT_ENCRYPTION;
 const encryptionReviewed = process.env.ZIIPA_ENCRYPTION_REVIEWED === "true";
 const cameraPermission =
-  "Allow Ziipa to preview your camera for recording or livestreaming. Video is only broadcast when you choose Go live.";
+  "Allow Ziipa to take product photos and preview your camera for recording or livestreaming. Video is only broadcast when you choose Go live.";
 const microphonePermission =
   "Allow Ziipa to use your microphone for recordings, livestreams and voice-to-text. Livestream audio starts only when you choose Go live.";
 const photoLibraryPermission =
-  "Allow Ziipa to access the photos and videos you choose to upload for your creations, profile avatar and cover artwork.";
+  "Allow Ziipa to access the photos and videos you choose to upload for creations, product listings, profile avatar and cover artwork.";
 const config: ExpoConfig = {
   name: production ? "Ziipa" : "Ziipa Preview",
   slug: "ziipa",
-  version: "1.0.14",
+  version: "1.0.15",
   platforms: limitedTestflight ? ["ios"] : portal
     ? ["web"]
     : production
@@ -89,7 +89,7 @@ const config: ExpoConfig = {
     allowBackup: false,
     package: production ? identifier : `${identifier}.preview`,
     ...(googleServicesFile ? { googleServicesFile } : {}),
-    versionCode: 15,
+    versionCode: 16,
     adaptiveIcon: {
       foregroundImage: "./assets/brand/ziipa-favicon.png",
       backgroundColor: "#110D1C",

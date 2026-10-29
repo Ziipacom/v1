@@ -188,12 +188,20 @@ export function StudioScreen({
                   key={w.id}
                   accessibilityRole="button"
                   accessibilityLabel={
-                    w.id === "live" ? "Open live broadcasts" : `Edit ${w.title}`
+                    w.id === "store"
+                      ? "Open Store"
+                      : w.id === "live"
+                        ? "Open live broadcasts"
+                        : `Edit ${w.title}`
                   }
                   accessibilityState={{
                     selected: editing && selected === w.id,
                   }}
                   onPress={() => {
+                    if (w.id === "store") {
+                      navigation.navigate("Store", { tab: "browse" });
+                      return;
+                    }
                     if (w.id === "live") {
                       navigation.navigate("Live");
                       return;

@@ -89,6 +89,7 @@ export function ProfileContentControls({
           accessibilityRole="button"
           accessibilityLabel={label}
           accessibilityState={{ selected }}
+          aria-pressed={selected}
           onPress={onPress}
           style={{
             minWidth: Icon === RefreshCw ? 44 : 36,

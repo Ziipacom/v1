@@ -216,7 +216,7 @@ test("real iOS Info.plist retains photo-library read purpose after every native 
   assert.equal(result.status, 0, result.stderr);
   const config = JSON.parse(result.stdout);
   const generated = config._internal.modResults.ios.infoPlist;
-  const purpose = "Allow Ziipa to access the photos and videos you choose to upload for your creations, profile avatar and cover artwork.";
+  const purpose = "Allow Ziipa to access the photos and videos you choose to upload for creations, product listings, profile avatar and cover artwork.";
   assert.equal(generated.NSPhotoLibraryUsageDescription, purpose);
   assert.equal(config.ios.infoPlist.NSPhotoLibraryUsageDescription, purpose);
   assert.equal(config.plugins.find((plugin: any) => Array.isArray(plugin) && plugin[0] === "expo-image-picker")[1].photosPermission, purpose);

@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
@@ -65,12 +71,8 @@ function Block({
   detail?: string;
   children: ReactNode;
 }) {
-  const { desktop } = useDesktopLayout();
   return (
-    <View style={[styles.panel, { gap: 12 }, desktop && { padding: 20, borderRadius: 12 }]}>
-      <Text accessibilityRole="header" style={[styles.heading, { fontSize: desktop ? 19 : 21 }]}>
-        {title}
-      </Text>
+    <View accessibilityLabel={title} style={{ gap: 12 }}>
       {!!detail && <Text style={styles.small}>{detail}</Text>}
       {children}
     </View>
@@ -79,7 +81,9 @@ function Block({
 
 export function PromotionHub(props: Props) {
   const { session } = useZiipa();
-  return <ScopedPromotionHub key={session?.access_token || "guest"} {...props} />;
+  return (
+    <ScopedPromotionHub key={session?.access_token || "guest"} {...props} />
+  );
 }
 
 function ScopedPromotionHub({ navigation, initialItem }: Props) {
@@ -88,7 +92,10 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
   const focused = useIsFocused();
   const capture = useOperationScope(session?.access_token || "guest", focused);
   const signedIn = !!session && !guest;
-  const sources = promotionSources(data.drafts, signedIn ? session.user.id : undefined);
+  const sources = promotionSources(
+    data.drafts,
+    signedIn ? session.user.id : undefined,
+  );
   const [sourceId, setSourceId] = useState(initialItem?.id || "");
   const source = sources.find((item) => item.id === sourceId);
   const [query, setQuery] = useState("");
@@ -100,6 +107,7 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
   const [notice, setNotice] = useState("");
   const [savedProject, setSavedProject] = useState<Project | null>(null);
   const [openSection, setOpenSection] = useState<string | null>(null);
+  const [area, setArea] = useState<"plan" | "networks" | "activity">("plan");
   const [openNetwork, setOpenNetwork] = useState<string | null>(null);
   const [openTool, setOpenTool] = useState<string | null>(null);
   const [brief, setBrief] = useState<PromotionBrief>({
@@ -121,13 +129,16 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
     setError("");
     setSnapshot(null);
     try {
-      const [campaigns, config, providers, connections, projects] = await Promise.all([
-        api<Campaign[]>(campaignRoot),
-        api<CampaignConfig>(`${campaignRoot}/config`),
-        api<{ providers: CampaignProvider[] }>("/api/publishing/config"),
-        api<{ connections: CampaignConnection[] }>("/api/publishing/connections"),
-        api<Project[]>("/api/os/projects"),
-      ]);
+      const [campaigns, config, providers, connections, projects] =
+        await Promise.all([
+          api<Campaign[]>(campaignRoot),
+          api<CampaignConfig>(`${campaignRoot}/config`),
+          api<{ providers: CampaignProvider[] }>("/api/publishing/config"),
+          api<{ connections: CampaignConnection[] }>(
+            "/api/publishing/connections",
+          ),
+          api<Project[]>("/api/os/projects"),
+        ]);
       if (valid())
         setSnapshot({
           campaigns,
@@ -152,7 +163,8 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
   }, [load]);
 
   async function saveBrief() {
-    if (!signedIn || saving || saveLock.current || !focused || savedProject) return;
+    if (!signedIn || saving || saveLock.current || !focused || savedProject)
+      return;
     const valid = capture();
     saveLock.current = true;
     setSaving(true);
@@ -172,7 +184,9 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
     } catch (cause) {
       if (valid())
         setError(
-          cause instanceof Error ? cause.message : "Your promotion brief could not be saved.",
+          cause instanceof Error
+            ? cause.message
+            : "Your promotion brief could not be saved.",
         );
     } finally {
       saveLock.current = false;
@@ -188,13 +202,20 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
     [
       "Scheduled releases",
       snapshot
-        ? String(snapshot.campaigns.filter((item) => item.status === "scheduled").length)
+        ? String(
+            snapshot.campaigns.filter((item) => item.status === "scheduled")
+              .length,
+          )
         : "—",
     ],
     [
       "Planning briefs",
       snapshot
-        ? String(snapshot.projects.filter((item) => item.name.startsWith("Promotion · ")).length)
+        ? String(
+            snapshot.projects.filter((item) =>
+              item.name.startsWith("Promotion · "),
+            ).length,
+          )
         : "—",
     ],
   ];
@@ -205,15 +226,24 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
     >
       <View style={{ gap: 8 }}>
         {[
-          "1. Choose owned media and confirm music/source rights.",
-          "2. Prepare the actual portrait, square or landscape versions in Campaigns.",
-          "3. Review exported media, destination privacy and provider-specific permissions.",
-          "4. Approve the release and schedule delivery inside Campaigns; Calendar can organize reminders.",
-          "5. Check delivery receipts, failures and Media OS insights. A schedule is not proof of posting.",
-        ].map((line) => (
-          <Text key={line} style={styles.small}>
-            {line}
-          </Text>
+          { Icon: FolderOpen, title: "Choose your source" },
+          { Icon: Clapperboard, title: "Prepare formats" },
+          { Icon: ShieldCheck, title: "Review rights & destinations" },
+          { Icon: CalendarClock, title: "Approve & schedule" },
+          { Icon: Send, title: "Check delivery receipts" },
+        ].map(({ Icon, title }) => (
+          <View
+            key={title}
+            style={{
+              flexDirection: "row",
+              gap: 10,
+              alignItems: "center",
+              paddingVertical: 3,
+            }}
+          >
+            <Icon size={17} color={color.lime} />
+            <Text style={styles.small}>{title}</Text>
+          </View>
         ))}
       </View>
       {snapshot && (
@@ -271,7 +301,8 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
               disabled={saving}
               onPress={() => {
                 setSourceId(item.id);
-                if (!brief.name) updateBrief({ name: item.title.slice(0, 120) });
+                if (!brief.name)
+                  updateBrief({ name: item.title.slice(0, 120) });
                 else {
                   setSavedProject(null);
                   setNotice("");
@@ -287,13 +318,19 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
                 borderRadius: 10,
               }}
             >
-              <Cover item={item} style={{ width: 68, height: 44, borderRadius: 7 }} />
+              <Cover
+                item={item}
+                style={{ width: 68, height: 44, borderRadius: 7 }}
+              />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text numberOfLines={2} style={styles.label}>
                   {item.title}
                 </Text>
                 <Text style={styles.small}>
-                  {item.visibility === "published" ? "Published source" : "Private draft"} · video
+                  {item.visibility === "published"
+                    ? "Published source"
+                    : "Private draft"}{" "}
+                  · video
                 </Text>
               </View>
               {source?.id === item.id && <Check size={18} color={color.lime} />}
@@ -302,8 +339,8 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
       )}
       {sources.length > 8 && (
         <Text style={styles.small}>
-          Search to narrow the first eight matches. The full library remains available in the
-          creator workspace.
+          Search to narrow the first eight matches. The full library remains
+          available in the creator workspace.
         </Text>
       )}
       <Action
@@ -331,18 +368,21 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
       />
       <Text style={styles.label}>Objective</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        {["Awareness", "Grow an audience", "Release a creation", "Marketplace interest"].map(
-          (objective) => (
-            <Pill
-              key={objective}
-              title={objective}
-              active={brief.objective === objective}
-              onPress={() => {
-                if (!saving) updateBrief({ objective });
-              }}
-            />
-          ),
-        )}
+        {[
+          "Awareness",
+          "Grow an audience",
+          "Release a creation",
+          "Marketplace interest",
+        ].map((objective) => (
+          <Pill
+            key={objective}
+            title={objective}
+            active={brief.objective === objective}
+            onPress={() => {
+              if (!saving) updateBrief({ objective });
+            }}
+          />
+        ))}
       </View>
       <Field
         label="Audience and context"
@@ -368,7 +408,9 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
           : "No source linked. You can choose a creation later in Media OS."}
       </Text>
       <Action
-        title={savedProject ? "Private brief saved" : "Save private promotion brief"}
+        title={
+          savedProject ? "Private brief saved" : "Save private promotion brief"
+        }
         icon={Save}
         busy={saving}
         disabled={!signedIn || !brief.name.trim() || !!savedProject}
@@ -398,8 +440,12 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
     >
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
         {socialProviders.map((entry) => {
-          const provider = snapshot?.providers.find((value) => value.provider === entry.id);
-          const connection = snapshot?.connections.find((value) => value.provider === entry.id);
+          const provider = snapshot?.providers.find(
+            (value) => value.provider === entry.id,
+          );
+          const connection = snapshot?.connections.find(
+            (value) => value.provider === entry.id,
+          );
           const readiness = organicPromotionStatus(provider, connection);
           const requirements = [
             ...(provider?.requirements || []),
@@ -423,12 +469,18 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={`${openNetwork === entry.id ? "Collapse" : "Expand"} ${organicProviderNames[entry.id]} details`}
                 accessibilityState={{ expanded: openNetwork === entry.id }}
-                onPress={() => setOpenNetwork(openNetwork === entry.id ? null : entry.id)}
+                onPress={() =>
+                  setOpenNetwork(openNetwork === entry.id ? null : entry.id)
+                }
                 style={[styles.between, { minHeight: 32 }]}
               >
-                <Text style={styles.label}>{organicProviderNames[entry.id]}</Text>
+                <Text style={styles.label}>
+                  {organicProviderNames[entry.id]}
+                </Text>
                 <View style={styles.row}>
-                  {readiness.ready && <ShieldCheck size={18} color={color.lime} />}
+                  {readiness.ready && (
+                    <ShieldCheck size={18} color={color.lime} />
+                  )}
                   {openNetwork === entry.id ? (
                     <Minus size={18} color={color.lime} />
                   ) : (
@@ -436,7 +488,12 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
                   )}
                 </View>
               </Pressable>
-              <Text style={[styles.small, { color: readiness.ready ? color.lime : color.muted }]}>
+              <Text
+                style={[
+                  styles.small,
+                  { color: readiness.ready ? color.lime : color.muted },
+                ]}
+              >
                 {loading ? "Checking readiness…" : readiness.label}
               </Text>
               {openNetwork === entry.id && (
@@ -444,7 +501,8 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
                   <Text style={styles.small}>
                     {connection?.selected_target_id
                       ? connection.targets.find(
-                          (target) => target.id === connection.selected_target_id,
+                          (target) =>
+                            target.id === connection.selected_target_id,
                         )?.name || "Selected destination"
                       : entry.formats}
                   </Text>
@@ -458,7 +516,9 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
                     icon={Link2}
                     secondary
                     disabled={saving}
-                    onPress={() => navigation.navigate("Connections", { tab: "accounts" })}
+                    onPress={() =>
+                      navigation.navigate("Connections", { tab: "accounts" })
+                    }
                   />
                 </>
               )}
@@ -495,7 +555,9 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={`${openTool === tool.id ? "Collapse" : "Expand"} ${tool.name} setup`}
                 accessibilityState={{ expanded: openTool === tool.id }}
-                onPress={() => setOpenTool(openTool === tool.id ? null : tool.id)}
+                onPress={() =>
+                  setOpenTool(openTool === tool.id ? null : tool.id)
+                }
                 style={[styles.between, { minHeight: 32 }]}
               >
                 <Text style={styles.label}>{tool.name}</Text>
@@ -508,7 +570,9 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
               <Text style={[styles.eyebrow, { color: color.muted }]}>
                 NOT INTEGRATED · {tool.kind}
               </Text>
-              {openTool === tool.id && <Text style={styles.small}>{tool.requirements}</Text>}
+              {openTool === tool.id && (
+                <Text style={styles.small}>{tool.requirements}</Text>
+              )}
               <Pressable
                 accessibilityRole="checkbox"
                 accessibilityLabel={`Include ${tool.name} setup in promotion brief`}
@@ -572,7 +636,9 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
     >
       {!snapshot ? (
         <Text style={styles.small}>
-          {loading ? "Loading campaign records…" : "Sign in or refresh to load campaign records."}
+          {loading
+            ? "Loading campaign records…"
+            : "Sign in or refresh to load campaign records."}
         </Text>
       ) : !snapshot.campaigns.length ? (
         <Text style={styles.small}>
@@ -604,13 +670,19 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
               title={`Review ${campaign.name}`}
               secondary
               disabled={saving}
-              onPress={() => navigation.navigate("Campaigns", { campaignId: campaign.id })}
+              onPress={() =>
+                navigation.navigate("Campaigns", { campaignId: campaign.id })
+              }
             />
           </View>
         ))
       )}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        <Action title="All campaigns" secondary onPress={() => navigation.navigate("Campaigns")} />
+        <Action
+          title="All campaigns"
+          secondary
+          onPress={() => navigation.navigate("Campaigns")}
+        />
         <Action
           title="Insights & creator economics"
           secondary
@@ -625,7 +697,11 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
       title: "Campaigns",
       Icon: Clapperboard,
       disabled: !signedIn || saving,
-      onPress: () => navigation.navigate("Campaigns", source ? { itemId: source.id } : undefined),
+      onPress: () =>
+        navigation.navigate(
+          "Campaigns",
+          source ? { itemId: source.id } : undefined,
+        ),
     },
     {
       title: "Calendar",
@@ -643,7 +719,11 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
       title: "Published",
       Icon: Send,
       disabled: !signedIn || saving,
-      onPress: () => navigation.navigate("Publishing", source ? { itemId: source.id } : undefined),
+      onPress: () =>
+        navigation.navigate(
+          "Publishing",
+          source ? { itemId: source.id } : undefined,
+        ),
     },
   ];
   const sections = [
@@ -664,7 +744,9 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
     {
       id: "brief",
       title: "Promotion brief",
-      detail: savedProject ? "Saved privately" : brief.name || "Audience, message and goals",
+      detail: savedProject
+        ? "Saved privately"
+        : brief.name || "Audience, message and goals",
       Icon: Sparkles,
       content: briefEditor,
     },
@@ -698,13 +780,19 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       style={styles.screen}
-      contentContainerStyle={desktop ? workspace.page : [styles.page, { gap: 16 }]}
+      contentContainerStyle={[
+        desktop ? workspace.page : styles.page,
+        { gap: 12 },
+      ]}
     >
       <View style={styles.between}>
         <View style={{ flex: 1, minWidth: 0, gap: 5 }}>
           <View style={styles.row}>
             <Megaphone size={23} color={color.lime} />
-            <Text accessibilityRole="header" style={[styles.heading, { fontSize: 25 }]}>
+            <Text
+              accessibilityRole="header"
+              style={[styles.heading, { fontSize: 25 }]}
+            >
               Promote
             </Text>
           </View>
@@ -713,7 +801,10 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Refresh promotion readiness"
-          accessibilityState={{ disabled: !signedIn || saving || loading, busy: loading }}
+          accessibilityState={{
+            disabled: !signedIn || saving || loading,
+            busy: loading,
+          }}
           disabled={!signedIn || saving || loading}
           onPress={() => void load()}
           style={{
@@ -732,7 +823,12 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
       </View>
       <View
         accessibilityLabel="Promotion shortcuts"
-        style={{ flexDirection: "row", gap: 8, maxWidth: 500 }}
+        style={{
+          flexDirection: "row",
+          gap: 8,
+          maxWidth: 500,
+          paddingBottom: 8,
+        }}
       >
         {shortcuts.map(({ title, Icon, disabled, onPress }) => (
           <Pressable
@@ -745,12 +841,8 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
             style={({ pressed }) => ({
               flex: 1,
               minWidth: 0,
-              minHeight: 68,
-              paddingVertical: 10,
-              borderRadius: 16,
-              borderWidth: 1,
-              borderColor: color.border,
-              backgroundColor: color.panel,
+              minHeight: 56,
+              paddingVertical: 6,
               gap: 6,
               alignItems: "center",
               justifyContent: "center",
@@ -760,7 +852,11 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
             <Icon size={22} color={color.text} strokeWidth={1.7} />
             <Text
               numberOfLines={1}
-              style={{ color: color.text, fontFamily: font.medium, fontSize: 11 }}
+              style={{
+                color: color.text,
+                fontFamily: font.medium,
+                fontSize: 11,
+              }}
             >
               {title}
             </Text>
@@ -770,7 +866,10 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
       {!signedIn && (
         <>
           <Notice text="Sign in for your real campaigns, connected accounts and private projects." />
-          <Action title="Sign in to Ziipa" onPress={() => navigation.navigate("Login")} />
+          <Action
+            title="Sign in to Ziipa"
+            onPress={() => navigation.navigate("Login")}
+          />
         </>
       )}
       {!!error && <Notice error text={error} />}
@@ -780,67 +879,147 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
           <View
             key={label}
             accessibilityLabel={`${label}: ${value}`}
-            style={{ flex: 1, minWidth: 0, paddingVertical: 9, alignItems: "center", gap: 3 }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              paddingVertical: 9,
+              alignItems: "center",
+              gap: 3,
+            }}
           >
-            <Text style={{ fontFamily: font.semibold, color: color.lime, fontSize: 19 }}>
+            <Text
+              style={{
+                fontFamily: font.semibold,
+                color: color.lime,
+                fontSize: 19,
+              }}
+            >
               {value}
             </Text>
             <Text
               numberOfLines={2}
-              style={[styles.small, { fontSize: 10, textAlign: "center", lineHeight: 13 }]}
+              style={[
+                styles.small,
+                { fontSize: 10, textAlign: "center", lineHeight: 13 },
+              ]}
             >
               {label}
             </Text>
           </View>
         ))}
       </View>
-      <View style={{ gap: 10 }}>
-        {sections.map(({ id, title, detail, Icon, content }) => {
-          const expanded = openSection === id;
-          return (
-            <View
-              key={id}
+      <View
+        accessibilityRole="tablist"
+        style={{
+          flexDirection: "row",
+          borderBottomWidth: 1,
+          borderColor: color.border,
+        }}
+      >
+        {(
+          [
+            ["plan", "Plan"],
+            ["networks", "Networks"],
+            ["activity", "Activity"],
+          ] as const
+        ).map(([id, title]) => (
+          <Pressable
+            key={id}
+            accessibilityRole="tab"
+            aria-selected={area === id}
+            accessibilityLabel={`Promotion ${title}`}
+            accessibilityState={{ selected: area === id }}
+            onPress={() => {
+              setArea(id);
+              setOpenSection(null);
+            }}
+            style={{
+              flex: 1,
+              minHeight: 44,
+              alignItems: "center",
+              justifyContent: "center",
+              borderBottomWidth: 2,
+              borderColor: area === id ? color.lime : "transparent",
+            }}
+          >
+            <Text
               style={{
-                borderWidth: 1,
-                borderColor: expanded ? color.purple : color.border,
-                borderRadius: 18,
-                backgroundColor: color.panel,
-                overflow: "hidden",
+                fontFamily: font.medium,
+                color: area === id ? color.text : color.muted,
+                fontSize: 13,
               }}
             >
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${expanded ? "Collapse" : "Expand"} ${title}`}
-                accessibilityState={{ expanded }}
-                onPress={() => setOpenSection(expanded ? null : id)}
-                style={({ pressed }) => ({
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: 16,
-                  minHeight: 72,
-                  opacity: pressed ? 0.7 : 1,
-                })}
+              {title}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={{ gap: 10 }}>
+        {sections
+          .filter(({ id }) =>
+            area === "plan"
+              ? ["plan", "media", "brief"].includes(id)
+              : area === "networks"
+                ? ["networks", "setup"].includes(id)
+                : id === "progress",
+          )
+          .map(({ id, title, detail, Icon, content }) => {
+            const expanded = openSection === id;
+            return (
+              <View
+                key={id}
+                style={{
+                  borderWidth: 1,
+                  borderColor: expanded ? color.purple : color.border,
+                  borderRadius: 8,
+                  backgroundColor: color.panel,
+                  overflow: "hidden",
+                }}
               >
-                <Icon size={22} color={expanded ? color.lime : color.text} strokeWidth={1.7} />
-                <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-                  <Text style={[styles.label, { marginBottom: 0 }]}>{title}</Text>
-                  <Text numberOfLines={1} style={[styles.small, { fontSize: 12 }]}>
-                    {detail}
-                  </Text>
-                </View>
-                {expanded ? (
-                  <Minus size={20} color={color.lime} />
-                ) : (
-                  <Plus size={20} color={color.muted} />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${expanded ? "Collapse" : "Expand"} ${title}`}
+                  accessibilityState={{ expanded }}
+                  onPress={() => setOpenSection(expanded ? null : id)}
+                  style={({ pressed }) => ({
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: 12,
+                    minHeight: 58,
+                    opacity: pressed ? 0.7 : 1,
+                  })}
+                >
+                  <Icon
+                    size={19}
+                    color={expanded ? color.lime : color.text}
+                    strokeWidth={1.7}
+                  />
+                  <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+                    <Text style={[styles.label, { marginBottom: 0 }]}>
+                      {title}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.small, { fontSize: 12 }]}
+                    >
+                      {detail}
+                    </Text>
+                  </View>
+                  {expanded ? (
+                    <Minus size={20} color={color.lime} />
+                  ) : (
+                    <Plus size={20} color={color.muted} />
+                  )}
+                </Pressable>
+                {expanded && (
+                  <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
+                    {content}
+                  </View>
                 )}
-              </Pressable>
-              {expanded && (
-                <View style={{ paddingHorizontal: 10, paddingBottom: 10 }}>{content}</View>
-              )}
-            </View>
-          );
-        })}
+              </View>
+            );
+          })}
       </View>
     </ScrollView>
   );

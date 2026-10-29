@@ -2,7 +2,7 @@
 
 A separate React Native app in `ziipa/mobile`, built from the supplied Figma reference and creator portal. It uses Expo SDK 57, React Native 0.86, TypeScript, native navigation and players, and the shared FastAPI/PostgreSQL/Redis backend. It is not a WebView wrapper.
 
-**Status:** implemented native application source and build configuration; not yet signed, device-tested, or ready for public store submission. See [store/RELEASE.md](store/RELEASE.md) for the remaining release gates. Neither app store nor a cloud build has received this project.
+**Status:** shared application source with Android preview APKs and a limited iOS TestFlight beta. New changes need matching signed builds and device checks before release. See [store/RELEASE.md](store/RELEASE.md) for the remaining public-release gates.
 
 ## Run locally
 
@@ -73,6 +73,13 @@ cd ../backend
 ```
 
 `expo export` emits Android/iOS Hermes bundles in `dist/`, plus web assets when using preview configuration. These are **not** APK/AAB/IPA files and cannot be uploaded as store binaries. The prebuild command validates and generates native source; it does not compile an installable app. See the release guide for signed EAS builds.
+
+The `android-universal-apk` profile compiles the preview application for all four
+Android architectures without requesting a cloud signing credential. Its output
+must be inspected and signed locally with the existing preview certificate before
+distribution; the cloud artifact is not the approved phone download. Confirm the
+Free-plan quota, exact source archive, version code and signing-certificate match
+for each release. This profile does not upload an app to Google Play.
 
 The UUID override resolves the inherited `uuid <11.1.1` advisory in Xcode project tooling; the consumer uses the compatible `uuid.v4()` API. Keep it until the upstream tooling dependency is updated, and recheck with Expo Doctor after upgrades.
 

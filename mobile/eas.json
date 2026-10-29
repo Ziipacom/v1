@@ -27,6 +27,18 @@
         "EXPO_PUBLIC_ENABLE_CONCEPTS": "true"
       }
     },
+    "android-universal-apk": {
+      "extends": "preview",
+      "android": {
+        "buildType": "apk",
+        "withoutCredentials": true,
+        "autoIncrement": false,
+        "env": {
+          "ORG_GRADLE_PROJECT_reactNativeArchitectures": "armeabi-v7a,arm64-v8a,x86,x86_64"
+        }
+      },
+      "env": { "EXPO_NO_DOTENV": "1" }
+    },
     "ios-internal-testflight": {
       "extends": "production",
       "distribution": "store",

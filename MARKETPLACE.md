@@ -7,7 +7,7 @@ The Store implementation shares `mobile/src/screens/store.tsx` across web, iOS a
 - Account-owned mini storefronts with a name, description and explicit public switch.
 - Digital media and physical merchandise listings, private drafts, publish, mark sold and archive.
 - Uploaded JPG/PNG/WebP product photos, editable display captions and price/title overlays. This composes a product display from the real photo; it does not generate a fictional photo or claim a vision model inspected the product.
-- Opt-in text-only Create for Me suggestions for title, description, storefront name and display caption. The user reviews and applies them. Price, condition, delivery and licensing facts remain seller-entered. The existing bounded signed Cloudflare/private text gateway is reused, with its shared free request caps. Unavailable AI leaves the draft unchanged.
+- Opt-in text-only Create for Me fills editable title, description, storefront name and display caption, then opens Review. Price, condition, delivery, ownership and licensing facts remain seller-controlled. The existing bounded signed Cloudflare/private text gateway is reused, with its shared free request caps. Unavailable AI leaves the draft unchanged and the manual flow available.
 - Network-wide browsing of published listings from active, discoverable sellers. Search, category, type, price range, sort, pagination and creator-store filtering are server-side.
 - Product photo access follows publication, storefront enablement and seller privacy. Draft photos remain owner-only. Storage URLs and paid media files are never exposed by a listing.
 - Stored revisions prevent silent cross-device overwrites. A stable creation request ID prevents duplicate listings after a lost acknowledgement.
@@ -40,6 +40,21 @@ The inventory covers storage, AI listing copy, music, captions, narration, own-v
 - [Apple Small Business Program](https://developer.apple.com/app-store/small-business-program/) eligibility and [Google service fees](https://support.google.com/googleplay/android-developer/answer/112622) require separate review. No fee eligibility is assumed for Niche Labs LLC.
 
 The current production project media cap is only 6 GiB shared. Selling a 10/50 GiB account allowance before approving real project capacity would be misleading. Both billing and storage upgrade activation are off by default. No cap or hosting plan was increased.
+
+## Compact creator workflow (1.0.15)
+
+Marketplace uses two square-photo columns on phones and three on desktop, with
+price and title below each photo. The Discover side-menu Store action opens
+Marketplace directly. Sell has Create, Review and Publish steps; storefront
+settings and saved products open in separate panels. Native camera capture and
+file uploads use explicit user actions. Publishing never follows AI generation
+automatically, and storefront visibility is confirmed by the server before the
+Publish action becomes available. Checkout and payouts remain disabled.
+
+Promote has Campaigns, Calendar, Networks and Published icon shortcuts above
+Plan, Networks and Activity tabs. Only one section expands at a time, and
+expanded sections avoid nested decorative cards. Processing/provider readiness
+continues to reflect actual server receipts.
 
 ## Before accepting payments
 
