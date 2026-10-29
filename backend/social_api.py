@@ -159,6 +159,8 @@ def serialize_provider(provider: str, row: CreatorConnection | None) -> dict:
         'profile_url': data.get('profile_url', '') if linked or oauth else '', 'configured': bool(available),
         'auth_type': 'oauth' if oauth else 'public_profile' if linked else 'none', 'revision': revision,
         'can_sync': can_sync, 'can_publish': False,
+        'audience': {**(snapshot.get('audience') or {}), 'updated_at': data.get('last_synced_at')}
+            if can_sync and isinstance(snapshot.get('audience'), dict) else None,
         'capabilities': {'profile_link': True, 'public_feed': bool(available),
                          'following': provider == 'bluesky' and settings.social_public_sync_enabled,
                          'private_feed': False, 'publish': False},
@@ -396,7 +398,12 @@ def normalize_snapshot(profile: dict, feed: dict, follows: dict) -> dict:
         people.append({'id': did, 'provider': 'bluesky', 'name': plain(person.get('displayName')) or handle,
                        'handle': handle, 'profile_url': f'https://bsky.app/profile/{did}',
                        'avatar_url': image_url(person.get('avatar')), 'relationship': 'following'})
-    return {'media': media, 'people': people}
+    result = {'media': media, 'people': people}
+    counts = {key: profile.get(raw) for key, raw in (('followers', 'followersCount'), ('following', 'followsCount'))
+              if type(profile.get(raw)) is int and 0 <= profile[raw] <= 9007199254740991}
+    if counts:
+        result['audience'] = counts
+    return result
 
 
 def claim_sync(user_id: int, provider: str):

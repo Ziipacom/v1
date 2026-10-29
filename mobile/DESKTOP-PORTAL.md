@@ -28,6 +28,17 @@ The collapsed sidebar and the Explore/Studio switch use the same navigator. Its
 ancestors stay mounted across the compact breakpoint so resizing does not discard
 an active editor or camera. Existing focus handlers still stop inactive media.
 
+The existing sidebar toggle sits below the logo. Its arrow-and-lines icon points
+in the expand/collapse direction. Explore's creation shortcut reads “Create”.
+
+A floating desktop AI composer stays inside the main workspace, with reserved
+bottom space so the last screen controls remain reachable. It reuses Media OS
+chat and dictation, retains unsent text across routes, and shows replies without
+leaving the current page. Opening the shared conversation in Media OS exposes
+the existing proposal review and permission controls; the floating field does
+not grant tools or execute proposals. Its state resets with the signed-in session.
+Voice recognition starts only from the microphone button and edits text only.
+
 ## Browser URLs and privacy
 
 Desktop destinations use `/studio/?view=...`; browser Back/Forward are handled by
@@ -69,3 +80,32 @@ otherwise unchanged mobile layout. A gallery preview is not a broadcast or post.
 
 Studio exports clear Metro's transformed-module cache, so switching local and
 production public API origins cannot silently reuse a prior export's origin.
+
+## Profile audience and visitor views
+
+Creator avatar and handle links open the selected creator ID. Owner navigation
+explicitly clears that ID. Both views provide compact reset, gallery, grid/list,
+saved and tagged controls; saved collections and pending tags remain owner-only.
+The carousel keeps every creation but displays no more than three moving bars.
+Uploaded photos without a separate cover are their own neighboring-card stills.
+
+Profile follower counts default to Ziipa. A small network selector uses an
+anchored desktop dropdown and a compact-screen bottom sheet. Only connected or
+linked networks appear; unavailable counts stay `—`, real zero stays zero, and
+available counts include their update time. Provider totals are not inferred
+from bounded imported-following lists. Public profile links do not verify network
+account ownership or grant OAuth permissions.
+
+The account submenu opens Dashboard. Its graphs use actual creation timestamps
+and existing insights receipts. Its "Combined accounts" audience totals add known
+network counts and identify missing values; these are not unique people.
+Historical external reach, follower growth and verified revenue stay unavailable
+until supported providers supply those metrics.
+
+The profile lock opens an explicit followers-only privacy control. New followers
+need owner approval; owners can review requests, remove followers and unfollow.
+Private creations and selected artwork require an accepted relationship on the
+server. Blocks revoke relationships in both directions, including legacy name
+blocks; unblocking does not restore approval. Private drafts, saved collections,
+signed-out Gallery access and public Discover eligibility remain separately
+restricted. The additive `20261029_0015` migration is required before release.

@@ -142,6 +142,144 @@ needs a separately reviewed execution environment and real provider acceptance;
 speech needs measured CPU/RAM/scratch capacity and a pinned local model. Keep all
 new hosted flags off until those checks pass. Free capacity is not guaranteed.
 
+## Creator automation audit — 29 October 2026
+
+This is a source audit and proposed implementation sequence, not acceptance of
+live calendar connectors, a restored renderer, or unattended production. The
+existing calendar API explicitly reports `automatic_broadcast: false` and
+`automatic_campaign_delivery: false`. The limited `scheduler_worker.py` profile
+rejects media, agent, recording, provider-sync and campaign execution flags.
+Keep this least-capable reminder worker separate from any production executor.
+
+### Product patterns reviewed
+
+[Muse's developer-provided App Store description](https://apps.apple.com/us/app/muse-from-meta/id6760173601)
+describes connected calendars, scheduling-conflict handling, reminders,
+goal-to-plan execution, continued work after the app closes, attention
+notifications, approvals and an activity log. These are product claims, not a
+published implementation or independent reliability test.
+
+[Instinct's official site](https://instinct.com/) describes a text/call assistant
+that acts through phones and computers. Its [privacy policy](https://instinct.com/privacy-policy)
+specifically confirms optional Google Calendar/Workspace access, calendar-event
+context, actions, revocation and deletion controls. Its public documentation does
+not establish a complete recurring-calendar, provider or notification feature
+matrix. Do not treat third-party example prompts as verified functionality.
+
+For Ziipa, adopt the connected-context, persistent-plan and exception-notification
+patterns, with explicit creator rights and destination controls. An imported
+calendar description is untrusted event data, never an agent instruction or
+permission to publish, invite guests, expose a private draft or spend money.
+
+### Existing foundations and missing behavior
+
+| Capability | Existing implementation | Remaining work |
+| --- | --- | --- |
+| Calendar | Owner-scoped events, daily/weekly repeats, timezone/DST handling, reminders, pause/cancel and bounded ICS export | Two-way account connections, provider event identity/versions, cancellations and exceptions, conflict checks and authenticated creation links |
+| Notifications | Consented calendar/recording/campaign categories, private generic messages, device records, durable queues and provider receipts | Production/device acceptance, production-stage and approval-needed alerts, quiet hours, digests, snooze and cross-device acknowledgement |
+| Assistant | Text/voice entry, private tools, explicit permissions, proposal review, bounded autonomous private tasks and activity history | Typed calendar tools and a reviewed recurring series/episode production template |
+| Creation | Saved Studio edits, captions/audio tools, render jobs and recording/clip foundations | A fresh episode draft per occurrence, topic/source selection, script-to-audio/video assembly and accepted production rendering capacity |
+| Distribution | Revision-bound campaign approvals, per-destination receipts and provider-specific adapters/gates | A series coordinator linking calendar, episode, preparation, approvals, scheduled deliveries and per-network recovery |
+| Live | Livepeer ingest, explicit start controls, Twitch destination handling and readiness checks | Scheduled event provisioning, independently eligible live destinations, encoder/source health, multichannel acceptance and post-live processing |
+| Podcast delivery | Media creations and generic campaign delivery | Podcast-series metadata and a valid hosted RSS feed with stable episode GUIDs, enclosures, artwork and distribution validation |
+
+Code existence is not proof that a provider is authorized or that a worker is
+healthy in production. Oracle rendering recovery remains unresolved. Upload/import
+permissions do not establish publishing or live-broadcast permissions.
+
+### Recommended central workflow
+
+Create one durable **series** with an owner-reviewed template: timezone, recurring
+release time, finite horizon, episode format/duration, approved source library,
+voice/music rights, preparation lead time, selected account destinations, privacy,
+approval mode and resource limits. Materialize a distinct **episode** for each
+occurrence; do not re-render the same saved target and call it a new episode.
+
+For “create my podcast every Friday at 8 AM,” confirm the timezone, first Friday,
+whether 8 AM means recording, live start or finished release, and the intended
+duration/source. Schedule preparation before release based on measured job times.
+Resolve calendar conflicts without silently moving a public release. The sequence
+is: prepare brief/script, create private draft, generate/assemble permitted media,
+render, validate captions/audio and rights, obtain the required review, deliver
+to the selected authorized destinations, verify receipts, then notify the owner.
+
+Use one series/episode record and idempotent stage IDs across clients. Show
+draft, preparing, awaiting review, scheduled, live, processing, delivered,
+partially delivered, blocked, uncertain and cancelled states accurately. A timeout
+after a provider mutation requires reconciliation before retrying. Cancellation
+stops later stages; a reschedule or changed artifact invalidates affected reviews.
+Missed public releases after an outage require a defined skip/review policy.
+
+Default to reviewing each newly generated episode before publication. A future
+unattended mode needs its own explicit, revocable series policy with approved
+accounts, formats, rights, budgets, expiry and stop conditions. A connected
+calendar or general chat permission must not silently grant that authority.
+
+An imported pitch meeting should create an optional **suggestion**, not a public
+production. After acceptance, create a linked private presentation draft and
+preparation task, then write an authenticated Ziipa creation link to the chosen
+calendar event. Keep existing attendees/meeting details intact and do not send
+invitations implicitly. Externally shared links still enforce Ziipa access; never
+write bearer tokens, signed media URLs or secret stream keys into an event.
+
+### Calendar and execution architecture
+
+- Google: narrowly scoped OAuth, selected calendars, incremental event sync with
+  stored sync tokens, change-channel renewal and bounded reconciliation. Google
+  [change notifications](https://developers.google.com/workspace/calendar/api/guides/push)
+  wake sync; [incremental sync](https://developers.google.com/workspace/calendar/api/guides/sync)
+  retrieves the actual changes and handles invalid tokens.
+- Outlook/Microsoft 365: Microsoft Graph calendar authorization and
+  [event delta queries](https://learn.microsoft.com/en-us/graph/delta-query-events),
+  with subscription renewal and conflict-safe writes. Teams meetings in these
+  calendars can be imported; creating a Teams meeting or media broadcast is a
+  separate capability and authorization.
+- Apple Calendar: distinguish device EventKit from server synchronization. Apple's
+  [EventKit access model](https://developer.apple.com/documentation/eventkit/accessing-the-event-store)
+  requires full access for reading existing events; write-only access is
+  insufficient. Device access alone does not establish an always-running cloud
+  calendar service. Evaluate iCloud CalDAV separately, or sync an underlying
+  Google/Microsoft account already visible in Apple Calendar. ICS remains export,
+  not a two-way connection.
+- Store provider IDs, recurrence/exception identity, versions, origin markers,
+  sync cursors and per-event mappings. Apply optimistic concurrency, loop
+  prevention and deletion tombstones. A calendar edit changes its linked plan
+  only under a reviewed policy; shared attendees do not acquire Ziipa access.
+- Keep calendar data private and excluded from ads, Discover, public galleries,
+  IPFS and model training. Only send necessary event context for an expressly
+  requested creation. Expose disconnect, retained-data deletion and sync health.
+- Run schedules on durable server workers, independent of whether a phone is
+  open. A live camera/microphone session still requires an available source and
+  explicit device access. Recorded media can be scheduled separately from live
+  capture. Do not imply that a closed iPhone app will start recording itself.
+- Expose destination-specific eligibility. For example, YouTube's
+  [broadcast creation API](https://developers.google.com/youtube/v3/live/docs/liveBroadcasts/insert)
+  requires a scheduled start and live permissions; it can reject a channel that
+  is not live-enabled. A generic “all networks” switch cannot replace these
+  checks. Unsupported networks must show a handoff or unavailable status.
+
+### Build and acceptance order
+
+1. Add Google and Microsoft calendar connections with two-way event edits,
+   disconnect/revoke handling, recurrence and duplicate/conflict tests. Add the
+   Apple path with its own device/server constraints visibly stated.
+2. Add series/episode records and calendar-linked private drafts; connect the
+   global Assistant to typed tools and owner-reviewed production templates.
+3. Restore/accept the renderer and generation services within measured free
+   capacity; add per-stage resource admission, storage limits and diagnostics.
+4. Prove one prerecorded episode end to end before live simulcasting. Confirm
+   render checksums, real provider delivery URLs and each network's acceptance.
+5. Add scheduled live provisioning, source preflight, recording-to-clips and
+   podcast RSS, with independent provider permissions and rights review.
+6. Add actionable notifications and a central run view. Test permission loss,
+   daylight-saving transitions, concurrent mobile/web edits, retries, outages,
+   cancelled events, insufficient quota and partially successful destinations.
+
+Reuse the existing database, queues and workers where their resource/privilege
+profiles permit. Bound reconciliation and AI/render work, cache idempotent
+results, and stop at free-tier limits. This plan activates no paid provider,
+calendar access grant, notification consent, publisher capability or cloud change.
+
 ## Remaining implementation order
 
 1. Accept real authorized provider receipts and native device playback for the
@@ -161,3 +299,25 @@ Stage two still needs external acceptance; stages three/four remain a roadmap.
 Private memories,
 email, drafts and payment information must never automatically become public
 AT Protocol or IPFS data.
+
+## Creator profile implementation checkpoint · 2026-10-29
+
+Shared client/backend work now includes visitor profiles reached from creator
+avatars and handles, list/grid/gallery/saved/tagged controls, owner-approved tags,
+opt-in public imported-post collections, a real-metrics Dashboard, and Ziipa
+follow/follow-request relationships. The lock control persists followers-only
+privacy and server access checks cover published posts, selected artwork and
+source media. New requests require owner approval; removal and blocking revoke
+access. Saved media, drafts and pending tag requests remain private.
+
+Profile audience selection defaults to Ziipa, with separate connected-network
+counts and known update timestamps. Bluesky receipts preserve actual reported
+follower/following counts; other unavailable metrics stay `—`. Bounded import
+lists never substitute for audience totals. Dashboard's "Combined accounts"
+label explicitly permits duplicate people across networks. No external sync,
+permission grant, paid service or network publishing is implicitly activated.
+
+These changes require the additive profile-tags/follows migration
+`20261029_0015`. Local acceptance does not complete provider review, external
+calendar connections, production rendering recovery, device voice acceptance,
+store publication or native signed-release distribution.

@@ -939,6 +939,18 @@ test("Usable artwork is shown as a non-animated image rather than a video; audio
   assert.ok(rows.some((node) => node.props.children === "Audio creation"));
 });
 
+test("An uploaded photo without a separate cover is its own gallery still", () => {
+  const photo = stillUI();
+  const rows = photo.render({ item: item({ content_type: "image/jpeg" }) });
+  photo.flush();
+  const image = rows.find((node) => node.type === "Image")!;
+  assert.ok(image);
+  assert.equal(image.props.source.uri, "/api/creator/media/source");
+  assert.equal(image.props.autoplay, false);
+  assert.equal(photo.counts().instances, 0);
+  photo.unmount();
+});
+
 test("An unavailable explicit video poster falls back to a retained frame without playing the video", async () => {
   const ui = stillUI();
   const video = item({ cover: "/api/creator/media/missing-poster" });

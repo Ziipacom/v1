@@ -31,6 +31,7 @@ const screens = {
   messages: "Inbox",
   notifications: "NotificationMessages",
   profile: "Profile",
+  dashboard: "Dashboard",
   store: "Store",
   updates: "Notifications",
   settings: "Settings",
@@ -102,12 +103,34 @@ function project(
   };
   const id = (key: string) => put(key, identifier(input[key]));
   switch (view) {
+    case "profile":
+      if (input.creatorId !== undefined) {
+        const value =
+          typeof input.creatorId === "number"
+            ? input.creatorId
+            : typeof input.creatorId === "string" &&
+                /^[1-9]\d{0,9}$/.test(input.creatorId)
+              ? Number(input.creatorId)
+              : NaN;
+        if (!Number.isSafeInteger(value) || value <= 0 || value > 2147483647)
+          valid = false;
+        else params.creatorId = value;
+      }
+      break;
     case "store":
       put("tab", choice(input.tab, ["browse", "sell", "services"]));
       if (input.sellerId !== undefined) {
-        if (typeof input.sellerId === "number" && Number.isSafeInteger(input.sellerId) && input.sellerId > 0)
+        if (
+          typeof input.sellerId === "number" &&
+          Number.isSafeInteger(input.sellerId) &&
+          input.sellerId > 0
+        )
           params.sellerId = input.sellerId;
-        else if (typeof input.sellerId === "string" && /^[1-9]\d{0,9}$/.test(input.sellerId)) params.sellerId = Number(input.sellerId);
+        else if (
+          typeof input.sellerId === "string" &&
+          /^[1-9]\d{0,9}$/.test(input.sellerId)
+        )
+          params.sellerId = Number(input.sellerId);
         else valid = false;
       }
       break;

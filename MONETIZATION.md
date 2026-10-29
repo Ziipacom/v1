@@ -8,7 +8,22 @@ The owner-supplied [Ziipa Monetization Manager](https://business.facebook.com/pu
 
 The verified Apple URL and Ziipa name were entered into Meta. The owner explicitly approved accepting the displayed Audience Network Terms, Policy and Meta Platform Policy and continuing. The Next attempt did not complete: Meta reported “Unable to find or retrieve app details. Please try again later,” cleared the app name, and left Application incomplete, AD placements pending and Integration pending. No successful terms-acceptance receipt, review submission, placement or ad serving was verified. The current unreleased Apple listing is a likely explanation for the lookup failure; Meta did not state its exact cause.
 
-## Google Play account blocker
+## Google Play account history and current draft
+
+On 2026-10-29, the owner confirmed the prepared policy/export declarations and
+Play App Signing Terms. Ziipa's free English-US App draft was created successfully
+in developer account `5793486319300616308`, app ID `4972491206873157231`, with
+package `com.ziipa.app`. The earlier account-wide restriction banner was not
+present in that session. The listing name, short description and full description
+were saved as a draft; the console confirmed the save. No release, signing-key
+selection, review submission or public publication was performed.
+
+The icon, feature graphic, screenshots and remaining app-content declarations
+still need completion. A reviewed, properly signed production AAB is required;
+the existing `com.ziipa.app.preview` APK must not be uploaded for this package.
+`https://play.google.com/store/apps/details?id=com.ziipa.app` is the prospective
+package URL, not a verified available store listing. Meta still needs a listing
+its app lookup can retrieve. The account observations below are historical.
 
 The requested Play Console account, developer ID `5793486319300616308`, is restricted. Its issue details state that the profile and all apps were removed September 19, 2024 because account verification was not completed before the deadline. The console says changes will not be published. An existing appeal has a reply sent to the owner; no new appeal was submitted.
 

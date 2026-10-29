@@ -85,7 +85,7 @@ export function visibleCaption(captions: Caption[] = [], time: number) {
   return captions.find((c) => time >= c.start && time < c.end)?.text;
 }
 export function privateMediaPath(path: string) {
-  return /^\/api\/creator\/(?:media|profile-images)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+  return /^\/api\/creator\/(?:media|profile-images(?:\/[1-9]\d{0,9})?)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
     path,
   );
 }
@@ -94,8 +94,17 @@ export function trustedMediaPath(path: string, origins: string[]) {
   if (privateMediaPath(path)) return path;
   try {
     const url = new URL(path);
-    return !url.username && !url.password && !url.search && !url.hash && origins.includes(url.origin) && privateMediaPath(url.pathname) ? url.pathname : null;
-  } catch { return null; }
+    return !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      origins.includes(url.origin) &&
+      privateMediaPath(url.pathname)
+      ? url.pathname
+      : null;
+  } catch {
+    return null;
+  }
 }
 export function parsePrice(value: string) {
   if (!value.trim()) return null;

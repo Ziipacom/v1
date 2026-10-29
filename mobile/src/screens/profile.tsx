@@ -5,6 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import {
   Image,
   ImageBackground,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -20,10 +21,11 @@ import {
   ArrowLeft,
   Camera,
   LockKeyholeOpen,
+  LockKeyhole,
   Menu,
   Pencil,
   Plus,
-  RefreshCw,
+  Eye,
   Sparkles,
 } from "lucide-react-native";
 import {
@@ -35,6 +37,18 @@ import {
 } from "../components/floating";
 import { Action, Notice, Pill, allCategories } from "../components/ui";
 import { SignOutButton } from "../components/account-menu";
+import { VisitorProfileScreen } from "./visitor-profile";
+import { ProfileContentControls } from "../components/profile-content-controls";
+import { ProfileAudience } from "../components/profile-audience";
+import { GallerySlider } from "../components/gallery-slider";
+import { DiscoveryNetworkCard } from "../components/discovery-network-card";
+import {
+  importedDiscoveryMedia,
+  discoveryPostUrl,
+} from "../lib/discovery-feed";
+import { useProfileCollections } from "../lib/use-profile-collections";
+import { useNetworkSnapshotExpiry } from "../lib/use-network-snapshot-expiry";
+import type { ProfileCollection } from "../lib/profile-collections";
 import { ProfileImageControls } from "../components/profile-image-controls";
 import {
   ProfileMediaPreview,
@@ -57,15 +71,73 @@ import type { Category, ProfileImages, RootStack } from "../lib/types";
 import { useZiipa } from "../provider";
 import { color, font, styles } from "../theme";
 
-export function ProfileScreen({
+export function ProfileScreen(
+  props: NativeStackScreenProps<RootStack, "Profile">,
+) {
+  const { session } = useZiipa();
+  return props.route.params?.creatorId ? (
+    <VisitorProfileScreen
+      key={`${session?.access_token}:${props.route.params.creatorId}`}
+      {...props}
+    />
+  ) : (
+    <OwnedProfileScreen key={session?.access_token || "guest"} {...props} />
+  );
+}
+
+function OwnedProfileScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Profile">) {
   const { desktop } = useDesktopLayout();
-  const { session, guest, data, recordProfileImages, refreshProfileImages } =
-    useZiipa();
+  const {
+    session,
+    guest,
+    data,
+    api,
+    recordProfileImages,
+    refreshProfileImages,
+  } = useZiipa();
   const [category, setCategory] = useState<ProfileCategory>("all");
-  const [saved, setSaved] = useState(false);
-  const [sheet, setSheet] = useState<"art" | "account" | "social" | null>(null);
+  const [collection, setCollection] = useState<ProfileCollection>("creations");
+  const saved = collection === "saved";
+  const [grid, setGrid] = useState(false);
+  const [gallery, setGallery] = useState(false);
+  const collections = useProfileCollections();
+  useNetworkSnapshotExpiry(collections.value?.network || null);
+  const imported =
+    collection === "creations" && category === "all"
+      ? importedDiscoveryMedia(collections.value?.network || null)
+      : [];
+  const [collectionMessage, setCollectionMessage] = useState("");
+  const [collectionBusy, setCollectionBusy] = useState(false);
+  const [sheet, setSheet] = useState<
+    "art" | "account" | "social" | "privacy" | null
+  >(null);
+  const [communityKind, setCommunityKind] = useState<"followers" | "following">(
+    "followers",
+  );
+  const [community, setCommunity] = useState<{
+    followers: { id: number; name: string; status: string; revision: number }[];
+    following: { id: number; name: string; revision: number }[];
+  } | null>(null);
+  const [communityRevision, setCommunityRevision] = useState(0);
+  useEffect(() => {
+    let active = true;
+    if (sheet === "social" && session && !guest)
+      void api<typeof community>("/api/creator/profile/followers")
+        .then((value) => {
+          if (active) setCommunity(value);
+        })
+        .catch(() => {
+          if (active)
+            setCollectionMessage(
+              "Community information could not load. Close and reopen this panel to try again.",
+            );
+        });
+    return () => {
+      active = false;
+    };
+  }, [sheet, communityRevision, api, session?.access_token, guest]);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [scrollY, setScrollY] = useState(0);
   const [gridTop, setGridTop] = useState(0);
@@ -113,13 +185,16 @@ export function ProfileScreen({
     setPreviewBanner(null);
   }
   const insets = useSafeAreaInsets();
-  const source = saved
-    ? data.items.filter((i) => data.preferences.saved.includes(i.id))
-    : guest
-      ? data.items
-      : data.drafts.filter((i) => i.visibility === "published");
+  const source =
+    collection === "tagged"
+      ? collections.value?.tagged || []
+      : saved
+        ? data.items.filter((i) => data.preferences.saved.includes(i.id))
+        : guest
+          ? data.items
+          : data.drafts.filter((i) => i.visibility === "published");
   const items = profileCreations(source, category);
-  const layoutKey = `${category}:${saved}:${items.map((item) => item.id).join(",")}`;
+  const layoutKey = `${category}:${collection}:${grid}:${items.map((item) => item.id).join(",")}`;
   const layoutIdentity = useRef(layoutKey);
   layoutIdentity.current = layoutKey;
   const webIdentity = useMemo(() => ({}), [layoutKey, session?.access_token]);
@@ -147,9 +222,10 @@ export function ProfileScreen({
       ? (currentWebLayout?.viewport ?? { top: 0, height: 0, gridTop: 0 })
       : { top: scrollY, height: viewportHeight, gridTop };
   const activity = useProfilePreviewActivity(!!sheet);
-  const activeVideo = activity.mountVideo
-    ? profileVideoSelection(items, cardBounds, viewport)
-    : null;
+  const activeVideo =
+    activity.mountVideo && !grid && !gallery
+      ? profileVideoSelection(items, cardBounds, viewport)
+      : null;
   const createCategory: Category = category === "all" ? "video" : category;
   return (
     <View style={styles.screen}>
@@ -219,24 +295,17 @@ export function ProfileScreen({
                 alignItems: "center",
               }}
             >
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Follower information"
-                onPress={() => setSheet("social")}
-                style={{ alignItems: "center", padding: 8 }}
-              >
-                <Text style={p.stat}>—</Text>
-                <Text style={p.label}>Followers</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Following information"
-                onPress={() => setSheet("social")}
-                style={{ alignItems: "center", padding: 8 }}
-              >
-                <Text style={p.stat}>—</Text>
-                <Text style={p.label}>Following</Text>
-              </Pressable>
+              <ProfileAudience
+                profile={collections.value}
+                onPeople={(kind, provider) => {
+                  if (provider !== "ziipa") {
+                    navigation.navigate("Connections", { tab: "accounts" });
+                    return;
+                  }
+                  setCommunityKind(kind);
+                  setSheet("social");
+                }}
+              />
               <FloatButton
                 label="Change cover artwork"
                 size={36}
@@ -339,10 +408,21 @@ export function ProfileScreen({
               <Text style={p.actionText}>Edit</Text>
             </Pressable>
             <FloatButton
-              label="Account and wallet"
-              icon={LockKeyholeOpen}
+              label={
+                collections.value?.privacy.visibility === "private"
+                  ? "Profile is followers-only · change privacy"
+                  : "Make profile followers-only"
+              }
+              icon={
+                collections.value?.privacy.visibility === "private"
+                  ? LockKeyhole
+                  : LockKeyholeOpen
+              }
               size={36}
-              onPress={() => setSheet("account")}
+              onPress={() => {
+                setCollectionMessage("");
+                setSheet("privacy");
+              }}
             />
           </View>
           <View
@@ -380,6 +460,25 @@ export function ProfileScreen({
             icon={Sparkles}
             onPress={() => navigation.navigate("MediaOS")}
           />
+          {!!session && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Preview your creator profile"
+              onPress={() =>
+                navigation.navigate("Profile", { creatorId: session.user.id })
+              }
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                padding: 12,
+              }}
+            >
+              <Eye size={16} color={color.muted} />
+              <Text style={styles.small}>Preview profile</Text>
+            </Pressable>
+          )}
         </View>
         <View
           style={{
@@ -388,45 +487,35 @@ export function ProfileScreen({
             justifyContent: "space-between",
             paddingHorizontal: 24,
             paddingVertical: 15,
+            flexWrap: "wrap",
           }}
         >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                saved ? "Show creations" : "Show saved creations"
-              }
-              onPress={() => setSaved(!saved)}
-              style={{ paddingVertical: 6 }}
-            >
-              <Text
-                style={{
-                  color: saved ? color.lime : color.faint,
-                  fontFamily: font.regular,
-                  fontSize: 12,
-                }}
-              >
-                {saved ? "Saved" : "Creations"}
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Reset Profile to all creations"
-              accessibilityHint="Clears the category and Saved view. Your account and saved settings are unchanged."
-              onPress={() => {
-                setCategory("all");
-                setSaved(false);
-              }}
-              style={{
-                minWidth: 44,
-                minHeight: 44,
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <RefreshCw size={16} color={color.muted} />
-            </Pressable>
-          </View>
+          <ProfileContentControls
+            collection={collection}
+            grid={grid}
+            gallery={gallery}
+            onGallery={() => {
+              setCollection("creations");
+              setCategory("all");
+              setGrid(false);
+              setGallery((value) => !value);
+            }}
+            onGrid={() => {
+              setGallery(false);
+              setGrid((value) => !value);
+            }}
+            onCollection={(value) => {
+              setGallery(false);
+              setCollection(value);
+            }}
+            onReset={() => {
+              setCategory("all");
+              setCollection("creations");
+              setGrid(false);
+              setGallery(false);
+              collections.reload();
+            }}
+          />
           <View style={styles.row}>
             <Text style={p.label}>
               {category === "all"
@@ -448,122 +537,298 @@ export function ProfileScreen({
             alignSelf: "center",
             paddingHorizontal: desktop ? 0 : 23,
             gap: desktop ? 18 : 10,
+            flexDirection: "row",
+            flexWrap: "wrap",
           }}
         >
-          {items.map((item) => {
-            const world = allCategories.find(
-              (entry) => entry.id === item.category,
-            );
-            const worldTitle =
-              item.category === "video" || item.category === "music"
-                ? "Music & Film"
-                : world?.title || "Creation";
-            const WorldIcon = world?.icon || Sparkles;
-            // Retained cards may keep identical geometry after a filter.
-            // Remount this measured leaf, never the scroll container.
-            return (
-              <Pressable
-                key={`${layoutKey}:${item.id}`}
-                ref={(node) => {
-                  if (Platform.OS !== "web") return;
-                  if (node)
-                    webCards.current.set(item.id, node as unknown as Element);
-                  else webCards.current.delete(item.id);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={`Watch ${item.title} · ${worldTitle}`}
-                onLayout={(event) => {
-                  const { y, height } = event.nativeEvent.layout;
-                  if (layoutIdentity.current !== layoutKey) return;
-                  setCardLayouts((previous) => {
-                    if (layoutIdentity.current !== layoutKey) return previous;
-                    const values =
-                      previous.key === layoutKey ? previous.values : {};
-                    return values[item.id]?.top === y &&
-                      values[item.id]?.height === height
-                      ? previous
-                      : {
-                          key: layoutKey,
-                          values: { ...values, [item.id]: { top: y, height } },
-                        };
-                  });
-                }}
-                onPress={() =>
+          {gallery && items.length > 0 && (
+            <View style={{ width: "100%", height: desktop ? 620 : 560 }}>
+              <GallerySlider
+                items={items}
+                label="All creations"
+                onOpen={(item) =>
                   navigation.navigate("Watch", {
                     itemId: item.id,
                     category: item.category,
                   })
                 }
-                style={{
-                  width: "100%",
-                  height: desktop ? 320 : 179,
-                  borderRadius: desktop ? 12 : 25,
-                  overflow: "hidden",
-                  borderWidth: 1,
-                  borderColor: "#5D506E",
-                }}
-              >
-                <ProfileMediaPreview
-                  item={item}
-                  visible={
-                    activity.visible &&
-                    profileCardVisible(cardBounds[item.id], viewport)
+              />
+            </View>
+          )}
+          {!gallery &&
+            items.map((item) => {
+              const world = allCategories.find(
+                (entry) => entry.id === item.category,
+              );
+              const worldTitle =
+                item.category === "video" || item.category === "music"
+                  ? "Music & Film"
+                  : world?.title || "Creation";
+              const WorldIcon = world?.icon || Sparkles;
+              // Retained cards may keep identical geometry after a filter.
+              // Remount this measured leaf, never the scroll container.
+              return (
+                <Pressable
+                  key={`${layoutKey}:${item.id}`}
+                  ref={(node) => {
+                    if (Platform.OS !== "web") return;
+                    if (node)
+                      webCards.current.set(item.id, node as unknown as Element);
+                    else webCards.current.delete(item.id);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Watch ${item.title} · ${worldTitle}`}
+                  onLayout={(event) => {
+                    const { y, height } = event.nativeEvent.layout;
+                    if (layoutIdentity.current !== layoutKey) return;
+                    setCardLayouts((previous) => {
+                      if (layoutIdentity.current !== layoutKey) return previous;
+                      const values =
+                        previous.key === layoutKey ? previous.values : {};
+                      return values[item.id]?.top === y &&
+                        values[item.id]?.height === height
+                        ? previous
+                        : {
+                            key: layoutKey,
+                            values: {
+                              ...values,
+                              [item.id]: { top: y, height },
+                            },
+                          };
+                    });
+                  }}
+                  onPress={() =>
+                    navigation.navigate("Watch", {
+                      itemId: item.id,
+                      category: item.category,
+                    })
                   }
-                  videoActive={activeVideo === item.id}
-                  autoplay={activity.autoplay}
-                  allowVideoStill={activity.mountVideo}
-                />
-                <View
                   style={{
-                    position: "absolute",
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    padding: 14,
-                    backgroundColor: "#0C04185C",
-                    gap: 6,
+                    width: grid ? "31%" : "100%",
+                    height: grid ? undefined : desktop ? 320 : 179,
+                    aspectRatio: grid ? 1 : undefined,
+                    borderRadius: desktop ? 12 : 25,
+                    overflow: "hidden",
+                    borderWidth: 1,
+                    borderColor: "#5D506E",
                   }}
                 >
+                  <ProfileMediaPreview
+                    item={item}
+                    visible={
+                      activity.visible &&
+                      profileCardVisible(cardBounds[item.id], viewport)
+                    }
+                    videoActive={activeVideo === item.id}
+                    autoplay={activity.autoplay}
+                    allowVideoStill={activity.mountVideo}
+                  />
                   <View
                     style={{
-                      flexDirection: "row",
-                      alignItems: "center",
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      padding: grid ? 6 : 14,
+                      backgroundColor: "#0C04185C",
                       gap: 6,
                     }}
                   >
-                    <WorldIcon size={15} color="white" />
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <WorldIcon size={15} color="white" />
+                      <Text
+                        style={{
+                          color: "white",
+                          fontFamily: font.medium,
+                          fontSize: 11,
+                        }}
+                      >
+                        {worldTitle}
+                      </Text>
+                    </View>
                     <Text
                       style={{
                         color: "white",
-                        fontFamily: font.medium,
-                        fontSize: 11,
+                        fontSize: grid ? 11 : 19,
+                        fontFamily: font.semibold,
                       }}
                     >
-                      {worldTitle}
+                      {item.title}
                     </Text>
                   </View>
-                  <Text
-                    style={{
-                      color: "white",
-                      fontSize: 19,
-                      fontFamily: font.semibold,
-                    }}
-                  >
-                    {item.title}
-                  </Text>
+                </Pressable>
+              );
+            })}
+          {collection === "tagged" &&
+            collections.value?.tagged.map((tag) => (
+              <View key={`remove-tag:${tag.id}`} style={{ width: "100%" }}>
+                <Action
+                  title={`Remove tag · ${tag.title}`}
+                  secondary
+                  disabled={collectionBusy}
+                  onPress={() => {
+                    setCollectionBusy(true);
+                    setCollectionMessage("");
+                    void api(`/api/creator/profile/tags/${tag.id}`, {
+                      accepted: false,
+                      revision: tag.profile_tag_revision,
+                    })
+                      .then(() => collections.reload())
+                      .catch(() =>
+                        setCollectionMessage(
+                          "The tag could not be removed. Refresh and try again.",
+                        ),
+                      )
+                      .finally(() => setCollectionBusy(false));
+                  }}
+                />
+              </View>
+            ))}
+          {collection === "tagged" &&
+            collections.value?.pending_tags.map((tag) => (
+              <View
+                key={`tag:${tag.item.id}`}
+                style={{
+                  width: "100%",
+                  padding: 14,
+                  gap: 8,
+                  backgroundColor: color.panel,
+                  borderRadius: 12,
+                }}
+              >
+                <Text style={styles.body}>
+                  {tag.item.creator} tagged you in {tag.item.title}
+                </Text>
+                <Text style={styles.small}>
+                  Accept to display this public creation on your profile.
+                </Text>
+                <View style={styles.row}>
+                  {[true, false].map((accepted) => (
+                    <Action
+                      key={String(accepted)}
+                      title={accepted ? "Accept tag" : "Dismiss"}
+                      secondary
+                      disabled={collectionBusy}
+                      onPress={() => {
+                        setCollectionBusy(true);
+                        setCollectionMessage("");
+                        void api(`/api/creator/profile/tags/${tag.item.id}`, {
+                          accepted,
+                          revision: tag.revision,
+                        })
+                          .then(() => collections.reload())
+                          .catch(() =>
+                            setCollectionMessage(
+                              "The tag could not be updated. Refresh and try again.",
+                            ),
+                          )
+                          .finally(() => setCollectionBusy(false));
+                      }}
+                    />
+                  ))}
                 </View>
-              </Pressable>
-            );
-          })}
-          {!items.length && (
+              </View>
+            ))}
+          {!!(collections.error || collectionMessage) && (
+            <Notice text={collections.error || collectionMessage} />
+          )}
+          {collection === "creations" && category === "all" && !guest && (
+            <View style={{ width: "100%", gap: 8, paddingVertical: 12 }}>
+              <Text style={styles.heading}>Connected posts</Text>
+              <Text style={styles.small}>
+                Your imported public posts. Choose which networks to display to
+                profile visitors.
+              </Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                {collections.value?.network.providers.map((account) => {
+                  const selected =
+                    !!collections.value?.sharing?.providers.includes(
+                      account.provider,
+                    );
+                  return (
+                    <Pill
+                      key={account.provider}
+                      active={selected}
+                      title={`${selected ? "✓ " : ""}${account.name}`}
+                      onPress={() => {
+                        const sharing = collections.value?.sharing;
+                        if (!sharing || collectionBusy) return;
+                        setCollectionBusy(true);
+                        setCollectionMessage("");
+                        const providers = selected
+                          ? sharing.providers.filter(
+                              (value) => value !== account.provider,
+                            )
+                          : [...sharing.providers, account.provider];
+                        void api("/api/creator/profile/network-sharing", {
+                          providers,
+                          revision: sharing.revision,
+                        })
+                          .then(() => collections.reload())
+                          .catch(() =>
+                            setCollectionMessage(
+                              "Profile sharing could not be updated. Check your public profile and network connection, then refresh.",
+                            ),
+                          )
+                          .finally(() => setCollectionBusy(false));
+                      }}
+                    />
+                  );
+                })}
+              </View>
+              {!imported.length && (
+                <Text style={styles.small}>
+                  {collections.loading
+                    ? "Loading connected posts…"
+                    : "No supported public imports available. Connect and sync your accounts in Networks."}
+                </Text>
+              )}
+              <Action
+                title="Manage connected networks"
+                secondary
+                onPress={() =>
+                  navigation.navigate("Connections", { tab: "accounts" })
+                }
+              />
+            </View>
+          )}
+          {imported.map((media) => (
+            <DiscoveryNetworkCard
+              key={`${media.provider}:${media.id}`}
+              media={media}
+              style={{ width: grid ? "48%" : "100%" }}
+              onOpen={(value) => {
+                const url = discoveryPostUrl(value);
+                if (url)
+                  void Linking.openURL(url).catch(() =>
+                    setCollectionMessage(
+                      "The original network post could not open.",
+                    ),
+                  );
+              }}
+            />
+          ))}
+          {!items.length && !imported.length && (
             <View style={{ paddingVertical: 35, gap: 12 }}>
               <Text style={styles.heading}>
-                {saved ? "Keep your inspiration." : "Your next creation."}
+                {collection === "tagged"
+                  ? "Your tagged media."
+                  : saved
+                    ? "Keep your inspiration."
+                    : "Your next creation."}
               </Text>
               <Text style={styles.body}>
-                {saved
-                  ? "Save a creation from the floating bookmark button in the feed."
-                  : "Add a creation in Studio to start this collection."}
+                {collection === "tagged"
+                  ? "Approved public media tags appear here. New tags need your review."
+                  : saved
+                    ? "Save a creation from the floating bookmark button in the feed."
+                    : "Add a creation in Studio to start this collection."}
               </Text>
               <Action
                 title="Open Studio"
@@ -581,7 +846,9 @@ export function ProfileScreen({
       </ScrollView>
       <CategoryDock
         selected={category}
-        onSelect={(id) => id === "store" ? navigation.navigate("Store") : setCategory(id)}
+        onSelect={(id) =>
+          id === "store" ? navigation.navigate("Store") : setCategory(id)
+        }
         onInbox={() => navigation.navigate("Utility", { kind: "inbox" })}
       />
       {sheet && (
@@ -589,9 +856,11 @@ export function ProfileScreen({
           title={
             sheet === "art"
               ? "Cover artwork"
-              : sheet === "social"
-                ? "Your community"
-                : "Your creative space"
+              : sheet === "privacy"
+                ? "Profile privacy"
+                : sheet === "social"
+                  ? "Your community"
+                  : "Your creative space"
           }
           onClose={() => setSheet(null)}
         >
@@ -603,9 +872,178 @@ export function ProfileScreen({
               onSaved={savedProfile}
               onPreviewSample={setPreviewBanner}
             />
+          ) : sheet === "privacy" ? (
+            <>
+              <Notice
+                text={
+                  collections.value?.privacy.visibility === "private"
+                    ? "Only approved Ziipa followers can view your profile artwork and published creations. New follow requests need your approval. Saved collections remain private to you."
+                    : "Your published profile is visible to permitted Ziipa members. Make it followers-only to approve new followers before they can view it. Existing followers retain access."
+                }
+              />
+              {!!collectionMessage && <Notice text={collectionMessage} />}
+              <Action
+                title={
+                  collections.value?.privacy.visibility === "private"
+                    ? "Make profile public"
+                    : "Make profile followers-only"
+                }
+                disabled={collectionBusy || !collections.value?.privacy}
+                onPress={() => {
+                  const privacy = collections.value?.privacy;
+                  if (!privacy || collectionBusy) return;
+                  setCollectionBusy(true);
+                  setCollectionMessage("");
+                  void api("/api/creator/profile/privacy", {
+                    private: privacy.visibility !== "private",
+                    expected_visibility: privacy.visibility,
+                    revision: privacy.revision,
+                  })
+                    .then(() => {
+                      collections.reload();
+                      setSheet(null);
+                    })
+                    .catch(() =>
+                      setCollectionMessage(
+                        "Privacy could not be changed. Check live-session status, refresh your profile and try again.",
+                      ),
+                    )
+                    .finally(() => setCollectionBusy(false));
+                }}
+              />
+            </>
           ) : sheet === "social" ? (
             <>
-              <Notice text="Find your public following and supported network feeds in Networks. Importing a profile never invents Ziipa followers or sends invitations automatically." />
+              <Text style={styles.heading}>
+                {communityKind === "followers"
+                  ? "Ziipa followers & requests"
+                  : "Following on Ziipa"}
+              </Text>
+              {!!collectionMessage && <Notice text={collectionMessage} />}
+              {!community && (
+                <Text style={styles.small}>Loading community…</Text>
+              )}
+              <ScrollView style={{ maxHeight: 310 }}>
+                {communityKind === "followers"
+                  ? community?.followers.map((person) => (
+                      <View
+                        key={person.id}
+                        style={{ gap: 6, paddingVertical: 10 }}
+                      >
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`View ${person.name}'s profile`}
+                          onPress={() => {
+                            setSheet(null);
+                            navigation.navigate("Profile", {
+                              creatorId: person.id,
+                            });
+                          }}
+                        >
+                          <Text style={styles.body}>
+                            {person.name} ·{" "}
+                            {person.status === "pending"
+                              ? "Request pending"
+                              : "Following you"}
+                          </Text>
+                        </Pressable>
+                        <View style={styles.row}>
+                          {(person.status === "pending"
+                            ? [true, false]
+                            : [false]
+                          ).map((accepted) => (
+                            <Action
+                              key={String(accepted)}
+                              secondary
+                              title={
+                                accepted
+                                  ? "Approve"
+                                  : person.status === "pending"
+                                    ? "Decline"
+                                    : "Remove follower"
+                              }
+                              disabled={collectionBusy}
+                              onPress={() => {
+                                setCollectionBusy(true);
+                                setCollectionMessage("");
+                                void api(
+                                  `/api/creator/profile/followers/${person.id}`,
+                                  { accepted, revision: person.revision },
+                                )
+                                  .then(() => {
+                                    setCommunityRevision((value) => value + 1);
+                                    collections.reload();
+                                  })
+                                  .catch(() =>
+                                    setCollectionMessage(
+                                      "Follow status changed or could not save. Reopen this panel and try again.",
+                                    ),
+                                  )
+                                  .finally(() => setCollectionBusy(false));
+                              }}
+                            />
+                          ))}
+                        </View>
+                      </View>
+                    ))
+                  : community?.following.map((person) => (
+                      <View
+                        key={person.id}
+                        style={{ gap: 6, paddingVertical: 10 }}
+                      >
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`View ${person.name}'s profile`}
+                          onPress={() => {
+                            setSheet(null);
+                            navigation.navigate("Profile", {
+                              creatorId: person.id,
+                            });
+                          }}
+                        >
+                          <Text style={styles.body}>{person.name}</Text>
+                        </Pressable>
+                        <Action
+                          secondary
+                          title="Unfollow"
+                          disabled={collectionBusy}
+                          onPress={() => {
+                            setCollectionBusy(true);
+                            void api(
+                              `/api/creator/profiles/${person.id}/unfollow`,
+                              { revision: person.revision },
+                            )
+                              .then(() => {
+                                setCommunityRevision((value) => value + 1);
+                                collections.reload();
+                              })
+                              .catch(() =>
+                                setCollectionMessage(
+                                  "Unfollow could not save. Reopen this panel and try again.",
+                                ),
+                              )
+                              .finally(() => setCollectionBusy(false));
+                          }}
+                        />
+                      </View>
+                    ))}
+              </ScrollView>
+              {community &&
+                !(
+                  communityKind === "followers"
+                    ? community.followers
+                    : community.following
+                ).length && (
+                  <Text style={styles.small}>
+                    {communityKind === "followers"
+                      ? "No Ziipa followers or requests yet."
+                      : "You are not following any Ziipa creators yet."}
+                  </Text>
+                )}
+              <Text style={styles.small}>
+                Shows up to 200 recent Ziipa relationships. Connected-network
+                counts remain separate.
+              </Text>
               <Action
                 title="Open people & networks"
                 onPress={() => {

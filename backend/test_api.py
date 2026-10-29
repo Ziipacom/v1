@@ -274,9 +274,10 @@ def test_native_block_report_and_moderator_removal(client, tmp_path, monkeypatch
     assert client.get(upload['url'], headers=viewer).status_code == 404
     assert client.post('/api/safety/block', headers=viewer, json={'user_id': owner_id, 'blocked': False}).status_code == 200
     assert client.get(upload['url'], headers=viewer).status_code == 200
-    # Blocks also stop new comments from the blocked person on the blocker’s posts.
+    # Reverse blocks hide the post itself, including its comment endpoint.
     assert client.post('/api/safety/block', headers=owner, json={'user_id': viewer_id}).status_code == 200
-    assert client.post(f"/api/creator/items/{item['id']}/comments", headers=viewer, json={'body': 'Cannot contact'}).status_code == 403
+    assert client.post(f"/api/creator/items/{item['id']}/comments", headers=viewer, json={'body': 'Cannot contact'}).status_code == 404
+    assert client.get(f"/api/creator/profiles/{owner_id}", headers=viewer).status_code == 404
     mod = native_headers(client, 'moderator@example.com', 'Moderator')
     monkeypatch.setattr(settings, 'moderator_emails', 'moderator@example.com')
     # Email configuration no longer grants administrative authority.

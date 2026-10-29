@@ -780,6 +780,12 @@ test("profile card layout snapshots native event dimensions before a deferred st
 
 /** Render the real Profile screen with inert native leaves and persistent hook
  * slots, so local filters, native layout events and scroll position interact. */
+function profileCards(feed: any): any[] {
+  return feed.props.children
+    .flat()
+    .filter((node: any) => node?.props?.onLayout);
+}
+
 function profileScreenHarness(
   desktop = false,
   initialProfile?: ProfileImages,
@@ -839,11 +845,8 @@ function profileScreenHarness(
   ];
   const preferences = { saved: ["game"], autoplay: true, startMuted: false };
   const activity = { mountVideo: true, visible: true, autoplay: true };
-  const jsx = (
-    type: unknown,
-    props: Record<string, unknown>,
-    key?: string,
-  ) => ({ type, props, key });
+  const jsx = (type: unknown, props: Record<string, unknown>, key?: string) =>
+    typeof type === "function" ? type(props) : { type, props, key };
   const categories = [
     { id: "video", title: "Videos", icon: "FilmIcon" },
     { id: "music", title: "Music & Film", icon: "MusicIcon" },
@@ -852,162 +855,214 @@ function profileScreenHarness(
     { id: "live", title: "Live feeds", icon: "LiveIcon" },
     { id: "store", title: "Store", icon: "StoreIcon" },
   ];
-  new Function("exports", "require", compiled)(exported, (name: string) => {
-    if (name === "react")
-      return {
-        useState(initial: unknown) {
-          const slot = cursor++;
-          if (!(slot in hooks))
-            hooks[slot] = typeof initial === "function" ? initial() : initial;
-          return [
-            hooks[slot],
-            (value: any) => {
-              hooks[slot] =
-                typeof value === "function" ? value(hooks[slot]) : value;
+  new Function("exports", "require", compiled)(
+    exported,
+    function profileRequire(name: string): any {
+      if (name.endsWith("/profile-content-controls")) {
+        const controls: Record<string, unknown> = {};
+        const source = readFileSync(
+          new URL(
+            "../src/components/profile-content-controls.tsx",
+            import.meta.url,
+          ),
+          "utf8",
+        );
+        new Function(
+          "exports",
+          "require",
+          ts.transpileModule(source, {
+            compilerOptions: {
+              jsx: ts.JsxEmit.ReactJSX,
+              module: ts.ModuleKind.CommonJS,
             },
-          ];
-        },
-        useRef(current: unknown) {
-          const slot = cursor++;
-          return (hooks[slot] ||= { current });
-        },
-        useMemo(fn: () => unknown, deps: unknown[]) {
-          const slot = cursor++;
-          if (
-            !hooks[slot] ||
-            deps.some((value, i) => value !== hooks[slot].deps[i])
-          )
-            hooks[slot] = { deps, value: fn() };
-          return hooks[slot].value;
-        },
-        useEffect(callback: () => (() => void) | undefined, deps: unknown[]) {
-          if (!web) return;
-          const slot = cursor++;
-          const previous = hooks[slot];
-          if (
-            !previous ||
-            deps.some((value, i) => value !== previous.deps[i])
-          ) {
-            const next = {
-              deps,
-              cleanup: undefined as (() => void) | undefined,
-            };
-            hooks[slot] = next;
-            pendingEffects.push(() => {
-              previous?.cleanup?.();
-              next.cleanup = callback();
-            });
-          }
-        },
-        useCallback: (fn: unknown) => fn,
-      };
-    if (name === "react/jsx-runtime")
-      return { jsx, jsxs: jsx, Fragment: "Fragment" };
-    if (name === "react-native")
-      return {
-        Platform: { OS: web ? "web" : "android" },
-        ...Object.fromEntries(
-          [
-            "Image",
-            "ImageBackground",
-            "Pressable",
-            "ScrollView",
-            "Text",
-            "View",
-          ].map((name) => [name, name]),
-        ),
-      };
-    if (name === "react-native-safe-area-context")
-      return {
-        SafeAreaView: "SafeAreaView",
-        useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
-      };
-    if (name === "@react-navigation/native")
-      return {
-        useFocusEffect(callback: () => void) {
-          focus = callback;
-        },
-      };
-    if (name === "lucide-react-native")
-      return new Proxy({}, { get: (_, key) => key });
-    if (name.endsWith("/desktop-layout"))
-      return { useDesktopLayout: () => ({ desktop, contentWidth: 1200 }) };
-    if (name.endsWith("/desktop-workspace"))
-      return { workspace: { page: {} }, WorkspaceHeading: "WorkspaceHeading" };
-    if (name.endsWith("/floating"))
-      return {
-        CategoryDock: "CategoryDock",
-        FloatButton: "FloatButton",
-        Sheet: "Sheet",
-        WorldGlyph: "WorldGlyph",
-        worlds: categories,
-      };
-    if (name.endsWith("/ui"))
-      return {
-        Action: "Action",
-        Notice: "Notice",
-        Pill: "Pill",
-        allCategories: categories,
-      };
-    if (name.endsWith("/account-menu"))
-      return { SignOutButton: "SignOutButton" };
-    if (name.endsWith("/profile-image-controls"))
-      return { ProfileImageControls: "ProfileImageControls" };
-    if (name.endsWith("/profile-media-preview"))
-      return {
-        ProfileMediaPreview: "ProfileMediaPreview",
-        useProfilePreviewActivity: () => activity,
-      };
-    if (name.endsWith("/assets"))
-      return { coverSource: (uri: string) => ({ uri }) };
-    if (name.endsWith("/profile-image-source"))
-      return {
-        useProfileImageSource: (path?: string | null) => {
-          if (!path) return null;
-          const key = `${path}:${token}`;
-          if (!imageSources.has(key)) imageSources.set(key, { uri: path });
-          return imageSources.get(key);
-        },
-      };
-    if (name.endsWith("/profile-preview")) return helpers;
-    if (name.endsWith("/profile-web-layout"))
-      return {
-        observeProfileWebLayout:
-          web?.observe ??
-          (() => {
-            throw new Error("Native Profile must not subscribe to DOM layout");
+          }).outputText,
+        )(controls, profileRequire);
+        return controls;
+      }
+      if (name === "./visitor-profile")
+        return { VisitorProfileScreen: "VisitorProfileScreen" };
+      if (name.endsWith("/profile-audience"))
+        return { ProfileAudience: "ProfileAudience" };
+      if (name.endsWith("/gallery-slider"))
+        return { GallerySlider: "GallerySlider" };
+      if (name.endsWith("/discovery-network-card"))
+        return { DiscoveryNetworkCard: "DiscoveryNetworkCard" };
+      if (name.endsWith("/discovery-feed"))
+        return {
+          importedDiscoveryMedia: () => [],
+          discoveryPostUrl: () => null,
+        };
+      if (name.endsWith("/use-profile-collections"))
+        return {
+          useProfileCollections: () => ({
+            value: undefined,
+            loading: false,
+            reload: () => {},
           }),
-      };
-    if (name === "../provider")
-      return {
-        useZiipa: () => ({
-          session: {
-            access_token: token,
-            user: { id: 1, name: "Creator" },
+        };
+      if (name.endsWith("/use-network-snapshot-expiry"))
+        return { useNetworkSnapshotExpiry: () => "" };
+      if (name === "react")
+        return {
+          useState(initial: unknown) {
+            const slot = cursor++;
+            if (!(slot in hooks))
+              hooks[slot] = typeof initial === "function" ? initial() : initial;
+            return [
+              hooks[slot],
+              (value: any) => {
+                hooks[slot] =
+                  typeof value === "function" ? value(hooks[slot]) : value;
+              },
+            ];
           },
-          guest: false,
-          data: {
-            profile,
-            items: creations.filter((row) => row.visibility === "published"),
-            drafts: creations,
-            preferences,
+          useRef(current: unknown) {
+            const slot = cursor++;
+            return (hooks[slot] ||= { current });
           },
-          refreshProfileImages: () => profileSync.refresh(token),
-          api: () => {
-            requests++;
-            throw new Error("Local filters must not request account changes");
+          useMemo(fn: () => unknown, deps: unknown[]) {
+            const slot = cursor++;
+            if (
+              !hooks[slot] ||
+              deps.some((value, i) => value !== hooks[slot].deps[i])
+            )
+              hooks[slot] = { deps, value: fn() };
+            return hooks[slot].value;
           },
-          refresh: () => {
-            refreshes++;
+          useEffect(callback: () => (() => void) | undefined, deps: unknown[]) {
+            if (!web) return;
+            const slot = cursor++;
+            const previous = hooks[slot];
+            if (
+              !previous ||
+              deps.some((value, i) => value !== previous.deps[i])
+            ) {
+              const next = {
+                deps,
+                cleanup: undefined as (() => void) | undefined,
+              };
+              hooks[slot] = next;
+              pendingEffects.push(() => {
+                previous?.cleanup?.();
+                next.cleanup = callback();
+              });
+            }
           },
-          preferences: () => {
-            preferenceWrites++;
+          useCallback: (fn: unknown) => fn,
+        };
+      if (name === "react/jsx-runtime")
+        return { jsx, jsxs: jsx, Fragment: "Fragment" };
+      if (name === "react-native")
+        return {
+          Platform: { OS: web ? "web" : "android" },
+          ...Object.fromEntries(
+            [
+              "Image",
+              "ImageBackground",
+              "Pressable",
+              "ScrollView",
+              "Text",
+              "View",
+            ].map((name) => [name, name]),
+          ),
+        };
+      if (name === "react-native-safe-area-context")
+        return {
+          SafeAreaView: "SafeAreaView",
+          useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
+        };
+      if (name === "@react-navigation/native")
+        return {
+          useFocusEffect(callback: () => void) {
+            focus = callback;
           },
-        }),
-      };
-    if (name === "../theme") return { color: {}, font: {}, styles: {} };
-    throw new Error(`Unexpected Profile screen dependency ${name}`);
-  });
+        };
+      if (name === "lucide-react-native")
+        return new Proxy({}, { get: (_, key) => key });
+      if (name.endsWith("/desktop-layout"))
+        return { useDesktopLayout: () => ({ desktop, contentWidth: 1200 }) };
+      if (name.endsWith("/desktop-workspace"))
+        return {
+          workspace: { page: {} },
+          WorkspaceHeading: "WorkspaceHeading",
+        };
+      if (name.endsWith("/floating"))
+        return {
+          CategoryDock: "CategoryDock",
+          FloatButton: "FloatButton",
+          Sheet: "Sheet",
+          WorldGlyph: "WorldGlyph",
+          worlds: categories,
+        };
+      if (name.endsWith("/ui"))
+        return {
+          Action: "Action",
+          Notice: "Notice",
+          Pill: "Pill",
+          allCategories: categories,
+        };
+      if (name.endsWith("/account-menu"))
+        return { SignOutButton: "SignOutButton" };
+      if (name.endsWith("/profile-image-controls"))
+        return { ProfileImageControls: "ProfileImageControls" };
+      if (name.endsWith("/profile-media-preview"))
+        return {
+          ProfileMediaPreview: "ProfileMediaPreview",
+          useProfilePreviewActivity: () => activity,
+        };
+      if (name.endsWith("/assets"))
+        return { coverSource: (uri: string) => ({ uri }) };
+      if (name.endsWith("/profile-image-source"))
+        return {
+          useProfileImageSource: (path?: string | null) => {
+            if (!path) return null;
+            const key = `${path}:${token}`;
+            if (!imageSources.has(key)) imageSources.set(key, { uri: path });
+            return imageSources.get(key);
+          },
+        };
+      if (name.endsWith("/profile-preview")) return helpers;
+      if (name.endsWith("/profile-web-layout"))
+        return {
+          observeProfileWebLayout:
+            web?.observe ??
+            (() => {
+              throw new Error(
+                "Native Profile must not subscribe to DOM layout",
+              );
+            }),
+        };
+      if (name === "../provider")
+        return {
+          useZiipa: () => ({
+            session: {
+              access_token: token,
+              user: { id: 1, name: "Creator" },
+            },
+            guest: false,
+            data: {
+              profile,
+              items: creations.filter((row) => row.visibility === "published"),
+              drafts: creations,
+              preferences,
+            },
+            refreshProfileImages: () => profileSync.refresh(token),
+            api: () => {
+              requests++;
+              throw new Error("Local filters must not request account changes");
+            },
+            refresh: () => {
+              refreshes++;
+            },
+            preferences: () => {
+              preferenceWrites++;
+            },
+          }),
+        };
+      if (name === "../theme") return { color: {}, font: {}, styles: {} };
+      throw new Error(`Unexpected Profile screen dependency ${name}`);
+    },
+  );
   function nodes(value: any): Node[] {
     if (Array.isArray(value)) return value.flatMap(nodes);
     if (!value || typeof value !== "object" || !("props" in value)) return [];
@@ -1017,6 +1072,7 @@ function profileScreenHarness(
     cursor = 0;
     return nodes(
       exported.ProfileScreen({
+        route: { params: undefined },
         navigation: {
           navigate: (...args: unknown[]) => navigations.push(args),
         },
@@ -1060,7 +1116,7 @@ function profileScreenHarness(
       feed.props.onLayout({ nativeEvent: { layout: { y: 0 } } });
       const next = new Map<string, { top: number; height: number }>();
       let top = 0;
-      for (const card of feed.props.children[0]) {
+      for (const card of profileCards(feed)) {
         const key = card.key as string;
         const height = card.props.style.height;
         const previous = mountedCards.get(key);
@@ -1101,7 +1157,7 @@ test("web Profile uses fresh DOM rectangles after a cold scroll and rejects old-
   const feed = tree.find(
     (node) => node.props.testID === "profile-creations-feed",
   )!;
-  feed.props.children[0].forEach((card: any) => card.props.ref({}));
+  profileCards(feed).forEach((card: any) => card.props.ref({}));
   ui.flushEffects();
   assert.equal(subscriptions.length, 1);
   const snapshot: ProfileWebLayout = {
@@ -1240,21 +1296,21 @@ test("unchanged leading Profile cards remeasure across category and Saved filter
       )!;
     const feed = () =>
       tree.find((node) => node.props.testID === "profile-creations-feed")!;
-    const originalCard = feed().props.children[0][0];
+    const originalCard = profileCards(feed())[0];
     const originalBounds = ui.layoutEvents[0];
     assert.equal(preview().props.visible, true);
     assert.equal(preview().props.videoActive, true);
     tree.find((node) => node.type === "CategoryDock")!.props.onSelect("games");
     tree = ui.renderWithLayout();
     assert.notEqual(
-      feed().props.children[0][0].key,
+      profileCards(feed())[0].key,
       originalCard.key,
       "unchanged geometry must not retain an unmeasured card",
     );
     assert.ok(
       ui.layoutEvents.some(
         (event) =>
-          event.key === feed().props.children[0][0].key &&
+          event.key === profileCards(feed())[0].key &&
           event.top === originalBounds.top &&
           event.height === originalBounds.height,
       ),
@@ -1384,9 +1440,9 @@ test("Profile stacks every published creation in one scrollable column and badge
     const feed = nodes.find(
       (node) => node.props.testID === "profile-creations-feed",
     )!;
-    assert.equal(feed.props.style.flexDirection, undefined);
-    assert.equal(feed.props.style.flexWrap, undefined);
-    const cards = feed.props.children[0];
+    assert.equal(feed.props.style.flexDirection, "row");
+    assert.equal(feed.props.style.flexWrap, "wrap");
+    const cards = profileCards(feed);
     assert.deepEqual(
       cards.map((card: any) => card.props.accessibilityLabel),
       [
@@ -1451,7 +1507,7 @@ test("Profile reset clears only category and Saved view, preserving scroll and s
   scroll().props.onLayout({ nativeEvent: { layout: { height: 300 } } });
   scroll().props.onScroll({ nativeEvent: { contentOffset: { y: 420 } } });
   feed().props.onLayout({ nativeEvent: { layout: { y: 0 } } });
-  feed().props.children[0].forEach((card: any, n: number) =>
+  profileCards(feed()).forEach((card: any, n: number) =>
     card.props.onLayout({
       nativeEvent: { layout: { y: n * 200, height: 179 } },
     }),

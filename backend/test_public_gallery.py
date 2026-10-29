@@ -348,7 +348,7 @@ def test_fresh_repeated_gallery_migration_has_unique_owner_and_slug(tmp_path):
         render_migrate.upgrade_database(engine)
         render_migrate.ensure_schema_ready(engine)
         with engine.connect() as connection:
-            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '20261028_0014'
+            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '20261029_0015'
             assert connection.scalar(text('SELECT COUNT(*) FROM store_listings')) == 0
             assert connection.scalar(text('SELECT COUNT(*) FROM billing_accounts')) == 0
             assert connection.scalar(text('SELECT COUNT(*) FROM public_galleries')) == 0

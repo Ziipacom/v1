@@ -313,7 +313,9 @@ export function StudioScreen({
               label={`Browse ${world?.title}`}
               size={42}
               onPress={() =>
-                selected === "store" ? navigation.navigate("Store") : navigation.navigate("Main", { category: selected })
+                selected === "store"
+                  ? navigation.navigate("Store")
+                  : navigation.navigate("Main", { category: selected })
               }
             >
               <WorldGlyph id={selected} size={21} media />
@@ -487,7 +489,8 @@ export function StudioScreen({
             label: "Dashboard",
             Icon: LayoutGrid,
             active: !editing,
-            action: () => navigation.navigate("Profile"),
+            action: () =>
+              navigation.navigate("Profile", { creatorId: undefined }),
           },
           {
             label: "Gallery",

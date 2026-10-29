@@ -28,6 +28,7 @@ import { useDevicePreferences } from "./device-preferences";
 import { isPlayableMedia } from "../lib/domain";
 import {
   galleryIndex,
+  galleryIndicators,
   galleryNeighbors,
   galleryRotationAllowed,
 } from "../lib/gallery";
@@ -368,10 +369,7 @@ export function GallerySlider({
               // in one plane so neighbors cannot cover its copy.
               transform:
                 Platform.OS === "ios"
-                  ? [
-                      { skewY: offset < 0 ? "3deg" : "-3deg" },
-                      { scale: 0.94 },
-                    ]
+                  ? [{ skewY: offset < 0 ? "3deg" : "-3deg" }, { scale: 0.94 }]
                   : [
                       { perspective: 900 },
                       { rotateY: offset < 0 ? "17deg" : "-17deg" },
@@ -630,29 +628,30 @@ export function GallerySlider({
           height: 44,
         }}
       >
-        {items.map((entry, position) => (
-          <Pressable
-            key={entry.id}
-            {...interaction}
-            accessibilityRole="button"
-            accessibilityLabel={`Show gallery creation ${position + 1}: ${entry.title}`}
-            accessibilityState={{ selected: position === current }}
-            onPress={() => {
-              setRotationEnabled(false);
-              show(position, position >= current ? 1 : -1);
-            }}
-            style={{ flex: 1, minHeight: 22, justifyContent: "center" }}
-          >
-            <View
-              style={{
-                height: 4,
-                borderRadius: 3,
-                backgroundColor:
-                  position === current ? color.purple : "#ACA7AE",
+        {galleryIndicators(items.length, current).map(
+          ({ slot, index: position, active }) => (
+            <Pressable
+              key={slot}
+              {...interaction}
+              accessibilityRole="button"
+              accessibilityLabel={`Show gallery creation ${position + 1} of ${items.length}: ${items[position].title}`}
+              accessibilityState={{ selected: active }}
+              onPress={() => {
+                setRotationEnabled(false);
+                show(position, position >= current ? 1 : -1);
               }}
-            />
-          </Pressable>
-        ))}
+              style={{ flex: 1, minHeight: 22, justifyContent: "center" }}
+            >
+              <View
+                style={{
+                  height: 4,
+                  borderRadius: 3,
+                  backgroundColor: active ? color.purple : "#ACA7AE",
+                }}
+              />
+            </Pressable>
+          ),
+        )}
       </View>
       <View
         style={{

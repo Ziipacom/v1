@@ -188,10 +188,15 @@ def get_privacy(user: User = Depends(current_user), session: Session = Depends(d
 
 @router.post('/api/account/privacy', dependencies=[Depends(guard)])
 async def update_privacy(data: PrivacyInput, user: User = Depends(current_user), session: Session = Depends(db)):
+    from creator import _locked_preferences, CreatorPreferences
+    prefs = _locked_preferences(session, user)
+    if prefs is None:
+        prefs = CreatorPreferences(owner_id=user.id, data={}); session.add(prefs)
     if data.profile_visibility != 'public' or not data.discoverable:
         from live_api import end_live_for_privacy
         await end_live_for_privacy(user.id, session)
     state_for(session, user).privacy = data.model_dump()
+    prefs.data = {**(prefs.data or {}), 'profile_privacy_revision': (prefs.data or {}).get('profile_privacy_revision', 0) + 1}
     session.commit()
     return data.model_dump()
 
@@ -242,6 +247,8 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
         'reward_distributions': export_settlement_data(session, user.id),
         'administration': export_admin_account_data(session, user.id),
         'public_gallery': export_gallery(session, user.id),
+        'profile_tags': __import__('profile_api').export_profile_tags(session, user.id),
+        'ziipa_follows': __import__('profile_follows').export_follows(session, user.id),
         'store': __import__('marketplace').export_store(session, user.id),
         'services': __import__('commerce_billing').export_billing(session, user.id),
         'comments': [{'id': r.id, 'item_id': r.item_id, 'body': r.body, 'created_at': r.created_at.isoformat()} for r in session.scalars(select(CreatorComment).where(CreatorComment.owner_id == user.id))],

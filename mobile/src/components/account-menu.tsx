@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   Bell,
+  ChartColumn,
   Inbox,
   LogOut,
   UserRound,
@@ -19,7 +20,7 @@ import { color, font, styles } from "../theme";
 
 type Navigation = NativeStackNavigationProp<RootStack>;
 type AccountDestination =
-  "Profile" | "Inbox" | "NotificationMessages" | "Login";
+  "Profile" | "Dashboard" | "Inbox" | "NotificationMessages" | "Login";
 type Props =
   | { navigation: Navigation; onNavigate?: never }
   | { navigation?: never; onNavigate: (name: AccountDestination) => void };
@@ -88,9 +89,13 @@ function ScopedAccountMenu(props: Props) {
   }
   function navigate(name: AccountDestination) {
     if (props.onNavigate) props.onNavigate(name);
+    else if (name === "Profile")
+      props.navigation.navigate("Profile", { creatorId: undefined });
     else props.navigation.navigate(name);
   }
-  function go(name: "Profile" | "Inbox" | "NotificationMessages") {
+  function go(
+    name: "Profile" | "Dashboard" | "Inbox" | "NotificationMessages",
+  ) {
     close();
     navigate(name);
   }
@@ -230,6 +235,11 @@ function ScopedAccountMenu(props: Props) {
               onPress={() => go("Profile")}
             />
             <MenuRow label="Inbox" Icon={Inbox} onPress={() => go("Inbox")} />
+            <MenuRow
+              label="Dashboard"
+              Icon={ChartColumn}
+              onPress={() => go("Dashboard")}
+            />
             <MenuRow
               label="Notifications"
               Icon={Bell}

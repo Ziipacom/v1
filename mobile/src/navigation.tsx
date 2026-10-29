@@ -33,10 +33,14 @@ import { CalendarScreen } from "./screens/calendar";
 import { LiveScreen } from "./screens/live";
 import { RecordingsScreen } from "./screens/recordings";
 import { NotificationsScreen } from "./screens/notifications";
-import { InboxScreen, NotificationMessagesScreen } from "./screens/account-messages";
+import {
+  InboxScreen,
+  NotificationMessagesScreen,
+} from "./screens/account-messages";
 import { AdministrationScreen } from "./screens/admin";
 import { NotificationBridge } from "./components/notification-bridge";
 import { PostScreen } from "./screens/post";
+import { DashboardScreen } from "./screens/dashboard";
 import {
   DesktopLayoutProvider,
   useDesktopLayout,
@@ -286,6 +290,11 @@ function NavigationContent() {
               <Stack.Screen
                 name="Profile"
                 component={ProfileScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="Dashboard"
+                component={DashboardScreen}
                 options={{ headerShown: false }}
               />
               <Stack.Screen

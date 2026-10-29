@@ -118,12 +118,17 @@ export function GalleryStillPreview({
     setAttempt(0);
   }, [identity, enabled]);
   const transport = Platform.OS !== "web" || portalMode || !!item.demo;
-  const cover = useMemo(
-    () => coverSource(item.cover, session?.access_token),
-    [item.cover, session?.access_token],
-  );
-  const poster =
-    item.cover !== "/brand/ziipa-background.png" && cover !== background;
+  const cover = useMemo(() => {
+    const artwork = coverSource(item.cover, session?.access_token);
+    // Uploaded photos already are stills. They need no video decoder or
+    // separately uploaded cover to appear on a neighboring gallery card.
+    return artwork === background &&
+      item.content_type?.startsWith("image/") &&
+      item.media_url
+      ? coverSource(item.media_url, session?.access_token)
+      : artwork;
+  }, [item.cover, item.media_url, item.content_type, session?.access_token]);
+  const poster = cover !== background;
   const source = useMemo(
     () =>
       transport

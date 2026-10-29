@@ -484,7 +484,10 @@ def serialize_item(item, session, *, viewer_id=None):
     # Raw recognition may include speech removed by a timeline cut. It is an
     # owner's editor track, never public feed or other-viewer metadata.
     data = {key: value for key, value in item.data.items() if key != 'caption_source_cues' or viewer_id == item.owner_id}
-    return {**data, 'visibility': item.visibility, 'id': item.id, 'creator': owner.name, 'creator_id': owner.id, 'cover': media_url if image else '/brand/ziipa-background.png', 'media_url': None if image else media_url, 'content_type': media.content_type if media else None, 'demo': False, 'label': 'Post' if item.visibility == 'published' else ('Removed by moderation' if item.visibility == 'hidden' else 'Draft'), 'created_at': item.created_at.isoformat(), 'distribution': [serialize_distribution(d) for d in distributions]}
+    # SQLite omits the offset when it reads our UTC DateTime column. Keep the
+    # API timestamp unambiguous so device-local timezones do not move its day.
+    created_at = item.created_at.replace(tzinfo=item.created_at.tzinfo or timezone.utc).isoformat()
+    return {**data, 'visibility': item.visibility, 'id': item.id, 'creator': owner.name, 'creator_id': owner.id, 'cover': media_url if image else '/brand/ziipa-background.png', 'media_url': None if image else media_url, 'content_type': media.content_type if media else None, 'demo': False, 'label': 'Post' if item.visibility == 'published' else ('Removed by moderation' if item.visibility == 'hidden' else 'Draft'), 'created_at': created_at, 'distribution': [serialize_distribution(d) for d in distributions]}
 
 
 def serialize_distribution(row):
@@ -505,18 +508,30 @@ def assert_visible(item_id, session, user):
         return
     row = session.get(CreatorItem, item_id)
     prefs = prefs_for(session, user)
-    if not row or row.owner_id in prefs['blocked_user_ids'] or (row.owner_id != user.id and (row.visibility != 'published' or not account_allows_view(session, row.owner_id))):
+    if not row or row.owner_id in prefs['blocked_user_ids'] or (row.owner_id != user.id and (row.visibility != 'published' or not account_allows_view(session, row.owner_id, user.id))):
         raise HTTPException(404, 'Post not found')
 
 
-def account_allows_view(session, owner_id: int) -> bool:
+def account_allows_view(session, owner_id: int, viewer_id: int | None = None) -> bool:
     from admin_services import account_is_active
     if not account_is_active(session, owner_id):
         return False
     from account_services import AccountState, PrivacyInput
     row = session.get(AccountState, owner_id)
     privacy = PrivacyInput(**(row.privacy or {})) if row else PrivacyInput()
-    return privacy.profile_visibility != 'private'
+    if viewer_id is not None:
+        viewer = session.get(User, viewer_id)
+        owner = session.get(User, owner_id)
+        if not viewer or not owner:
+            return False
+        mine, theirs = prefs_for(session, viewer), prefs_for(session, owner)
+        if (owner_id in mine['blocked_user_ids'] or viewer_id in theirs['blocked_user_ids']
+                or owner.name in mine['blocked_creators'] or viewer.name in theirs['blocked_creators']):
+            return False
+    if privacy.profile_visibility != 'private':
+        return True
+    from profile_follows import follows
+    return viewer_id == owner_id or bool(viewer_id and follows(session, viewer_id, owner_id))
 
 
 def account_is_discoverable(session, owner_id: int) -> bool:
@@ -657,6 +672,8 @@ def preferences(data: PreferencesInput, user: User = Depends(current_user), sess
         row = CreatorPreferences(owner_id=user.id)
         session.add(row)
     row.data = {**previous, **data.model_dump()}
+    from profile_follows import revoke_blocked_follows
+    revoke_blocked_follows(session, user, data.blocked_user_ids, data.blocked_creators)
     sync_preferences_rewards(session, user, previous, row.data)
     session.commit()
     return data.model_dump()
@@ -802,7 +819,7 @@ def read_media(media_id: str, user: User = Depends(current_user), session: Sessi
         shared = session.scalar(select(CreatorItem.id).where(CreatorItem.owner_id == row.owner_id, CreatorItem.visibility == 'published', CreatorItem.data['media_id'].as_string() == media_id))
         if not shared:
             raise HTTPException(404, 'Media not found')
-        if not account_allows_view(session, row.owner_id):
+        if not account_allows_view(session, row.owner_id, user.id):
             raise HTTPException(404, 'Media not found')
     provider = storage()
     if isinstance(provider, LocalStorage):

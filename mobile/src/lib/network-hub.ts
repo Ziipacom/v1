@@ -2,6 +2,7 @@ import type { SocialProvider } from "./types";
 
 export type NetworkTab = "accounts" | "feed" | "people" | "outbox";
 export type NetworkAccount = {
+  audience?: { followers?: number | null; following?: number | null; updated_at?: string | null } | null;
   provider: SocialProvider;
   /** Public link revision invalidates imported snapshots after unlink/relink. */
   revision?: string | null;

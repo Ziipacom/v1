@@ -24,8 +24,8 @@ import {
   FolderOpen,
   Images,
   LayoutDashboard,
+  ListIndentIncrease,
   MailOpen,
-  Menu,
   Network,
   Plus,
   Pencil,
@@ -45,6 +45,7 @@ import {
 } from "lucide-react-native";
 import { Logo } from "./ui";
 import { AccountMenu } from "./account-menu";
+import { DesktopAgentDock } from "./desktop-agent-dock";
 import { useDesktopLayout } from "./desktop-layout";
 import { useZiipa } from "../provider";
 import {
@@ -88,7 +89,12 @@ function NavButton({
       accessibilityRole="button"
       accessibilityLabel={item.label}
       accessibilityState={{ selected: item.active }}
-      onPress={() => navigate(item.name, item.params)}
+      onPress={() =>
+        navigate(
+          item.name,
+          item.name === "Profile" ? { creatorId: undefined } : item.params,
+        )
+      }
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
       style={({ pressed }) => ({
@@ -464,6 +470,31 @@ export function DesktopShell({
           </Pressable>
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel={
+              collapsed ? "Expand desktop sidebar" : "Collapse desktop sidebar"
+            }
+            accessibilityState={{ expanded: !collapsed }}
+            onPress={() => setCollapsed((value) => !value)}
+            style={({ pressed }) => ({
+              width: 44,
+              height: 44,
+              alignSelf: collapsed ? "center" : "flex-start",
+              marginLeft: collapsed ? 0 : 3,
+              marginBottom: 8,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 10,
+              backgroundColor: pressed ? color.hover : "transparent",
+            })}
+          >
+            <View
+              style={{ transform: [{ rotate: collapsed ? "0deg" : "180deg" }] }}
+            >
+              <ListIndentIncrease color={color.muted} size={21} />
+            </View>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Create new media"
             onPress={() => navigate("Composer")}
             style={({ pressed }) => ({
@@ -558,19 +589,6 @@ export function DesktopShell({
               gap: 20,
             }}
           >
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                collapsed
-                  ? "Expand desktop sidebar"
-                  : "Collapse desktop sidebar"
-              }
-              accessibilityState={{ expanded: !collapsed }}
-              onPress={() => setCollapsed((value) => !value)}
-              style={{ padding: 7 }}
-            >
-              <Menu color={color.muted} size={21} />
-            </Pressable>
             <View
               accessibilityRole="tablist"
               style={{
@@ -694,16 +712,35 @@ export function DesktopShell({
             >
               <Settings size={20} color={color.muted} />
             </Pressable>
-            <AccountMenu onNavigate={(name) => navigate(name)} />
+            <AccountMenu
+              onNavigate={(name) =>
+                navigate(
+                  name,
+                  name === "Profile" ? { creatorId: undefined } : undefined,
+                )
+              }
+            />
           </View>
         )}
         <View
           key="screens"
-          style={{ flex: 1, minWidth: 0, minHeight: 0 }}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            paddingBottom: chrome ? 96 : 0,
+          }}
           onLayout={(event) => measureContent(event.nativeEvent.layout.width)}
         >
           {children}
         </View>
+        {chrome && (
+          <DesktopAgentDock
+            key={session?.access_token || "guest"}
+            routeKey={route.name}
+            openWorkspace={() => navigate("MediaOS", { tab: "Assistant" })}
+          />
+        )}
       </View>
     </View>
   );

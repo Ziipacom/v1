@@ -36,6 +36,7 @@ import { useDesktopLayout } from "../components/desktop-layout";
 import { ReelMedia } from "../components/reel-media";
 import { useDevicePreferences } from "../components/device-preferences";
 import { inCreativeWorld, pageAtOffset } from "../lib/domain";
+import { creatorProfileParams } from "../lib/profile-collections";
 import { useZiipa } from "../provider";
 import type { Category, Comment, Item, RootStack } from "../lib/types";
 import { color, font, styles, themedStyles } from "../theme";
@@ -56,11 +57,50 @@ export function WatchScreen({
   const [category, setCategory] = useState<Category>(
     route.params?.category || "music",
   );
+  const requestedIdentity = useMemo(
+    () => ({}),
+    [route.params?.itemId, session?.access_token],
+  );
+  const [remotePost, setRemotePost] = useState<{
+    identity: object;
+    item: Item;
+  } | null>(null);
+  const [postLoadError, setPostLoadError] = useState<{
+    identity: object;
+    text: string;
+  } | null>(null);
+  const localPost = [...data.items, ...data.drafts].find(
+    (post) => post.id === route.params?.itemId,
+  );
+  useEffect(() => {
+    let active = true;
+    const id = route.params?.itemId;
+    if (id && !localPost && !guest && session) {
+      void api<Item>(`/api/creator/items/${encodeURIComponent(id)}`)
+        .then((item) => {
+          if (active) setRemotePost({ identity: requestedIdentity, item });
+        })
+        .catch(() => {
+          if (active)
+            setPostLoadError({
+              identity: requestedIdentity,
+              text: "This creation is no longer available to your account.",
+            });
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [api, requestedIdentity, !!localPost, guest]);
+  const requestedPost =
+    localPost ||
+    (remotePost?.identity === requestedIdentity ? remotePost.item : null);
   const items = useMemo(() => {
+    if (route.params?.itemId && !requestedPost) return [];
     const all = data.items.filter((i) => inCreativeWorld(i, category));
-    const draft = data.drafts.find((i) => i.id === route.params?.itemId);
+    const draft = requestedPost;
     return draft && !all.some((i) => i.id === draft.id) ? [draft, ...all] : all;
-  }, [data.items, data.drafts, category, route.params?.itemId]);
+  }, [data.items, requestedPost, category, route.params?.itemId]);
   const start = Math.max(
     0,
     items.findIndex((i) => i.id === route.params?.itemId),
@@ -84,6 +124,11 @@ export function WatchScreen({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const item = items[index];
+  const openCreator = (post: Item) => {
+    const params = creatorProfileParams(post);
+    if (params) navigation.navigate("Profile", params);
+    else setError("This sample has no public Ziipa creator profile.");
+  };
   useEffect(() => {
     setIndex(start);
     setPaused(!autoplay);
@@ -148,7 +193,9 @@ export function WatchScreen({
       } else {
         const entry = await api<Comment>(
           `/api/creator/items/${item.id}/comments`,
-          { body: body.trim() },
+          {
+            body: body.trim(),
+          },
         );
         setComments((old) => [entry, ...old]);
       }
@@ -265,29 +312,35 @@ export function WatchScreen({
                   gap: 9,
                 }}
               >
-                <Text
-                  style={{
-                    color: "#D0C2E3",
-                    fontSize: 10,
-                    letterSpacing: 1.3,
-                    fontFamily: font.medium,
-                  }}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open creator profile for ${post.creator}`}
+                  onPress={() => openCreator(post)}
                 >
-                  {post.demo
-                    ? post.media_url
-                      ? "SAMPLE FILM"
-                      : post.label.toUpperCase()
-                    : "CREATOR POST"}
-                </Text>
-                <Text
-                  style={{
-                    color: "white",
-                    fontFamily: font.semibold,
-                    fontSize: 17,
-                  }}
-                >
-                  @{post.creator.toLowerCase().replace(/\s+/g, ".")}
-                </Text>
+                  <Text
+                    style={{
+                      color: "#D0C2E3",
+                      fontSize: 10,
+                      letterSpacing: 1.3,
+                      fontFamily: font.medium,
+                    }}
+                  >
+                    {post.demo
+                      ? post.media_url
+                        ? "SAMPLE FILM"
+                        : post.label.toUpperCase()
+                      : "CREATOR POST"}
+                  </Text>
+                  <Text
+                    style={{
+                      color: "white",
+                      fontFamily: font.semibold,
+                      fontSize: 17,
+                    }}
+                  >
+                    @{post.creator.toLowerCase().replace(/\s+/g, ".")}
+                  </Text>
+                </Pressable>
                 <Text
                   numberOfLines={2}
                   style={{
@@ -376,9 +429,9 @@ export function WatchScreen({
         >
           <FloatButton
             media
-            label="Your creator profile"
+            label={`Open creator profile for ${item.creator}`}
             icon={UserRound}
-            onPress={() => navigation.navigate("Profile")}
+            onPress={() => openCreator(item)}
           />
           <Pressable
             accessibilityRole="button"
@@ -516,7 +569,13 @@ export function WatchScreen({
             padding: 30,
           }}
         >
-          <Text style={styles.heading}>No creations yet</Text>
+          <Text style={styles.heading}>
+            {route.params?.itemId
+              ? postLoadError?.identity === requestedIdentity
+                ? postLoadError.text
+                : "Loading creation…"
+              : "No creations yet"}
+          </Text>
           <Text style={styles.body}>Choose another creative world below.</Text>
         </View>
       )}
@@ -535,7 +594,10 @@ export function WatchScreen({
       <CategoryDock
         selected={category}
         onSelect={(id) => {
-          if (id === "store") { navigation.navigate("Store"); return; }
+          if (id === "store") {
+            navigation.navigate("Store");
+            return;
+          }
           navigation.setParams({ itemId: undefined, category: id });
           setCategory(id);
           setIndex(0);
@@ -637,7 +699,11 @@ export function WatchScreen({
     </View>
   );
   return desktop ? (
-    <DesktopWatchLayout item={item} navigation={navigation}>
+    <DesktopWatchLayout
+      item={item}
+      navigation={navigation}
+      onCreator={openCreator}
+    >
       {viewer}
     </DesktopWatchLayout>
   ) : (
@@ -648,9 +714,11 @@ export function WatchScreen({
 function DesktopWatchLayout({
   item,
   navigation,
+  onCreator,
   children,
 }: {
   item?: Item;
+  onCreator: (item: Item) => void;
   navigation: NativeStackScreenProps<RootStack, "Watch">["navigation"];
   children: ReactNode;
 }) {
@@ -706,7 +774,15 @@ function DesktopWatchLayout({
               <Text accessibilityRole="header" style={desktopWatch.title}>
                 {item?.title || "Your next inspiration"}
               </Text>
-              {item && <Text style={desktopWatch.creator}>{item.creator}</Text>}
+              {item && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open creator profile for ${item.creator}`}
+                  onPress={() => onCreator(item)}
+                >
+                  <Text style={desktopWatch.creator}>{item.creator}</Text>
+                </Pressable>
+              )}
               {!!item?.description && (
                 <Text style={styles.body}>{item.description}</Text>
               )}

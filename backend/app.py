@@ -436,6 +436,10 @@ from admin_api import router as admin_router, platform_router
 app.include_router(admin_router)
 app.include_router(platform_router)
 from public_gallery import owner_router as gallery_owner_router, public_router as public_gallery_router
+from profile_api import router as profile_router
+app.include_router(profile_router)
+from profile_follows import router as profile_follows_router
+app.include_router(profile_follows_router)
 app.include_router(gallery_owner_router)
 app.include_router(public_gallery_router)
 from marketplace import router as store_router

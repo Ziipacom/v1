@@ -161,7 +161,7 @@ export function DesktopExplore({ route, navigation }: Props) {
             )}
           </View>
           <Action
-            title="Create a post"
+            title="Create"
             icon={Plus}
             onPress={() => navigation.navigate("Composer")}
           />
