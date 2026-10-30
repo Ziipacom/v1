@@ -128,7 +128,7 @@ export function CreatorGalleryScreen({
           flex: 1,
           minHeight: 0,
           marginTop: 18,
-          marginBottom: desktop ? 16 : 112 + insets.bottom,
+          marginBottom: desktop ? 96 : 112 + insets.bottom,
         }}
       >
         <View style={{ flex: 1, minHeight: 0 }}>
