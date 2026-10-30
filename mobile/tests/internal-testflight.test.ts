@@ -142,7 +142,13 @@ test("beta app config pins iOS team, omits unreviewed encryption, and has a sepa
   assert.equal("ITSAppUsesNonExemptEncryption" in config.ios.infoPlist, false);
   assert.equal(config.extra.publicReleaseAllowed, false);
   assert.equal(config.extra.deviceQA, "pending");
-  assert.equal(config.plugins[0], "./scripts/with-internal-testflight.cjs");
+  const pluginNames = config.plugins.map((plugin: string | [string, unknown]) =>
+    typeof plugin === "string" ? plugin : plugin[0],
+  );
+  assert.equal(
+    pluginNames.filter((name: string) => name === "./scripts/with-internal-testflight.cjs").length,
+    1,
+  );
   for (const change of [
     { EXPO_OWNER: "other" },
     { EXPO_EAS_PROJECT_ID: "00000000-0000-4000-8000-000000000001" },
