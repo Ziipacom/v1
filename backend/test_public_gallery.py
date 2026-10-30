@@ -341,6 +341,7 @@ def test_public_guard_remains_rate_limited_fail_closed(context, monkeypatch):
 
 def test_fresh_repeated_gallery_migration_has_unique_owner_and_slug(tmp_path):
     from sqlalchemy import inspect, text
+    from alembic.script import ScriptDirectory
     import render_migrate
     engine = create_engine('sqlite:///' + str(tmp_path / 'gallery-migration.sqlite'))
     try:
@@ -348,7 +349,8 @@ def test_fresh_repeated_gallery_migration_has_unique_owner_and_slug(tmp_path):
         render_migrate.upgrade_database(engine)
         render_migrate.ensure_schema_ready(engine)
         with engine.connect() as connection:
-            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '20261029_0015'
+            expected_head = ScriptDirectory.from_config(render_migrate.migration_config()).get_current_head()
+            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == expected_head
             assert connection.scalar(text('SELECT COUNT(*) FROM store_listings')) == 0
             assert connection.scalar(text('SELECT COUNT(*) FROM billing_accounts')) == 0
             assert connection.scalar(text('SELECT COUNT(*) FROM public_galleries')) == 0
