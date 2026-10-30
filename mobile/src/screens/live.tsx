@@ -461,38 +461,67 @@ export function LiveScreen({
           onPress={() => void switchTab("broadcast")}
         />
       </View>
-      <Action
-        secondary
-        title="Calendar · plan stream reminders"
-        icon={CalendarClock}
-        disabled={!!busy || attempted.current}
-        onPress={() =>
-          navigation.navigate("Calendar", {
-            kind: "stream",
-            streamId: selected?.id,
-          })
-        }
-      />
-      {session && !guest && (
-        <View style={{ gap: 10 }}>
-          <Action
-            secondary
-            title="Private recordings and clips"
-            icon={Clapperboard}
-            disabled={!!busy || attempted.current}
-            onPress={() =>
-              navigation.navigate("Recordings", { streamId: selected?.id })
-            }
-          />
-          <Action
-            secondary
-            title="Private updates · opt-in notifications"
-            icon={Bell}
-            disabled={!!busy || attempted.current}
-            onPress={() => navigation.navigate("Notifications")}
-          />
-        </View>
-      )}
+      <View style={{ flexDirection: "row", gap: 8, maxWidth: 360 }}>
+        {[
+          {
+            title: "Calendar",
+            Icon: CalendarClock,
+            visible: true,
+            open: () =>
+              navigation.navigate("Calendar", {
+                kind: "stream",
+                streamId: selected?.id,
+              }),
+          },
+          {
+            title: "Recordings",
+            Icon: Clapperboard,
+            visible: !!session && !guest,
+            open: () =>
+              navigation.navigate("Recordings", { streamId: selected?.id }),
+          },
+          {
+            title: "Updates",
+            Icon: Bell,
+            visible: !!session && !guest,
+            open: () => navigation.navigate("Notifications"),
+          },
+        ]
+          .filter((shortcut) => shortcut.visible)
+          .map(({ title, Icon, open }) => (
+            <Pressable
+              key={title}
+              accessibilityRole="button"
+              accessibilityLabel={title}
+              accessibilityState={{ disabled: !!busy || attempted.current }}
+              disabled={!!busy || attempted.current}
+              onPress={open}
+              style={({ pressed }) => ({
+                flex: 1,
+                minHeight: 58,
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 5,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: color.border,
+                backgroundColor: color.panel,
+                opacity: busy || attempted.current || pressed ? 0.6 : 1,
+              })}
+            >
+              <Icon size={20} color={color.text} />
+              <Text
+                style={{
+                  fontFamily: font.medium,
+                  fontSize: 11,
+                  color: color.text,
+                }}
+              >
+                {title}
+              </Text>
+            </Pressable>
+          ))}
+      </View>
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}

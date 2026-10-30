@@ -728,7 +728,6 @@ export function DesktopShell({
             flex: 1,
             minWidth: 0,
             minHeight: 0,
-            paddingBottom: chrome ? 96 : 0,
           }}
           onLayout={(event) => measureContent(event.nativeEvent.layout.width)}
         >

@@ -428,6 +428,8 @@ from creation_campaigns import router as campaign_router
 app.include_router(campaign_router)
 from calendar_api import router as calendar_router
 app.include_router(calendar_router)
+from calendar_connections_api import router as calendar_connections_router
+app.include_router(calendar_connections_router)
 from media_rewards import router as rewards_router
 app.include_router(rewards_router)
 from rewards_redemption import router as rewards_settlement_router

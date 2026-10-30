@@ -58,6 +58,15 @@ export type CalendarCampaign = {
   schedule_at?: string | null;
 };
 export type CalendarList = {
+  connected_events?: {
+    id: string;
+    title: string;
+    source: string;
+    starts_at: string;
+    ends_at: string;
+    notes: string;
+    all_day?: boolean;
+  }[];
   events: CalendarEvent[];
   campaigns: CalendarCampaign[];
   automation: { reminders_only: boolean; automatic_broadcast: boolean };

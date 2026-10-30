@@ -179,6 +179,7 @@ export type RootStack = {
   Feeds: undefined;
   MediaOS:
     | {
+        prompt?: string;
         tab?:
           | "Overview"
           | "Library"

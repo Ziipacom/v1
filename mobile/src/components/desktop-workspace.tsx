@@ -34,7 +34,9 @@ export const workspace = themedStyles(() => ({
     maxWidth: 1240,
     alignSelf: "center",
     padding: 28,
-    paddingBottom: 40,
+    // Let the page scroll beneath the floating assistant, with room to reveal
+    // its final controls above the composer instead of reserving a solid footer.
+    paddingBottom: 136,
     gap: 20,
   },
   narrow: { maxWidth: 1040 },

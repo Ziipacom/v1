@@ -34,8 +34,8 @@ export const worlds: {
   { id: "music", title: "Music & Film", icon: Music2 },
   { id: "nft", title: "NFTs", icon: Hexagon, concept: true },
   { id: "store", title: "Store", icon: Store },
-// Category navigation is distinct from enabling a service. Keep the iPhone
-// beta's menu/dock complete; wallet/import actions retain their own guards.
+  // Category navigation is distinct from enabling a service. Keep the iPhone
+  // beta's menu/dock complete; wallet/import actions retain their own guards.
 ].filter((w) => conceptsEnabled || iosLimitedTestflight || !w.concept) as {
   id: Category;
   title: string;
@@ -55,7 +55,11 @@ export function WorldGlyph({
   active?: boolean;
 }) {
   useTheme();
-  const foreground = media ? color.onMedia : active ? color.onAccent : color.text;
+  const foreground = media
+    ? color.onMedia
+    : active
+      ? color.onAccent
+      : color.text;
   if (id === "nft")
     return (
       <View
@@ -142,14 +146,20 @@ export function FloatButton({
           ? color.purple
           : plain
             ? "transparent"
-            : media ? "#0B0814B8" : color.panel,
+            : media
+              ? "#0B0814B8"
+              : color.panel,
         alignItems: "center",
         justifyContent: "center",
         opacity: pressed ? 0.65 : 1,
       })}
     >
       {Icon ? (
-        <Icon size={24} color={media ? color.onMedia : active ? color.onAccent : color.text} strokeWidth={1.65} />
+        <Icon
+          size={24}
+          color={media ? color.onMedia : active ? color.onAccent : color.text}
+          strokeWidth={1.65}
+        />
       ) : (
         children
       )}
@@ -183,7 +193,12 @@ export function CategoryDock({
           }
           onPress={() => onSelect(w.id)}
         >
-          <WorldGlyph id={w.id} active={selected === w.id || (selected === "video" && w.id === "music")} />
+          <WorldGlyph
+            id={w.id}
+            active={
+              selected === w.id || (selected === "video" && w.id === "music")
+            }
+          />
         </FloatButton>
       ))}
       <FloatButton label="Inbox" onPress={onInbox}>
@@ -197,7 +212,12 @@ export function Sheet({
   title,
   children,
   onClose,
-}: PropsWithChildren<{ title: string; onClose: () => void }>) {
+  maxWidth,
+}: PropsWithChildren<{
+  title: string;
+  onClose: () => void;
+  maxWidth?: number;
+}>) {
   const insets = useSafeAreaInsets();
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -217,6 +237,9 @@ export function Sheet({
         <View
           style={{
             maxHeight: "80%",
+            ...(maxWidth
+              ? { width: "100%", maxWidth, alignSelf: "center" as const }
+              : {}),
             minHeight: 200,
             backgroundColor: color.bg,
             borderTopLeftRadius: 27,

@@ -20,7 +20,7 @@ export default function BetaPrivacyNotice() {
           <Link href="/portal">Open Ziipa</Link>
         </nav>
         <article>
-          <p className={s.eyebrow}>TESTFLIGHT BETA · NOTICE VERSION OCTOBER 27, 2026</p>
+          <p className={s.eyebrow}>TESTFLIGHT BETA · NOTICE VERSION OCTOBER 30, 2026</p>
           <h1>{notice.title}</h1>
           <p className={s.intro}>{notice.subtitle}</p>
           {process.env.NODE_ENV !== 'production' && (

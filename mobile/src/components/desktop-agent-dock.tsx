@@ -97,7 +97,10 @@ export function DesktopAgentDock({
         zIndex: 30,
       }}
     >
-      <View style={{ width: "100%", maxWidth: 760, gap: 10 }}>
+      <View
+        pointerEvents="box-none"
+        style={{ width: "100%", maxWidth: 760, gap: 10 }}
+      >
         {expanded && (
           <View
             testID="desktop-agent-reply"

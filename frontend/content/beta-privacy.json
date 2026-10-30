@@ -51,6 +51,16 @@
       ]
     },
     {
+      "id": "calendars",
+      "title": "Optional connected calendars",
+      "paragraphs": [
+        "Calendar connections are optional. On iPhone or Android, allow calendar access only if you want to use it, then choose a device calendar. Choosing Sync saves that calendar’s event titles, notes and start/end times from the last 30 and next 90 days to your private Ziipa account, where they can appear on your other signed-in devices. Ziipa does not read your contacts or device reminders through this feature. Device calendar access is separate from cloud account authorization.",
+        "Where Google Calendar or Microsoft Outlook/Teams calendar connections are configured, you must separately authorize your account and choose a calendar. Ziipa stores the authorization tokens encrypted on its server so it can carry out the calendar requests you approve. Sync imports calendar event details into your private account. Reviewed exports add a calendar event with its Ziipa schedule link. Editing a connected event sends the reviewed changes back to that provider. Meetings with guests, recurring events and all-day events must be edited in the original calendar. These actions do not invite guests, publish media, start broadcasts or create Teams meeting links.",
+        "Calendar synchronization runs when you choose Sync; continuous background synchronization is not enabled. Device calendars may also synchronize through their existing Apple, Google or Microsoft account settings. Choosing Plan media opens an editable request using the selected event’s title and time. It does not send that request to an AI service until you choose Send; calendar notes are not automatically included.",
+        "Disconnecting a cloud calendar removes its saved authorization and imported copies from Ziipa; it does not delete events already saved at the calendar provider. You can also revoke access in the provider’s account settings. Removing a device-calendar snapshot removes that imported copy from Ziipa. Device Settings controls future calendar permission; changing that permission does not remove copies already saved in your Ziipa account. Account deletion removes the saved Ziipa calendar connections and imported snapshots."
+      ]
+    },
+    {
       "id": "ai",
       "title": "Optional AI, captions and voice input",
       "paragraphs": [
@@ -124,5 +134,5 @@
       ]
     }
   ],
-  "version": "2026-10-27"
+  "version": "2026-10-30"
 }

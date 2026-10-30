@@ -355,6 +355,9 @@ def export_calendar_data(session, owner_id):
 
 def delete_calendar_data(session, owner_id):
     # Caller owns its account transaction; no hidden commits or external calls.
+    from calendar_connections import CalendarExport, ConnectedCalendarEvent, CalendarConnection, DeviceCalendarSnapshot
+    for model in (CalendarExport, ConnectedCalendarEvent, CalendarConnection, DeviceCalendarSnapshot):
+        session.execute(delete(model).where(model.owner_id == owner_id))
     session.execute(delete(CalendarOccurrence).where(CalendarOccurrence.owner_id == owner_id))
     session.execute(delete(CalendarEvent).where(CalendarEvent.owner_id == owner_id))
 

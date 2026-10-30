@@ -52,7 +52,7 @@ def calendar_config():
         'automatic_broadcast': False, 'automatic_campaign_delivery': False,
         'recurrence': ['none', 'daily', 'weekly'], 'max_occurrences': 52,
         'dst_policy': 'Reject an initial gap, skip recurring gaps, and use the selected earlier/later fold.',
-        'detail': 'Private in-app reminders only; no email, external calendar sync, automatic camera capture or broadcast.'}
+        'detail': 'Private in-app reminders. External calendar access requires a separate Connect authorization and explicit sync. No automatic camera capture or broadcast.'}
 
 
 @router.get('/events')
@@ -67,7 +67,15 @@ def list_events(user: User = Depends(current_user), session: Session = Depends(d
     from creation_campaigns import CreationCampaign
     campaigns = session.scalars(select(CreationCampaign).where(CreationCampaign.owner_id == user.id)
         .order_by(CreationCampaign.created_at.desc()).limit(100))
+    from calendar_connections import CalendarConnection, ConnectedCalendarEvent, DeviceCalendarSnapshot
+    names = {row.id: row.calendar_name for row in session.scalars(select(CalendarConnection).where(CalendarConnection.owner_id == user.id))}
+    connected = [{'id': row.id, 'source': names.get(row.connection_id, 'Connected calendar'), **row.data}
+        for row in session.scalars(select(ConnectedCalendarEvent).where(ConnectedCalendarEvent.owner_id == user.id).limit(1000))]
+    for snapshot in session.scalars(select(DeviceCalendarSnapshot).where(DeviceCalendarSnapshot.owner_id == user.id)):
+        connected.extend({'id': snapshot.id + ':' + event['id'], 'source': snapshot.calendar_name, **event} for event in snapshot.events)
+    connected.sort(key=lambda value: service.aware(datetime.fromisoformat(value['starts_at'].replace('Z', '+00:00'))))
     return {'events': [service.event_json(session, row, grouped[row.id]) for row in rows],
+        'connected_events': connected,
         'campaigns': [{'id': row.id, 'name': row.name, 'status': row.status, 'revision': row.revision,
             'schedule_at': service.stamp(row.schedule_at), 'read_only': True} for row in campaigns],
         'automation': {'reminders_only': True, 'automatic_broadcast': False, 'automatic_campaign_delivery': False}}

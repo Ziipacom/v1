@@ -635,6 +635,12 @@ export function MediaOSScreen({
     if (route.params?.tab) setTab(route.params.tab);
   }, [route.params?.tab]);
   useEffect(() => {
+    if (!route.params?.prompt) return;
+    setAssistantDraft(route.params.prompt.slice(0, 3000));
+    setTab("Assistant");
+    navigation.setParams({ prompt: undefined });
+  }, [route.params?.prompt]);
+  useEffect(() => {
     contentScroll.current?.scrollTo({ y: 0, animated: false });
   }, [tab]);
   const mutate: Mutate = async (path, method, body) => {

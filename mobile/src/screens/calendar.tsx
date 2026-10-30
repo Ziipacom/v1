@@ -27,6 +27,7 @@ import {
 } from "lucide-react-native";
 import { Action, Field, Notice, Pill } from "../components/ui";
 import { CalendarDayPicker } from "../components/calendar-day-picker";
+import { CalendarConnections } from "../components/calendar-connections";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { useZiipa } from "../provider";
 import { useOperationScope } from "../lib/use-operation-scope";
@@ -147,6 +148,13 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
   );
   const active = focused && foreground;
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [connectedEvents, setConnectedEvents] = useState<
+    NonNullable<CalendarList["connected_events"]>
+  >([]);
+  const [connectedLimit, setConnectedLimit] = useState(20);
+  const upcomingConnectedEvents = connectedEvents.filter(
+    (entry) => Date.parse(entry.ends_at) >= Date.now(),
+  );
   const [campaigns, setCampaigns] = useState<CalendarCampaign[]>([]);
   const [streams, setStreams] = useState<LiveBroadcast[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -291,6 +299,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
       ]);
       if (!valid()) return;
       setEvents(list.events);
+      setConnectedEvents(list.connected_events || []);
       setCampaigns(list.campaigns);
       setStreams(broadcasts);
       if (selectedId) {
@@ -454,7 +463,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
           width: "100%",
           maxWidth: desktop ? 1480 : 960,
           alignSelf: "center",
-          paddingBottom: 50,
+          paddingBottom: desktop ? 136 : 50,
         },
         desktop && { paddingHorizontal: 28, paddingTop: 24, gap: 20 },
       ]}
@@ -473,6 +482,10 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
             </Text>
           </View>
           <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
+            <CalendarConnections
+              events={events}
+              onChanged={() => void load()}
+            />
             <Action
               secondary
               title="Notifications"
@@ -518,7 +531,8 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
             preflight. Actual publishing stays in your reviewed campaign;
             broadcasting starts only in Live controls.
           </Text>
-          <Notice text="Reminders live inside Ziipa. Saving a schedule does not enable push or external calendar account sync. Optional device notifications require separate consent and configured delivery." />
+          <CalendarConnections events={events} onChanged={() => void load()} />
+          <Notice text="Use Connect to authorize a calendar, choose what to sync and review exports. Saving a Ziipa reminder does not publish media, start a broadcast or enable device push." />
           <Action
             secondary
             title="Private updates · opt-in reminder notifications"
@@ -529,7 +543,8 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
       {desktop && (
         <Text style={[styles.small, { color: "#A28CB6" }]}>
           Schedules create private Ziipa reminders. They do not publish, start a
-          broadcast, enable device push or sync an external calendar.
+          broadcast or enable device push. Use Connect for external calendar
+          sync.
         </Text>
       )}
       {loading ? (
@@ -617,6 +632,54 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
                 </Text>
               </Pressable>
             ))}
+            {upcomingConnectedEvents.length ? (
+              <>
+                <Text style={styles.label}>Connected calendars</Text>
+                <Text style={styles.small}>
+                  Last imported events. Use Connect → Sync now to refresh. Plan
+                  media opens an editable AI request; it does not send or
+                  publish anything.
+                </Text>
+                {upcomingConnectedEvents
+                  .slice(0, connectedLimit)
+                  .map((entry) => (
+                    <View
+                      key={entry.id}
+                      style={{
+                        paddingVertical: 10,
+                        gap: 6,
+                        borderTopWidth: 1,
+                        borderTopColor: color.border,
+                      }}
+                    >
+                      <Text style={styles.body}>{entry.title}</Text>
+                      <Text style={styles.small}>
+                        {entry.source} ·{" "}
+                        {entry.all_day
+                          ? `All day · ${entry.starts_at.slice(0, 10)}`
+                          : new Date(entry.starts_at).toLocaleString()}
+                      </Text>
+                      <Action
+                        secondary
+                        title="Plan media with Ziipa"
+                        onPress={() =>
+                          navigation.navigate("MediaOS", {
+                            tab: "Assistant",
+                            prompt: `Help me prepare media for a calendar event. Event title: ${JSON.stringify(entry.title)}. Starts: ${entry.starts_at}. Ask me to review the production plan, draft and destinations before taking action.`,
+                          })
+                        }
+                      />
+                    </View>
+                  ))}
+                {upcomingConnectedEvents.length > connectedLimit && (
+                  <Action
+                    secondary
+                    title="Show more calendar events"
+                    onPress={() => setConnectedLimit((limit) => limit + 20)}
+                  />
+                )}
+              </>
+            ) : null}
             {campaigns.length ? (
               <>
                 <Text style={styles.label}>Reviewed campaign schedules</Text>

@@ -118,7 +118,7 @@ test("external config retains exact Z, permission purposes and APNs removal with
   assert.equal(result.status, 0, result.stderr);
   const config = JSON.parse(result.stdout);
   assert.deepEqual(config.platforms, ["ios"]);
-  assert.equal(config.version, "1.0.15");
+  assert.equal(config.version, "1.0.16");
   assert.equal(config.ios.bundleIdentifier, "com.ziipa.app");
   assert.equal(config.ios.appleTeamId, "L6WH6BD2N5");
   assert.equal(config.icon, "./assets/brand/ziipa-favicon.png");
