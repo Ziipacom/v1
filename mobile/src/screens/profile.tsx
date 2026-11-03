@@ -57,6 +57,7 @@ import { coverSource } from "../lib/assets";
 import { useProfileImageSource } from "../lib/profile-image-source";
 import {
   profileCardVisible,
+  profileGridCardSize,
   profileCreations,
   profileVideoSelection,
   type ProfileCategory,
@@ -139,6 +140,8 @@ function OwnedProfileScreen({
   const [viewportHeight, setViewportHeight] = useState(0);
   const [scrollY, setScrollY] = useState(0);
   const [gridTop, setGridTop] = useState(0);
+  const [feedWidth, setFeedWidth] = useState(0);
+  const gridCardSize = profileGridCardSize(feedWidth);
   const [cardLayouts, setCardLayouts] = useState<{
     key: string;
     values: Record<string, ProfileCardBounds>;
@@ -524,8 +527,9 @@ function OwnedProfileScreen({
         <View
           testID="profile-creations-feed"
           onLayout={(event) => {
-            const top = event.nativeEvent.layout.y;
+            const { y: top, width } = event.nativeEvent.layout;
             setGridTop(top);
+            if (Number.isFinite(width) && width > 0) setFeedWidth(width);
           }}
           style={{
             width: "100%",
@@ -585,8 +589,8 @@ function OwnedProfileScreen({
                   })
                 }
                 style={{
-                  width: grid ? "33.333333%" : "100%",
-                  height: grid ? undefined : desktop ? 320 : 179,
+                  width: grid ? (gridCardSize ?? "33.333333%") : "100%",
+                  height: grid ? gridCardSize : desktop ? 320 : 179,
                   aspectRatio: grid ? 1 : undefined,
                   borderRadius: grid ? 0 : desktop ? 12 : 25,
                   overflow: "hidden",
@@ -730,7 +734,8 @@ function OwnedProfileScreen({
               style={
                 grid
                   ? {
-                      width: "33.333333%",
+                      width: gridCardSize ?? "33.333333%",
+                      height: gridCardSize,
                       aspectRatio: 1,
                       borderRadius: 0,
                       borderColor: color.bg,

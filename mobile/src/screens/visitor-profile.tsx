@@ -28,6 +28,7 @@ import {
 import { useNetworkSnapshotExpiry } from "../lib/use-network-snapshot-expiry";
 import { useProfileCollections } from "../lib/use-profile-collections";
 import { useProfileImageSource } from "../lib/profile-image-source";
+import { profileGridCardSize } from "../lib/profile-preview";
 import type { ProfileCollection } from "../lib/profile-collections";
 import type { RootStack } from "../lib/types";
 import { useZiipa } from "../provider";
@@ -43,6 +44,8 @@ export function VisitorProfileScreen({
   const profile = result.value;
   const [collection, setCollection] = useState<ProfileCollection>("creations");
   const [grid, setGrid] = useState(false);
+  const [feedWidth, setFeedWidth] = useState(0);
+  const gridCardSize = profileGridCardSize(feedWidth);
   const [tagOpen, setTagOpen] = useState(false);
   const [tagBusy, setTagBusy] = useState(false);
   const [limit, setLimit] = useState(20);
@@ -215,6 +218,10 @@ export function VisitorProfileScreen({
           />
           <View
             testID="visitor-profile-creations-feed"
+            onLayout={(event) => {
+              const { width } = event.nativeEvent.layout;
+              if (Number.isFinite(width) && width > 0) setFeedWidth(width);
+            }}
             style={{
               flexDirection: "row",
               flexWrap: "wrap",
@@ -234,8 +241,8 @@ export function VisitorProfileScreen({
                   })
                 }
                 style={{
-                  width: grid ? "33.333333%" : "100%",
-                  height: grid ? undefined : desktop ? 300 : 190,
+                  width: grid ? (gridCardSize ?? "33.333333%") : "100%",
+                  height: grid ? gridCardSize : desktop ? 300 : 190,
                   aspectRatio: grid ? 1 : undefined,
                   borderRadius: grid ? 0 : 22,
                   borderWidth: grid ? 1 : 0,
@@ -294,7 +301,8 @@ export function VisitorProfileScreen({
                 style={
                   grid
                     ? {
-                        width: "33.333333%",
+                        width: gridCardSize ?? "33.333333%",
+                        height: gridCardSize,
                         aspectRatio: 1,
                         borderRadius: 0,
                         borderColor: color.bg,

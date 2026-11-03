@@ -56,7 +56,7 @@ const photoLibraryPermission =
 const config: ExpoConfig = {
   name: production ? "Ziipa" : "Ziipa Preview",
   slug: "ziipa",
-  version: "1.0.16",
+  version: "1.0.17",
   platforms: limitedTestflight
     ? ["ios"]
     : portal

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 import type { ExpoSpeechRecognitionResultEvent } from "expo-speech-recognition";
 
 type SpeechModule =
@@ -323,15 +323,18 @@ export function useAutomationDictation(options: Options) {
         cancel();
     };
     const blur = () => cancel();
-    if (typeof document !== "undefined")
+    // React Native defines window as its global object, without DOM events.
+    // AppState owns native lifecycle; browser listeners belong only to web.
+    if (Platform.OS === "web" && typeof document !== "undefined")
       document.addEventListener("visibilitychange", hidden);
-    if (typeof window !== "undefined") window.addEventListener("blur", blur);
+    if (Platform.OS === "web" && typeof window !== "undefined")
+      window.addEventListener("blur", blur);
     return () => {
       mounted.current = false;
       background.remove();
-      if (typeof document !== "undefined")
+      if (Platform.OS === "web" && typeof document !== "undefined")
         document.removeEventListener("visibilitychange", hidden);
-      if (typeof window !== "undefined")
+      if (Platform.OS === "web" && typeof window !== "undefined")
         window.removeEventListener("blur", blur);
       const job = active.current;
       if (job) retire(job, true, "", false);

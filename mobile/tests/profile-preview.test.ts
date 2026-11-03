@@ -796,9 +796,15 @@ function profileScreenHarness(
       receive: (layout: ProfileWebLayout) => void,
     ) => () => void;
   },
+  visitor = false,
 ) {
   const source = readFileSync(
-    new URL("../src/screens/profile.tsx", import.meta.url),
+    new URL(
+      visitor
+        ? "../src/screens/visitor-profile.tsx"
+        : "../src/screens/profile.tsx",
+      import.meta.url,
+    ),
     "utf8",
   );
   const compiled = ts.transpileModule(source, {
@@ -895,7 +901,19 @@ function profileScreenHarness(
       if (name.endsWith("/use-profile-collections"))
         return {
           useProfileCollections: () => ({
-            value: undefined,
+            value: visitor
+              ? {
+                  creator: { id: 2, name: "Other creator" },
+                  profile: {},
+                  items: creations.filter(
+                    (row) => row.visibility === "published",
+                  ),
+                  tagged: [],
+                  access: "allowed",
+                  privacy: { visibility: "public" },
+                  relationship: { self: true, status: "none" },
+                }
+              : undefined,
             loading: false,
             reload: () => {},
           }),
@@ -1071,8 +1089,8 @@ function profileScreenHarness(
   function render() {
     cursor = 0;
     return nodes(
-      exported.ProfileScreen({
-        route: { params: undefined },
+      (visitor ? exported.VisitorProfileScreen : exported.ProfileScreen)({
+        route: { params: visitor ? { creatorId: 2 } : undefined },
         navigation: {
           navigate: (...args: unknown[]) => navigations.push(args),
         },
@@ -1514,6 +1532,80 @@ test("Profile grid is three square thumbnail columns without caption/category ov
       tree.some((node) => node.props.children === "Connected posts"),
       false,
     );
+  }
+});
+
+test("owner and visitor grids give absolute thumbnail children measured square bounds after selection and resize", () => {
+  for (const visitor of [false, true]) {
+    const ui = profileScreenHarness(false, undefined, undefined, visitor);
+    let tree = ui.render();
+    tree
+      .find(
+        (node) => node.props.accessibilityLabel === "Show profile as a grid",
+      )!
+      .props.onPress();
+    for (const width of [393, 769, 900]) {
+      tree = ui.render();
+      tree
+        .find(
+          (node) =>
+            node.props.testID ===
+            (visitor
+              ? "visitor-profile-creations-feed"
+              : "profile-creations-feed"),
+        )!
+        .props.onLayout?.({ nativeEvent: { layout: { width, y: 0 } } });
+      tree = ui.render();
+      const feed = tree.find(
+        (node) =>
+          node.props.testID ===
+          (visitor
+            ? "visitor-profile-creations-feed"
+            : "profile-creations-feed"),
+      )!;
+      const cards = feed.props.children
+        .flat()
+        .filter((node: any) =>
+          node?.props?.accessibilityLabel?.startsWith("Watch "),
+        );
+      assert.equal(cards.length, 6);
+      const side = Math.floor(width / 3);
+      assert.ok(
+        cards.every(
+          (card: any) =>
+            card.props.style.width === side && card.props.style.height === side,
+        ),
+        "three grid cells must have nonzero measured width and height, even though their thumbnail children are absolute",
+      );
+      assert.ok(side * 3 <= width, "rounding must not wrap the third column");
+      if (!visitor) {
+        tree
+          .find((node) => node.type === "ScrollView")!
+          .props.onLayout({ nativeEvent: { layout: { height: 500 } } });
+        cards.forEach((card: any, index: number) =>
+          card.props.onLayout({
+            nativeEvent: {
+              layout: { y: Math.floor(index / 3) * side, height: side },
+            },
+          }),
+        );
+        const previews = ui
+          .render()
+          .filter((node) => node.type === "ProfileMediaPreview");
+        assert.ok(
+          previews.every(
+            (node) =>
+              node.props.visible &&
+              node.props.thumbnailOnly &&
+              !node.props.videoActive,
+          ),
+          "measured grid cells must load stills instead of being treated as zero-height/offscreen cards",
+        );
+      }
+      cards[0].props.onPress();
+      assert.equal((ui.navigations.at(-1) as any[])[0], "Watch");
+    }
+    assert.equal(ui.counts().requests, 0);
   }
 });
 

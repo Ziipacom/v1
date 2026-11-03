@@ -25,6 +25,8 @@ function dictation(
     missingModule?: boolean;
     abortEmitsEnd?: boolean;
     web?: boolean;
+    nativePlatform?: "ios" | "android";
+    nativeWindow?: boolean;
     appState?: string;
     autoStart?: boolean;
   } = {},
@@ -153,6 +155,9 @@ function dictation(
       if (name === "react") return react;
       if (name === "react-native")
         return {
+          Platform: {
+            OS: options.web ? "web" : options.nativePlatform || "android",
+          },
           AppState: {
             currentState: options.appState || "active",
             addEventListener: (_event: string, callback: () => void) => {
@@ -174,7 +179,7 @@ function dictation(
     },
     (id: number) => timers.delete(id),
     options.web ? target : undefined,
-    options.web ? target : undefined,
+    options.web ? target : options.nativeWindow ? {} : undefined,
   );
   const flush = () => {
     while (effects.length) effects.shift()!();
@@ -234,6 +239,30 @@ function dictation(
     },
   };
 }
+
+test("Media OS dictation mounts on iOS and Android where window exists without DOM events", async () => {
+  for (const nativePlatform of ["ios", "android"] as const) {
+    const h = dictation({ nativePlatform, nativeWindow: true });
+    assert.equal(
+      h.counts().permissionRequests,
+      0,
+      "opening Media OS must not request the microphone",
+    );
+    await h.api.start();
+    h.result("Prepare my podcast", true);
+    assert.equal(h.context.value, "Prepare my podcast");
+    await h.api.start();
+    const lateResult = h.savedResult();
+    h.background();
+    lateResult({
+      isFinal: true,
+      results: [{ transcript: "stale background words" }],
+    });
+    assert.equal(h.context.value, "Prepare my podcast");
+    h.unmount();
+    assert.equal(h.listenerCount(), 0);
+  }
+});
 
 test("dictation never starts or asks for microphone access on mount; unavailable native modules preserve typing", async () => {
   for (const options of [{}, { supported: false }, { missingModule: true }]) {

@@ -5,6 +5,14 @@ export type ProfileCategory = Category | "all";
 export type ProfileCardBounds = { top: number; height: number };
 export type ProfileViewport = { top: number; height: number; gridTop: number };
 
+/** Absolute preview children cannot supply intrinsic height. Resolve both cell
+ * dimensions from the feed itself instead of relying on percentage/aspect layout. */
+export function profileGridCardSize(feedWidth: number): number | undefined {
+  return Number.isFinite(feedWidth) && feedWidth >= 3
+    ? Math.floor(feedWidth / 3)
+    : undefined;
+}
+
 export function profileCreations(
   items: readonly Item[],
   category: ProfileCategory,
