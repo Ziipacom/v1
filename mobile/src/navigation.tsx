@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Text } from "react-native";
+import { ActivityIndicator, Pressable, Text } from "react-native";
+import { X } from "lucide-react-native";
 import {
   NavigationContainer,
   DarkTheme,
@@ -328,11 +329,31 @@ function NavigationContent() {
                 name="Composer"
                 component={ComposerScreen}
                 getId={composerRouteId}
-                options={{
+                options={({ navigation: composerNavigation }) => ({
                   title: "Creator Studio",
                   headerShown: true,
                   presentation: desktop ? "card" : "modal",
-                }}
+                  headerRight: () => (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Close Creator Studio"
+                      hitSlop={8}
+                      onPress={() =>
+                        composerNavigation.canGoBack()
+                          ? composerNavigation.goBack()
+                          : composerNavigation.navigate("Studio")
+                      }
+                      style={{
+                        width: 44,
+                        height: 44,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <X size={18} color={color.text} strokeWidth={1.7} />
+                    </Pressable>
+                  ),
+                })}
               />
               <Stack.Screen
                 name="Connections"

@@ -6,6 +6,7 @@ import {
   Bell,
   ChartColumn,
   Inbox,
+  Images,
   LogOut,
   UserRound,
   X,
@@ -20,10 +21,21 @@ import { color, font, styles } from "../theme";
 
 type Navigation = NativeStackNavigationProp<RootStack>;
 type AccountDestination =
-  "Profile" | "Dashboard" | "Inbox" | "NotificationMessages" | "Login";
+  | "Profile"
+  | "CreatorStudio"
+  | "Dashboard"
+  | "Inbox"
+  | "NotificationMessages"
+  | "Login";
 type Props =
   | { navigation: Navigation; onNavigate?: never }
-  | { navigation?: never; onNavigate: (name: AccountDestination) => void };
+  | {
+      navigation?: never;
+      onNavigate: (
+        name: AccountDestination,
+        params?: RootStack["CreatorStudio"],
+      ) => void;
+    };
 
 function useAccountSignOut(onError?: (message: string) => void) {
   const { session, logout } = useZiipa();
@@ -88,14 +100,18 @@ function ScopedAccountMenu(props: Props) {
     setOpen(false);
   }
   function navigate(name: AccountDestination) {
-    if (props.onNavigate) props.onNavigate(name);
+    if (props.onNavigate)
+      props.onNavigate(
+        name,
+        name === "CreatorStudio" ? { tab: "library" } : undefined,
+      );
     else if (name === "Profile")
       props.navigation.navigate("Profile", { creatorId: undefined });
+    else if (name === "CreatorStudio")
+      props.navigation.navigate(name, { tab: "library" });
     else props.navigation.navigate(name);
   }
-  function go(
-    name: "Profile" | "Dashboard" | "Inbox" | "NotificationMessages",
-  ) {
+  function go(name: Exclude<AccountDestination, "Login">) {
     close();
     navigate(name);
   }
@@ -235,6 +251,11 @@ function ScopedAccountMenu(props: Props) {
               onPress={() => go("Profile")}
             />
             <MenuRow label="Inbox" Icon={Inbox} onPress={() => go("Inbox")} />
+            <MenuRow
+              label="Manage creations"
+              Icon={Images}
+              onPress={() => go("CreatorStudio")}
+            />
             <MenuRow
               label="Dashboard"
               Icon={ChartColumn}

@@ -27,6 +27,7 @@ function accountUI(
   const jsx = (type: unknown, props: Node["props"]) => ({ type, props });
   const updates: unknown[] = [];
   const navigated: string[] = [];
+  const navigationParams: unknown[] = [];
   const alerts: string[] = [];
   let refreshes = 0;
   let logouts = 0;
@@ -159,7 +160,10 @@ function accountUI(
     return nodes(
       render({
         type: exported[name],
-        props: { onNavigate: (name: string) => navigated.push(name) },
+        props: { onNavigate: (name: string, params?: unknown) => {
+          navigated.push(name);
+          navigationParams.push(params);
+        } },
       }),
     );
   }
@@ -167,6 +171,7 @@ function accountUI(
     renderExport,
     updates,
     navigated,
+    navigationParams,
     alerts,
     refreshes: () => refreshes,
     logouts: () => logouts,
@@ -205,6 +210,17 @@ test("account menu destinations open the real profile, inbox and notification li
     assert.ok(button.props.style({ pressed: false }).minHeight >= 44);
   }
   assert.deepEqual(ui.navigated, ["Profile", "Inbox", "NotificationMessages"]);
+});
+
+test("Manage creations opens the library directly rather than the workspace overview", () => {
+  const ui = accountUI();
+  const button = ui.renderExport("AccountMenu").find(
+    (node) => node.props.accessibilityLabel === "Manage creations",
+  )!;
+  assert.ok(button);
+  button.props.onPress();
+  assert.deepEqual(ui.navigated, ["CreatorStudio"]);
+  assert.deepEqual(ui.navigationParams, [{ tab: "library" }]);
 });
 
 test("a green new-notification indicator appears only for confirmed unread records", () => {

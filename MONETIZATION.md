@@ -1,5 +1,80 @@
 # Ziipa monetization: setup and readiness
 
+## Verified setup · 2026-11-03
+
+These are issued console IDs, not evidence of live ad serving. No advertising
+SDK, tracking code, payout setup or paid campaign was activated in this setup.
+
+### AdMob
+
+Account: `pbgc2017@gmail.com`, publisher `pub-4702540477449660`.
+The existing iOS app/units were reused; the Android app and its units were created.
+Neither app has a verified public store listing linked in AdMob yet.
+
+| Platform | App ID | Discover Native | Marketplace Native |
+| --- | --- | --- | --- |
+| iOS | `ca-app-pub-4702540477449660~2970571742` | `ca-app-pub-4702540477449660/6289327663` | `ca-app-pub-4702540477449660/2284176037` |
+| Android | `ca-app-pub-4702540477449660~7843954044` | `ca-app-pub-4702540477449660/2400055673` | `ca-app-pub-4702540477449660/7703132055` |
+
+Both ad formats are **Native advanced**, with partner bidding on another
+mediation platform unchecked. Native views can contain provider-supplied video
+or images; a video-only fill is not guaranteed. The Marketplace square is a
+presentation constraint for the registered native media view, not a separate
+"square ad" format or permission to crop required disclosures.
+
+Paused preparation groups associate each platform's two units. Android group
+ID: `8488436468`; iOS group ID: `9913320947`. AdMob's default network remains the only mapped source;
+Unity was not connected or activated. The Android Native bidding-source picker
+returned no Unity entry, and Unity's current placement wizard offered only
+Rewarded, Interstitial and Banner. No incompatible full-screen placement was
+substituted for the requested inline inventory.
+
+### Unity
+
+Both apps were registered in the existing Ziipa project
+`944c5b46-b22d-4fd5-afc2-d568cd78d014`, organization `5774153220595`:
+
+| Platform | Unity app ID | Game ID |
+| --- | --- | --- |
+| iOS | `b22d93a1-628b-4503-925e-c590f9d5c41e` | `800422649` |
+| Android | `eb8e8693-acde-4821-81c6-0d3b8dfd6607` | `800422705` |
+
+Both are designated general audience, not primarily child-directed, matching
+the current adult beta. Under-age treatment for a future 13+ launch still needs
+separate verification. Store IDs are not set. No placements were issued: the
+requested Native format is absent from this account's current console wizard.
+The current Google adapter guides document Native bidding support, so the
+account/console availability mismatch must be resolved before mapping IDs.
+No waterfall inventory, analytics sharing with Unity, Developer Data collection
+opt-in, SDK initialization or ad requests were enabled.
+
+### Firebase / Google Analytics
+
+With the owner's specific terms approval, Google Analytics was enabled and
+linked to Firebase project `ziipa-4a893` under `gloryvee@gmail.com`:
+
+- Analytics account: **Ziipa**, ID `414558806`.
+- Property: **ziipa-4a893**, ID `562180495`.
+- Existing **Ziipa Android Preview** app stream: `16264146573`.
+- Analytics location: United States; optional Google data-sharing settings off.
+- Firebase plan: **Spark, $0/month**.
+
+The console explicitly requests adding the Analytics SDK. Project linkage does
+not establish that any device events are arriving. iOS and web stream setup,
+event instrumentation, privacy choices and DebugView acceptance remain separate.
+This approval did not authorize sharing this property with Unity or a new AdMob
+account-link data flow. Production and preview package identities must stay
+distinct when adding native streams and SDK configuration.
+
+### Remaining activation work
+
+Resolve Unity Native availability; configure approved bidding partnerships and
+issued mappings; verify public store ownership and app review; obtain provider
+`app-ads.txt` entries; implement native SDK views, consent/age controls and a
+remote kill switch; exercise only test ads on real devices. Web advertising
+still requires a separate supported adapter. Keep live serving off until these
+checks pass. All existing hosting and project plans remain free.
+
 Owner request, 2026-10-28: use Meta, AdMob and Unity to serve clearly identified video ads among Discover creations and product-style ad cards among Marketplace listings. AdMob and Unity accounts will be supplied later. This document records the next phase; no ad SDK, live placement, tracking request, publisher agreement or payout setup is activated by the Store/Promote implementation.
 
 ## Observed Meta account

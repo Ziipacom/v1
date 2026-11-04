@@ -84,15 +84,12 @@ function controls(
       };
     if (name === "@react-navigation/native")
       return { useIsFocused: () => true };
-    if (name === "expo-document-picker")
+    if (name === "../lib/creator-media-picker")
       return {
-        getDocumentAsync: async (settings: unknown) => {
+        pickCreatorMedia: async (types: unknown, library: unknown) => {
           calls.push("picker");
-          assert.deepEqual(settings, {
-            type: [...helpers.PROFILE_IMAGE_TYPES],
-            copyToCacheDirectory: true,
-            multiple: false,
-          });
+          assert.deepEqual(types, [...helpers.PROFILE_IMAGE_TYPES]);
+          assert.equal(library, "images");
           return {
             canceled: false,
             assets: [

@@ -713,10 +713,10 @@ export function DesktopShell({
               <Settings size={20} color={color.muted} />
             </Pressable>
             <AccountMenu
-              onNavigate={(name) =>
+              onNavigate={(name, params) =>
                 navigate(
                   name,
-                  name === "Profile" ? { creatorId: undefined } : undefined,
+                  name === "Profile" ? { creatorId: undefined } : params,
                 )
               }
             />

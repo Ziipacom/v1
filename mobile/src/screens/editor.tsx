@@ -9,7 +9,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import * as DocumentPicker from "expo-document-picker";
+import { pickCreatorMedia } from "../lib/creator-media-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { useIsFocused, usePreventRemove } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -24,6 +24,7 @@ import {
   Link2,
   Music2,
   Pause,
+  Pencil,
   Play,
   Radio,
   RefreshCw,
@@ -127,6 +128,7 @@ const steps = [
   { name: "Edit", Icon: SlidersHorizontal },
   { name: "Overlay", Icon: Layers },
   { name: "Audio", Icon: Music2 },
+  { name: "Save", Icon: Save },
   { name: "Share", Icon: Share2 },
 ] as const;
 
@@ -488,6 +490,7 @@ export function ComposerScreen({
   saveOwner.current = session?.access_token || (guest ? "guest" : null);
   const saveGeneration = useRef(0);
   const saveMounted = useRef(true);
+  const pickerRequest = useRef(0);
   useEffect(() => {
     saveMounted.current = true;
     saveGeneration.current++;
@@ -678,17 +681,26 @@ export function ComposerScreen({
     } satisfies UploadFile;
   }
   async function pick(kind: "media" | "soundtrack" | "audioSource" = "media") {
+    const owner = saveOwner.current;
+    const generation = saveGeneration.current;
+    const request = ++pickerRequest.current;
+    const current = () =>
+      saveMounted.current &&
+      saveOwner.current === owner &&
+      saveGeneration.current === generation &&
+      pickerRequest.current === request;
     setError("");
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: kind === "media" ? ["image/*", "video/*", "audio/*"] : "audio/*",
-        copyToCacheDirectory: true,
-        multiple: false,
-      });
-      if (result.canceled) return;
+      const result = await pickCreatorMedia(
+        kind === "media" ? ["image/*", "video/*", "audio/*"] : ["audio/*"],
+        kind === "media" ? "media" : false,
+        current,
+      );
+      if (result.canceled || !current()) return;
       const asset = result.assets[0];
       const info =
         Platform.OS === "web" ? null : await FileSystem.getInfoAsync(asset.uri);
+      if (!current()) return;
       const size =
         asset.size ?? (info?.exists && !info.isDirectory ? info.size : 0);
       if (!size || size > uploadLimit)
@@ -720,7 +732,7 @@ export function ComposerScreen({
       }
       setSaved(null);
     } catch (e) {
-      setError((e as Error).message);
+      if (current()) setError((e as Error).message);
     }
   }
   function useRecording(cameraFile: UploadFile) {
@@ -795,7 +807,7 @@ export function ComposerScreen({
         );
       }
       if (!title.trim()) {
-        setTab("Share");
+        setTab("Save");
         throw new Error("Give your creation a title.");
       }
       if (parsedTags.length > 12 || parsedTags.some((t) => t.length > 40))
@@ -1329,7 +1341,8 @@ export function ComposerScreen({
                     Edit: "Edit",
                     Overlay: "Overlay",
                     Audio: "Audio",
-                    Share: "Save & publish",
+                    Save: "Save",
+                    Share: "Share",
                   } as const
                 )[name]
               : name === "Media"
@@ -1805,12 +1818,12 @@ export function ComposerScreen({
           }}
         />
       )}
-      {tab === "Share" && (
+      {tab === "Save" && (
         <>
           <View style={styles.row}>
-            <Share2 size={20} color={color.lime} />
+            <Save size={20} color={color.lime} />
             <Text style={[styles.heading, { fontSize: 19 }]}>
-              Details & destinations
+              Save your creation
             </Text>
           </View>
           <Field
@@ -1864,6 +1877,20 @@ export function ComposerScreen({
               editable={!busy}
             />
           )}
+        </>
+      )}
+      {tab === "Share" && (
+        <>
+          <Text style={[styles.heading, { fontSize: 19 }]}>
+            Share your creation
+          </Text>
+          <Text style={styles.body}>{title || "Untitled creation"}</Text>
+          <Action
+            title="Edit creation details"
+            secondary
+            icon={Pencil}
+            onPress={() => setTab("Save")}
+          />
           <View style={[styles.panel, { gap: 10 }]}>
             <View style={styles.row}>
               <Wallet size={20} color={color.lime} />
@@ -2178,35 +2205,46 @@ export function ComposerScreen({
             ))}
         </>
       )}
-      {tab === "Share" ? (
+      {tab === "Save" ? (
         <>
           <Action
             title={
               busy && activeSaveButton === "share-draft"
                 ? editorSaveLabel(savePhase, progress)
-                : guest
-                  ? targets.length
-                    ? "Save & preview distribution"
-                    : file || base.label === "Local draft"
-                      ? "Save local draft"
-                      : "Save sample draft"
-                  : "Save private draft"
+                : "Save Draft"
             }
             icon={Save}
             onPress={() => void save("draft", "share-draft")}
             busy={busy && activeSaveButton === "share-draft"}
             disabled={busy || rechecking || !!pendingSubmission}
           />
-          {!guest && (
+          {saved?.visibility === "draft" && (
+            <Notice
+              text={
+                guest
+                  ? "Draft saved for this session."
+                  : "Draft saved to your account."
+              }
+            />
+          )}
+          <Action
+            title="Continue to Share"
+            icon={ChevronRight}
+            secondary
+            disabled={busy || rechecking || !!pendingSubmission}
+            onPress={() => setTab("Share")}
+          />
+        </>
+      ) : tab === "Share" ? (
+        <>
+          {!guest ? (
             <Action
               title={
                 busy && activeSaveButton === "share-publish"
                   ? editorSaveLabel(savePhase, progress)
                   : saved?.visibility === "published" && !unsaved
                     ? "Published to Ziipa"
-                    : targets.length
-                      ? `Publish to Ziipa + ${targets.length}`
-                      : "Publish to Ziipa"
+                    : "Publish Creation"
               }
               secondary
               icon={Upload}
@@ -2223,6 +2261,8 @@ export function ComposerScreen({
                 existing?.visibility === "hidden"
               }
             />
+          ) : (
+            <Notice text="Sign in to publish your creation. Your session draft is available in Save." />
           )}
         </>
       ) : (
@@ -2269,7 +2309,7 @@ export function ComposerScreen({
               title={
                 busy && activeSaveButton === "desktop-draft"
                   ? editorSaveLabel(savePhase, progress)
-                  : "Save draft"
+                  : "Save Draft"
               }
               icon={Save}
               busy={busy && activeSaveButton === "desktop-draft"}

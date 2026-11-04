@@ -44,7 +44,7 @@ export function StudioDock() {
           action: () => navigation.navigate("Main"),
         },
         {
-          label: "Add",
+          label: "Create",
           Icon: SquarePlus,
           action: () => navigation.navigate("Composer"),
         },

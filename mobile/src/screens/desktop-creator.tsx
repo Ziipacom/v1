@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -7,11 +7,14 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   ArrowRight,
+  ArrowLeft,
   ArrowUpRight,
   Bookmark,
   CalendarDays,
@@ -37,11 +40,15 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react-native";
-import { Cover, Notice, allCategories } from "../components/ui";
+import { Notice, allCategories } from "../components/ui";
+import {
+  ProfileMediaPreview,
+  useProfilePreviewActivity,
+} from "../components/profile-media-preview";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { useZiipa } from "../provider";
 import { themedStyles, themeValue, color, font } from "../theme";
-import type { Category, RootStack } from "../lib/types";
+import type { Category, Item, RootStack } from "../lib/types";
 import {
   creatorConnectionLabel,
   creatorLibrary,
@@ -95,7 +102,15 @@ function Button({
           strokeWidth={1.7}
         />
       )}
-      <Text style={[s.buttonText, primary && { color: color.onAccent }, lime && { color: color.onLime }]}>{title}</Text>
+      <Text
+        style={[
+          s.buttonText,
+          primary && { color: color.onAccent },
+          lime && { color: color.onLime },
+        ]}
+      >
+        {title}
+      </Text>
     </Pressable>
   );
 }
@@ -148,7 +163,12 @@ function Status({
           },
         ]}
       />
-      <Text style={[s.statusText, published && !guest && { color: themeValue("#D2EEA5", color.muted) }]}>
+      <Text
+        style={[
+          s.statusText,
+          published && !guest && { color: themeValue("#D2EEA5", color.muted) },
+        ]}
+      >
         {label}
       </Text>
     </View>
@@ -165,9 +185,48 @@ function categoryTitle(category: Category) {
   return allCategories.find((entry) => entry.id === category)?.title || "Media";
 }
 
+function LibraryThumbnail({
+  item,
+  scrollY,
+  activity,
+}: {
+  item: Item;
+  scrollY: number;
+  activity: ReturnType<typeof useProfilePreviewActivity>;
+}) {
+  const element = useRef<View>(null);
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const [visible, setVisible] = useState(false);
+  const measure = useCallback(() => {
+    element.current?.measureInWindow((_x, y, width, height) => {
+      setVisible(width > 0 && height > 0 && y + height > 0 && y < windowHeight);
+    });
+  }, [windowHeight]);
+  useEffect(() => {
+    if (!activity.visible) {
+      setVisible(false);
+      return;
+    }
+    measure();
+  }, [measure, scrollY, windowWidth, activity.visible, item.id]);
+  return (
+    <View ref={element} onLayout={measure} style={{ flex: 1 }}>
+      <ProfileMediaPreview
+        item={item}
+        thumbnailOnly
+        visible={activity.visible && visible}
+        videoActive={false}
+        autoplay={false}
+        allowVideoStill={activity.mountVideo}
+      />
+    </View>
+  );
+}
+
 export function CreatorStudioScreen({ route, navigation }: Props) {
   const { data, session, guest, refreshing, error, refresh } = useZiipa();
-  const { contentWidth } = useDesktopLayout();
+  const { contentWidth, desktop } = useDesktopLayout();
+  const insets = useSafeAreaInsets();
   const tab = route.params?.tab || "overview";
   const [query, setQuery] = useState(route.params?.query || "");
   const [category, setCategory] = useState<Category | "all">(
@@ -175,6 +234,8 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
   );
   const [status, setStatus] = useState<CreatorLibraryStatus>("all");
   const [mode, setMode] = useState<"grid" | "list">("grid");
+  const [scrollY, setScrollY] = useState(0);
+  const previewActivity = useProfilePreviewActivity(false);
   useEffect(() => setQuery(route.params?.query || ""), [route.params?.query]);
   useEffect(
     () => setCategory(route.params?.category || "all"),
@@ -253,7 +314,11 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
           onPress={() => open(entry)}
           style={[s.mediaImage, list && s.listImage]}
         >
-          <Cover item={item} style={{ flex: 1 }} />
+          <LibraryThumbnail
+            item={item}
+            scrollY={scrollY}
+            activity={previewActivity}
+          />
           {!list && (
             <View style={s.imageStatus}>
               <Status entry={entry} guest={guest} />
@@ -389,8 +454,40 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
       style={s.screen}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={[s.page, { paddingHorizontal: pagePadding }]}
+      scrollEventThrottle={100}
+      onScroll={(event) => setScrollY(event.nativeEvent.contentOffset.y)}
+      contentContainerStyle={[
+        s.page,
+        {
+          paddingHorizontal: pagePadding,
+          paddingTop: 30 + (desktop ? 0 : insets.top),
+          paddingBottom: 45 + (desktop ? 0 : insets.bottom),
+        },
+      ]}
     >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Go back from Manage Creations"
+        onPress={() =>
+          navigation.canGoBack()
+            ? navigation.goBack()
+            : navigation.navigate("Profile", { creatorId: undefined })
+        }
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+          minHeight: 44,
+          alignSelf: "flex-start",
+        }}
+      >
+        <ArrowLeft size={18} color={color.text} />
+        <Text
+          style={{ color: color.text, fontFamily: font.medium, fontSize: 13 }}
+        >
+          Go back
+        </Text>
+      </Pressable>
       <View
         style={[
           s.row,
@@ -913,7 +1010,9 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                 <Text
                   style={[
                     s.filterText,
-                    status === value.id && { color: themeValue("#D6BCF6", color.text) },
+                    status === value.id && {
+                      color: themeValue("#D6BCF6", color.text),
+                    },
                   ]}
                 >
                   {value.title}
@@ -945,7 +1044,9 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                   <Text
                     style={[
                       s.categoryText,
-                      category === id && { color: themeValue("#D9C9EE", color.text) },
+                      category === id && {
+                        color: themeValue("#D9C9EE", color.text),
+                      },
                     ]}
                   >
                     {title}
@@ -1050,552 +1151,637 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
   );
 }
 
-const s = themedStyles(() => StyleSheet.create({
-  screen: { flex: 1, backgroundColor: color.bg },
-  page: {
-    width: "100%",
-    maxWidth: 1500,
-    alignSelf: "center",
-    paddingTop: 30,
-    paddingBottom: 45,
-    gap: 24,
-  },
-  row: { flexDirection: "row", alignItems: "center", gap: 10 },
-  eyebrow: {
-    color: themeValue("#B09AC7", color.muted),
-    fontFamily: font.medium,
-    fontSize: 10,
-    letterSpacing: 1.8,
-  },
-  pageTitle: {
-    color: color.text,
-    fontFamily: font.semibold,
-    fontSize: 31,
-    lineHeight: 38,
-    letterSpacing: -0.8,
-  },
-  description: {
-    color: themeValue("#AB9AB9", color.muted),
-    fontFamily: font.regular,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  refresh: {
-    height: 41,
-    width: 41,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: color.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  button: {
-    minHeight: 41,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 11,
-    backgroundColor: themeValue("#291E38", color.accentSoft),
-    borderWidth: 1,
-    borderColor: themeValue("#51405F", color.border),
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  primaryButton: { backgroundColor: color.purple, borderColor: "#7D47BD" },
-  limeButton: { backgroundColor: color.lime, borderColor: "#BDEA68" },
-  buttonText: { color: color.text, fontFamily: font.semibold, fontSize: 13 },
-  tabs: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 25,
-    borderBottomWidth: 1,
-    borderBottomColor: "#31263E",
-    minHeight: 45,
-  },
-  tab: {
-    minHeight: 45,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-    paddingBottom: 12,
-    paddingTop: 7,
-  },
-  activeTab: { borderBottomColor: "#A477DF" },
-  tabText: { color: themeValue("#9786A9", color.muted), fontFamily: font.medium, fontSize: 14 },
-  tabCount: {
-    minWidth: 21,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 5,
-    backgroundColor: themeValue("#2D213C", color.accentSoft),
-    alignItems: "center",
-  },
-  tabCountText: { fontFamily: font.medium, fontSize: 10, color: themeValue("#BEA4DC", color.muted) },
-  snapshotLabel: { fontFamily: font.regular, color: themeValue("#887697", color.muted), fontSize: 11 },
-  hero: {
-    padding: 32,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: themeValue("#593A78", color.border),
-    gap: 25,
-    overflow: "hidden",
-  },
-  heroBadge: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#B9E76B0E",
-    borderColor: "#BCE58C25",
-    borderWidth: 1,
-    borderRadius: 30,
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-  },
-  heroBadgeText: {
-    fontFamily: font.medium,
-    color: "#C5DAAB",
-    fontSize: 9,
-    letterSpacing: 1.3,
-  },
-  heroTitle: {
-    fontFamily: font.semibold,
-    color: themeValue("#F8F3FF", color.text),
-    letterSpacing: -1.6,
-  },
-  heroDescription: {
-    fontFamily: font.regular,
-    color: themeValue("#C2B1D3", color.muted),
-    fontSize: 15,
-    lineHeight: 23,
-    maxWidth: 460,
-  },
-  heroFootnote: {
-    color: themeValue("#9D88B6", color.muted),
-    fontFamily: font.regular,
-    fontSize: 10,
-    lineHeight: 16,
-    maxWidth: 430,
-  },
-  heroArt: {
-    width: 320,
-    minHeight: 284,
-    position: "relative",
-    alignSelf: "center",
-  },
-  artGlow: {
-    position: "absolute",
-    top: 30,
-    left: 15,
-    width: 275,
-    height: 220,
-    borderRadius: 130,
-    backgroundColor: "#824BB728",
-    transform: [{ rotate: "-15deg" }],
-  },
-  artLogo: { position: "absolute", right: 0, top: 0, opacity: 0.9 },
-  artCard: {
-    position: "absolute",
-    width: 174,
-    height: 170,
-    padding: 16,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: "#8C65AF66",
-    backgroundColor: themeValue("#2B1A42", color.accentSoft),
-    boxShadow: "0 16px 30px #07020B40",
-    gap: 9,
-  },
-  artIcon: {
-    width: 60,
-    height: 65,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 2,
-  },
-  artCardTitle: { fontFamily: font.medium, fontSize: 12, color: themeValue("#E9DCF8", color.text) },
-  artLine: {
-    width: "75%",
-    height: 4,
-    backgroundColor: "#C6AFDE26",
-    borderRadius: 3,
-  },
-  artFooter: {
-    position: "absolute",
-    left: 37,
-    bottom: 0,
-    right: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  artFooterText: { color: themeValue("#BCA8D3", color.muted), fontFamily: font.regular, fontSize: 11 },
-  stats: { flexDirection: "row", flexWrap: "wrap", gap: 14 },
-  stat: {
-    flexGrow: 1,
-    flexShrink: 1,
-    minWidth: 155,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: themeValue("#372943", color.border),
-    backgroundColor: themeValue("#1B1426", color.panel),
-    padding: 19,
-    gap: 9,
-  },
-  statTitle: {
-    color: themeValue("#BBADC9", color.muted),
-    fontFamily: font.medium,
-    fontSize: 12,
-    flex: 1,
-  },
-  statValue: {
-    color: themeValue("#F4EDFC", color.text),
-    fontFamily: font.semibold,
-    fontSize: 32,
-    lineHeight: 36,
-  },
-  statHint: {
-    fontFamily: font.regular,
-    fontSize: 10,
-    color: themeValue("#8E7B9F", color.muted),
-    lineHeight: 15,
-  },
-  sectionTitle: {
-    color: color.text,
-    fontFamily: font.semibold,
-    fontSize: 18,
-    letterSpacing: -0.2,
-  },
-  sectionLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    minHeight: 35,
-    gap: 5,
-  },
-  linkText: { fontFamily: font.medium, color: themeValue("#C2A5F1", color.muted), fontSize: 12 },
-  mediaGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 16,
-    alignItems: "flex-start",
-  },
-  mediaCard: {
-    borderRadius: 16,
-    borderColor: themeValue("#3A2A49", color.border),
-    borderWidth: 1,
-    backgroundColor: themeValue("#1C1427", color.panel),
-    overflow: "hidden",
-  },
-  mediaImage: { height: 162, width: "100%", backgroundColor: themeValue("#2B203A", color.accentSoft) },
-  imageStatus: { position: "absolute", top: 11, left: 11 },
-  mediaPlay: {
-    position: "absolute",
-    bottom: 11,
-    right: 11,
-    width: 35,
-    height: 35,
-    borderRadius: 19,
-    backgroundColor: "#130D22C4",
-    borderWidth: 1,
-    borderColor: "#FFFFFF30",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  mediaDetails: { padding: 15, gap: 10, minWidth: 0 },
-  mediaTitle: { fontFamily: font.semibold, fontSize: 15, color: themeValue("#F2EAFB", color.text) },
-  mediaMeta: {
-    fontFamily: font.regular,
-    color: themeValue("#A18BAC", color.muted),
-    fontSize: 11,
-    lineHeight: 17,
-  },
-  ownership: { fontFamily: font.regular, fontSize: 10, color: themeValue("#877397", color.muted) },
-  inlineAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    minHeight: 30,
-  },
-  inlineText: { fontFamily: font.medium, fontSize: 11, color: themeValue("#C6B1E7", color.muted) },
-  status: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: "#2A1944ED",
-    borderWidth: 1,
-    borderColor: "#8C65BD55",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  published: { backgroundColor: "#26371DEB", borderColor: "#92AC4B55" },
-  hidden: { backgroundColor: "#482437ED", borderColor: "#B46F8155" },
-  statusDot: { width: 4, height: 4, borderRadius: 2 },
-  statusText: { fontFamily: font.medium, fontSize: 9, color: "#D3C0EB" },
-  mediaList: { flexDirection: "row", alignItems: "center", padding: 9, gap: 7 },
-  listImage: { width: 132, height: 92, borderRadius: 10 },
-  emptyDrafts: {
-    minHeight: 307,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: themeValue("#59406D", color.border),
-    backgroundColor: "#21152E5C",
-    padding: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 14,
-  },
-  emptyArt: {
-    width: 73,
-    height: 73,
-    borderRadius: 23,
-    backgroundColor: themeValue("#34204B", color.accentSoft),
-    borderWidth: 1,
-    borderColor: "#7B4AA14D",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 2,
-  },
-  emptyPlus: {
-    position: "absolute",
-    right: -4,
-    bottom: 3,
-    height: 23,
-    width: 23,
-    borderRadius: 12,
-    borderWidth: 3,
-    borderColor: themeValue("#20152C", color.border),
-    backgroundColor: color.lime,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  emptyTitle: {
-    fontFamily: font.semibold,
-    fontSize: 21,
-    color: themeValue("#EBE0F7", color.text),
-    textAlign: "center",
-    letterSpacing: -0.3,
-  },
-  emptyText: {
-    fontFamily: font.regular,
-    color: themeValue("#A992BC", color.muted),
-    fontSize: 13,
-    lineHeight: 21,
-    maxWidth: 410,
-    textAlign: "center",
-  },
-  privacyHint: { fontFamily: font.regular, fontSize: 10, color: themeValue("#A693BB", color.muted) },
-  planCard: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    gap: 16,
-    padding: 21,
-    borderRadius: 17,
-    backgroundColor: themeValue("#1E162A", color.panel),
-    borderWidth: 1,
-    borderColor: themeValue("#3E2C50", color.border),
-  },
-  planIcon: {
-    width: 47,
-    height: 47,
-    backgroundColor: themeValue("#38224F", color.accentSoft),
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  networkPanel: {
-    backgroundColor: themeValue("#1B1425", color.panel),
-    borderWidth: 1,
-    borderColor: themeValue("#3A2A48", color.border),
-    borderRadius: 18,
-    padding: 20,
-    gap: 12,
-  },
-  networkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 11,
-    minHeight: 62,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#35273F",
-  },
-  networkMark: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    backgroundColor: themeValue("#2B2038", color.panel),
-    borderWidth: 1,
-    borderColor: themeValue("#4A355B", color.border),
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  networkLetter: { color: themeValue("#CEB6EC", color.muted), fontSize: 16, fontFamily: font.semibold },
-  networkName: { fontFamily: font.medium, fontSize: 12, color: themeValue("#E1D5ED", color.text) },
-  networkState: {
-    fontFamily: font.regular,
-    fontSize: 10,
-    lineHeight: 14,
-    color: themeValue("#9B84AC", color.muted),
-  },
-  panelFootnote: {
-    fontFamily: font.regular,
-    fontSize: 10,
-    color: themeValue("#927D9F", color.muted),
-    lineHeight: 16,
-  },
-  assistantCard: {
-    borderWidth: 1,
-    borderColor: themeValue("#63467D", color.border),
-    borderRadius: 18,
-    padding: 20,
-    gap: 14,
-  },
-  attention: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 15,
-    borderRadius: 15,
-    padding: 19,
-    borderWidth: 1,
-    borderColor: "#7D613947",
-    backgroundColor: "#32251961",
-  },
-  attentionTitle: {
-    color: themeValue("#E6D3B3", color.muted),
-    fontFamily: font.medium,
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  toolGrid: { flexDirection: "row", flexWrap: "wrap", gap: 14 },
-  tool: {
-    flexGrow: 1,
-    flexShrink: 1,
-    minWidth: 180,
-    gap: 13,
-    padding: 21,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: themeValue("#392A48", color.border),
-    backgroundColor: themeValue("#1C1427", color.panel),
-  },
-  toolTitle: { fontFamily: font.semibold, color: themeValue("#DAD0E6", color.text), fontSize: 15 },
-  toolBody: {
-    fontFamily: font.regular,
-    color: themeValue("#9680A8", color.muted),
-    fontSize: 12,
-    lineHeight: 19,
-  },
-  libraryToolbar: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16,
-  },
-  search: {
-    flex: 1,
-    minWidth: 230,
-    maxWidth: 600,
-    flexDirection: "row",
-    alignItems: "center",
-    minHeight: 44,
-    paddingHorizontal: 14,
-    gap: 11,
-    borderRadius: 12,
-    backgroundColor: themeValue("#20172C", color.panel),
-    borderWidth: 1,
-    borderColor: themeValue("#433050", color.border),
-  },
-  searchInput: {
-    flex: 1,
-    minWidth: 0,
-    height: 44,
-    fontFamily: font.regular,
-    fontSize: 13,
-    color: color.text,
-  },
-  sortLabel: { fontFamily: font.regular, color: themeValue("#9482A7", color.muted), fontSize: 11 },
-  viewModes: {
-    flexDirection: "row",
-    borderRadius: 9,
-    padding: 3,
-    backgroundColor: themeValue("#21172C", color.panel),
-    borderWidth: 1,
-    borderColor: themeValue("#3C2B4A", color.border),
-  },
-  modeButton: {
-    width: 34,
-    height: 32,
-    borderRadius: 6,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  activeMode: { backgroundColor: themeValue("#4A2B68", color.accentSoft) },
-  filters: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#32253E",
-    paddingBottom: 14,
-  },
-  filter: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    minHeight: 35,
-    borderRadius: 9,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  activeFilter: { backgroundColor: themeValue("#342046", color.accentSoft), borderColor: themeValue("#684285", color.border) },
-  filterText: { fontFamily: font.medium, color: themeValue("#9C88AE", color.muted), fontSize: 12 },
-  filterCount: { fontFamily: font.regular, color: themeValue("#9D85B2", color.muted), fontSize: 10 },
-  categoryFilter: {
-    minHeight: 30,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: themeValue("#35263E", color.border),
-    backgroundColor: themeValue("#19121F", color.panel),
-  },
-  activeCategory: { backgroundColor: themeValue("#3C2B4E", color.accentSoft), borderColor: themeValue("#685178", color.border) },
-  categoryText: { fontFamily: font.regular, color: themeValue("#927D9F", color.muted), fontSize: 10 },
-  results: {
-    color: themeValue("#8B789B", color.muted),
-    fontFamily: font.regular,
-    fontSize: 11,
-    paddingVertical: 7,
-  },
-  libraryEmpty: {
-    minHeight: 390,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 20,
-    padding: 35,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: themeValue("#382947", color.border),
-    backgroundColor: "#1B132569",
-  },
-  libraryFooter: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    paddingVertical: 10,
-  },
-}));
+const s = themedStyles(() =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: color.bg },
+    page: {
+      width: "100%",
+      maxWidth: 1500,
+      alignSelf: "center",
+      paddingTop: 30,
+      paddingBottom: 45,
+      gap: 24,
+    },
+    row: { flexDirection: "row", alignItems: "center", gap: 10 },
+    eyebrow: {
+      color: themeValue("#B09AC7", color.muted),
+      fontFamily: font.medium,
+      fontSize: 10,
+      letterSpacing: 1.8,
+    },
+    pageTitle: {
+      color: color.text,
+      fontFamily: font.semibold,
+      fontSize: 31,
+      lineHeight: 38,
+      letterSpacing: -0.8,
+    },
+    description: {
+      color: themeValue("#AB9AB9", color.muted),
+      fontFamily: font.regular,
+      fontSize: 13,
+      lineHeight: 20,
+    },
+    refresh: {
+      height: 41,
+      width: 41,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: color.border,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    button: {
+      minHeight: 41,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 11,
+      backgroundColor: themeValue("#291E38", color.accentSoft),
+      borderWidth: 1,
+      borderColor: themeValue("#51405F", color.border),
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+    },
+    primaryButton: { backgroundColor: color.purple, borderColor: "#7D47BD" },
+    limeButton: { backgroundColor: color.lime, borderColor: "#BDEA68" },
+    buttonText: { color: color.text, fontFamily: font.semibold, fontSize: 13 },
+    tabs: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 25,
+      borderBottomWidth: 1,
+      borderBottomColor: "#31263E",
+      minHeight: 45,
+    },
+    tab: {
+      minHeight: 45,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      borderBottomWidth: 2,
+      borderBottomColor: "transparent",
+      paddingBottom: 12,
+      paddingTop: 7,
+    },
+    activeTab: { borderBottomColor: "#A477DF" },
+    tabText: {
+      color: themeValue("#9786A9", color.muted),
+      fontFamily: font.medium,
+      fontSize: 14,
+    },
+    tabCount: {
+      minWidth: 21,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 5,
+      backgroundColor: themeValue("#2D213C", color.accentSoft),
+      alignItems: "center",
+    },
+    tabCountText: {
+      fontFamily: font.medium,
+      fontSize: 10,
+      color: themeValue("#BEA4DC", color.muted),
+    },
+    snapshotLabel: {
+      fontFamily: font.regular,
+      color: themeValue("#887697", color.muted),
+      fontSize: 11,
+    },
+    hero: {
+      padding: 32,
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: themeValue("#593A78", color.border),
+      gap: 25,
+      overflow: "hidden",
+    },
+    heroBadge: {
+      alignSelf: "flex-start",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: "#B9E76B0E",
+      borderColor: "#BCE58C25",
+      borderWidth: 1,
+      borderRadius: 30,
+      paddingHorizontal: 11,
+      paddingVertical: 6,
+    },
+    heroBadgeText: {
+      fontFamily: font.medium,
+      color: "#C5DAAB",
+      fontSize: 9,
+      letterSpacing: 1.3,
+    },
+    heroTitle: {
+      fontFamily: font.semibold,
+      color: themeValue("#F8F3FF", color.text),
+      letterSpacing: -1.6,
+    },
+    heroDescription: {
+      fontFamily: font.regular,
+      color: themeValue("#C2B1D3", color.muted),
+      fontSize: 15,
+      lineHeight: 23,
+      maxWidth: 460,
+    },
+    heroFootnote: {
+      color: themeValue("#9D88B6", color.muted),
+      fontFamily: font.regular,
+      fontSize: 10,
+      lineHeight: 16,
+      maxWidth: 430,
+    },
+    heroArt: {
+      width: 320,
+      minHeight: 284,
+      position: "relative",
+      alignSelf: "center",
+    },
+    artGlow: {
+      position: "absolute",
+      top: 30,
+      left: 15,
+      width: 275,
+      height: 220,
+      borderRadius: 130,
+      backgroundColor: "#824BB728",
+      transform: [{ rotate: "-15deg" }],
+    },
+    artLogo: { position: "absolute", right: 0, top: 0, opacity: 0.9 },
+    artCard: {
+      position: "absolute",
+      width: 174,
+      height: 170,
+      padding: 16,
+      borderRadius: 17,
+      borderWidth: 1,
+      borderColor: "#8C65AF66",
+      backgroundColor: themeValue("#2B1A42", color.accentSoft),
+      boxShadow: "0 16px 30px #07020B40",
+      gap: 9,
+    },
+    artIcon: {
+      width: 60,
+      height: 65,
+      borderRadius: 13,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 2,
+    },
+    artCardTitle: {
+      fontFamily: font.medium,
+      fontSize: 12,
+      color: themeValue("#E9DCF8", color.text),
+    },
+    artLine: {
+      width: "75%",
+      height: 4,
+      backgroundColor: "#C6AFDE26",
+      borderRadius: 3,
+    },
+    artFooter: {
+      position: "absolute",
+      left: 37,
+      bottom: 0,
+      right: 0,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+    },
+    artFooterText: {
+      color: themeValue("#BCA8D3", color.muted),
+      fontFamily: font.regular,
+      fontSize: 11,
+    },
+    stats: { flexDirection: "row", flexWrap: "wrap", gap: 14 },
+    stat: {
+      flexGrow: 1,
+      flexShrink: 1,
+      minWidth: 155,
+      borderRadius: 15,
+      borderWidth: 1,
+      borderColor: themeValue("#372943", color.border),
+      backgroundColor: themeValue("#1B1426", color.panel),
+      padding: 19,
+      gap: 9,
+    },
+    statTitle: {
+      color: themeValue("#BBADC9", color.muted),
+      fontFamily: font.medium,
+      fontSize: 12,
+      flex: 1,
+    },
+    statValue: {
+      color: themeValue("#F4EDFC", color.text),
+      fontFamily: font.semibold,
+      fontSize: 32,
+      lineHeight: 36,
+    },
+    statHint: {
+      fontFamily: font.regular,
+      fontSize: 10,
+      color: themeValue("#8E7B9F", color.muted),
+      lineHeight: 15,
+    },
+    sectionTitle: {
+      color: color.text,
+      fontFamily: font.semibold,
+      fontSize: 18,
+      letterSpacing: -0.2,
+    },
+    sectionLink: {
+      flexDirection: "row",
+      alignItems: "center",
+      alignSelf: "flex-start",
+      minHeight: 35,
+      gap: 5,
+    },
+    linkText: {
+      fontFamily: font.medium,
+      color: themeValue("#C2A5F1", color.muted),
+      fontSize: 12,
+    },
+    mediaGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 16,
+      alignItems: "flex-start",
+    },
+    mediaCard: {
+      borderRadius: 16,
+      borderColor: themeValue("#3A2A49", color.border),
+      borderWidth: 1,
+      backgroundColor: themeValue("#1C1427", color.panel),
+      overflow: "hidden",
+    },
+    mediaImage: {
+      height: 162,
+      width: "100%",
+      backgroundColor: themeValue("#2B203A", color.accentSoft),
+    },
+    imageStatus: { position: "absolute", top: 11, left: 11 },
+    mediaPlay: {
+      position: "absolute",
+      bottom: 11,
+      right: 11,
+      width: 35,
+      height: 35,
+      borderRadius: 19,
+      backgroundColor: "#130D22C4",
+      borderWidth: 1,
+      borderColor: "#FFFFFF30",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    mediaDetails: { padding: 15, gap: 10, minWidth: 0 },
+    mediaTitle: {
+      fontFamily: font.semibold,
+      fontSize: 15,
+      color: themeValue("#F2EAFB", color.text),
+    },
+    mediaMeta: {
+      fontFamily: font.regular,
+      color: themeValue("#A18BAC", color.muted),
+      fontSize: 11,
+      lineHeight: 17,
+    },
+    ownership: {
+      fontFamily: font.regular,
+      fontSize: 10,
+      color: themeValue("#877397", color.muted),
+    },
+    inlineAction: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      minHeight: 30,
+    },
+    inlineText: {
+      fontFamily: font.medium,
+      fontSize: 11,
+      color: themeValue("#C6B1E7", color.muted),
+    },
+    status: {
+      alignSelf: "flex-start",
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 6,
+      backgroundColor: "#2A1944ED",
+      borderWidth: 1,
+      borderColor: "#8C65BD55",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+    },
+    published: { backgroundColor: "#26371DEB", borderColor: "#92AC4B55" },
+    hidden: { backgroundColor: "#482437ED", borderColor: "#B46F8155" },
+    statusDot: { width: 4, height: 4, borderRadius: 2 },
+    statusText: { fontFamily: font.medium, fontSize: 9, color: "#D3C0EB" },
+    mediaList: {
+      flexDirection: "row",
+      alignItems: "center",
+      padding: 9,
+      gap: 7,
+    },
+    listImage: { width: 132, height: 92, borderRadius: 10 },
+    emptyDrafts: {
+      minHeight: 307,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderStyle: "dashed",
+      borderColor: themeValue("#59406D", color.border),
+      backgroundColor: "#21152E5C",
+      padding: 28,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 14,
+    },
+    emptyArt: {
+      width: 73,
+      height: 73,
+      borderRadius: 23,
+      backgroundColor: themeValue("#34204B", color.accentSoft),
+      borderWidth: 1,
+      borderColor: "#7B4AA14D",
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 2,
+    },
+    emptyPlus: {
+      position: "absolute",
+      right: -4,
+      bottom: 3,
+      height: 23,
+      width: 23,
+      borderRadius: 12,
+      borderWidth: 3,
+      borderColor: themeValue("#20152C", color.border),
+      backgroundColor: color.lime,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    emptyTitle: {
+      fontFamily: font.semibold,
+      fontSize: 21,
+      color: themeValue("#EBE0F7", color.text),
+      textAlign: "center",
+      letterSpacing: -0.3,
+    },
+    emptyText: {
+      fontFamily: font.regular,
+      color: themeValue("#A992BC", color.muted),
+      fontSize: 13,
+      lineHeight: 21,
+      maxWidth: 410,
+      textAlign: "center",
+    },
+    privacyHint: {
+      fontFamily: font.regular,
+      fontSize: 10,
+      color: themeValue("#A693BB", color.muted),
+    },
+    planCard: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "center",
+      gap: 16,
+      padding: 21,
+      borderRadius: 17,
+      backgroundColor: themeValue("#1E162A", color.panel),
+      borderWidth: 1,
+      borderColor: themeValue("#3E2C50", color.border),
+    },
+    planIcon: {
+      width: 47,
+      height: 47,
+      backgroundColor: themeValue("#38224F", color.accentSoft),
+      borderRadius: 14,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    networkPanel: {
+      backgroundColor: themeValue("#1B1425", color.panel),
+      borderWidth: 1,
+      borderColor: themeValue("#3A2A48", color.border),
+      borderRadius: 18,
+      padding: 20,
+      gap: 12,
+    },
+    networkRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 11,
+      minHeight: 62,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: "#35273F",
+    },
+    networkMark: {
+      width: 34,
+      height: 34,
+      borderRadius: 11,
+      backgroundColor: themeValue("#2B2038", color.panel),
+      borderWidth: 1,
+      borderColor: themeValue("#4A355B", color.border),
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    networkLetter: {
+      color: themeValue("#CEB6EC", color.muted),
+      fontSize: 16,
+      fontFamily: font.semibold,
+    },
+    networkName: {
+      fontFamily: font.medium,
+      fontSize: 12,
+      color: themeValue("#E1D5ED", color.text),
+    },
+    networkState: {
+      fontFamily: font.regular,
+      fontSize: 10,
+      lineHeight: 14,
+      color: themeValue("#9B84AC", color.muted),
+    },
+    panelFootnote: {
+      fontFamily: font.regular,
+      fontSize: 10,
+      color: themeValue("#927D9F", color.muted),
+      lineHeight: 16,
+    },
+    assistantCard: {
+      borderWidth: 1,
+      borderColor: themeValue("#63467D", color.border),
+      borderRadius: 18,
+      padding: 20,
+      gap: 14,
+    },
+    attention: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 15,
+      borderRadius: 15,
+      padding: 19,
+      borderWidth: 1,
+      borderColor: "#7D613947",
+      backgroundColor: "#32251961",
+    },
+    attentionTitle: {
+      color: themeValue("#E6D3B3", color.muted),
+      fontFamily: font.medium,
+      fontSize: 14,
+      marginBottom: 4,
+    },
+    toolGrid: { flexDirection: "row", flexWrap: "wrap", gap: 14 },
+    tool: {
+      flexGrow: 1,
+      flexShrink: 1,
+      minWidth: 180,
+      gap: 13,
+      padding: 21,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: themeValue("#392A48", color.border),
+      backgroundColor: themeValue("#1C1427", color.panel),
+    },
+    toolTitle: {
+      fontFamily: font.semibold,
+      color: themeValue("#DAD0E6", color.text),
+      fontSize: 15,
+    },
+    toolBody: {
+      fontFamily: font.regular,
+      color: themeValue("#9680A8", color.muted),
+      fontSize: 12,
+      lineHeight: 19,
+    },
+    libraryToolbar: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 16,
+    },
+    search: {
+      flex: 1,
+      minWidth: 230,
+      maxWidth: 600,
+      flexDirection: "row",
+      alignItems: "center",
+      minHeight: 44,
+      paddingHorizontal: 14,
+      gap: 11,
+      borderRadius: 12,
+      backgroundColor: themeValue("#20172C", color.panel),
+      borderWidth: 1,
+      borderColor: themeValue("#433050", color.border),
+    },
+    searchInput: {
+      flex: 1,
+      minWidth: 0,
+      height: 44,
+      fontFamily: font.regular,
+      fontSize: 13,
+      color: color.text,
+    },
+    sortLabel: {
+      fontFamily: font.regular,
+      color: themeValue("#9482A7", color.muted),
+      fontSize: 11,
+    },
+    viewModes: {
+      flexDirection: "row",
+      borderRadius: 9,
+      padding: 3,
+      backgroundColor: themeValue("#21172C", color.panel),
+      borderWidth: 1,
+      borderColor: themeValue("#3C2B4A", color.border),
+    },
+    modeButton: {
+      width: 34,
+      height: 32,
+      borderRadius: 6,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    activeMode: { backgroundColor: themeValue("#4A2B68", color.accentSoft) },
+    filters: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: "#32253E",
+      paddingBottom: 14,
+    },
+    filter: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 9,
+      minHeight: 35,
+      borderRadius: 9,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      backgroundColor: "transparent",
+      borderWidth: 1,
+      borderColor: "transparent",
+    },
+    activeFilter: {
+      backgroundColor: themeValue("#342046", color.accentSoft),
+      borderColor: themeValue("#684285", color.border),
+    },
+    filterText: {
+      fontFamily: font.medium,
+      color: themeValue("#9C88AE", color.muted),
+      fontSize: 12,
+    },
+    filterCount: {
+      fontFamily: font.regular,
+      color: themeValue("#9D85B2", color.muted),
+      fontSize: 10,
+    },
+    categoryFilter: {
+      minHeight: 30,
+      paddingHorizontal: 11,
+      paddingVertical: 7,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: themeValue("#35263E", color.border),
+      backgroundColor: themeValue("#19121F", color.panel),
+    },
+    activeCategory: {
+      backgroundColor: themeValue("#3C2B4E", color.accentSoft),
+      borderColor: themeValue("#685178", color.border),
+    },
+    categoryText: {
+      fontFamily: font.regular,
+      color: themeValue("#927D9F", color.muted),
+      fontSize: 10,
+    },
+    results: {
+      color: themeValue("#8B789B", color.muted),
+      fontFamily: font.regular,
+      fontSize: 11,
+      paddingVertical: 7,
+    },
+    libraryEmpty: {
+      minHeight: 390,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 20,
+      padding: 35,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: themeValue("#382947", color.border),
+      backgroundColor: "#1B132569",
+    },
+    libraryFooter: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 8,
+      paddingVertical: 10,
+    },
+  }),
+);

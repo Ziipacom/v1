@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import * as DocumentPicker from "expo-document-picker";
+import { pickCreatorMedia } from "../lib/creator-media-picker";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Crypto from "expo-crypto";
@@ -463,10 +463,11 @@ function ScopedStoreScreen({
         size: photo.fileSize,
       };
     } else {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["image/jpeg", "image/png", "image/webp"],
-        copyToCacheDirectory: true,
-      });
+      const result = await pickCreatorMedia(
+        ["image/jpeg", "image/png", "image/webp"],
+        "images",
+        () => validFor(token),
+      );
       if (result.canceled || !validFor(token)) return;
       asset = result.assets[0];
     }

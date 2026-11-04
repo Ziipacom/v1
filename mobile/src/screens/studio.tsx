@@ -359,7 +359,7 @@ export function StudioScreen({
                 onPress={add}
                 style={[styles.row, { minHeight: 36, gap: 8 }]}
               >
-                <Text style={s.trayText}>Add New</Text>
+                <Text style={s.trayText}>Create</Text>
                 <SquarePlus size={23} color="white" />
               </Pressable>
             </View>
@@ -505,7 +505,7 @@ export function StudioScreen({
             Icon: Images,
             action: () => navigation.navigate("Main"),
           },
-          { label: "Add", Icon: SquarePlus, action: add },
+          { label: "Create", Icon: SquarePlus, action: add },
           {
             label: "Promote",
             Icon: Megaphone,

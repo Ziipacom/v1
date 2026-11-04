@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Image, Platform, Pressable, Text, View } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
-import * as DocumentPicker from "expo-document-picker";
+import { pickCreatorMedia } from "../lib/creator-media-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { ImageUp, RefreshCw } from "lucide-react-native";
 import { Action, Notice } from "./ui";
@@ -152,11 +152,11 @@ export function ProfileImageControls({
           phase.current = "picking";
           // This is the first await after the user's press: web file pickers
           // require that activation. Capability was verified before enabling it.
-          const result = await DocumentPicker.getDocumentAsync({
-            type: [...PROFILE_IMAGE_TYPES],
-            copyToCacheDirectory: true,
-            multiple: false,
-          });
+          const result = await pickCreatorMedia(
+            [...PROFILE_IMAGE_TYPES],
+            "images",
+            sameScope,
+          );
           if (result.canceled) {
             phase.current = "idle";
             canceled = true;

@@ -10,7 +10,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ArrowLeft, UserRound } from "lucide-react-native";
+import {
+  ArrowLeft,
+  Clock3,
+  Tag,
+  UserCheck,
+  UserPlus,
+  UserRound,
+} from "lucide-react-native";
 import { FloatButton, Sheet } from "../components/floating";
 import { Action, Notice } from "../components/ui";
 import { ProfileContentControls } from "../components/profile-content-controls";
@@ -59,6 +66,18 @@ export function VisitorProfileScreen({
     session?.access_token,
   );
   const activity = useProfilePreviewActivity(false);
+  const followLabel =
+    profile?.relationship.status === "accepted"
+      ? "Following"
+      : profile?.relationship.status === "pending"
+        ? "Requested"
+        : "Follow";
+  const FollowIcon =
+    profile?.relationship.status === "accepted"
+      ? UserCheck
+      : profile?.relationship.status === "pending"
+        ? Clock3
+        : UserPlus;
   useNetworkSnapshotExpiry(profile?.network || null);
   const network =
     collection === "creations"
@@ -134,42 +153,89 @@ export function VisitorProfileScreen({
               )
             }
           />
-          {profile && !profile.relationship.self && (
-            <Action
-              secondary
-              disabled={tagBusy}
-              title={
-                profile.relationship.status === "accepted"
-                  ? "Following · Unfollow"
-                  : profile.relationship.status === "pending"
-                    ? "Cancel follow request"
-                    : profile.privacy.visibility === "private"
-                      ? "Request to follow"
-                      : "Follow on Ziipa"
-              }
-              onPress={() => {
-                if (tagBusy) return;
-                setTagBusy(true);
-                setMessage("");
-                const operation = ["accepted", "pending"].includes(
-                  profile.relationship.status,
-                )
-                  ? "unfollow"
-                  : "follow";
-                void api(
-                  `/api/creator/profiles/${profile.creator.id}/${operation}`,
-                  { revision: profile.relationship.revision },
-                )
-                  .then(() => result.reload())
-                  .catch(() =>
-                    setMessage(
-                      "Follow status could not save. Refresh and try again.",
-                    ),
+          <View style={{ flexDirection: "row", gap: 20 }}>
+            {profile && !profile.relationship.self && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  profile.relationship.status === "accepted"
+                    ? "Unfollow creator"
+                    : profile.relationship.status === "pending"
+                      ? "Cancel follow request"
+                      : "Follow creator"
+                }
+                accessibilityState={{ disabled: tagBusy }}
+                disabled={tagBusy}
+                style={({ pressed }) => ({
+                  minWidth: 64,
+                  minHeight: 52,
+                  gap: 5,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: tagBusy || pressed ? 0.55 : 1,
+                })}
+                onPress={() => {
+                  if (tagBusy) return;
+                  setTagBusy(true);
+                  setMessage("");
+                  const operation = ["accepted", "pending"].includes(
+                    profile.relationship.status,
                   )
-                  .finally(() => setTagBusy(false));
-              }}
-            />
-          )}
+                    ? "unfollow"
+                    : "follow";
+                  void api(
+                    `/api/creator/profiles/${profile.creator.id}/${operation}`,
+                    { revision: profile.relationship.revision },
+                  )
+                    .then(() => result.reload())
+                    .catch(() =>
+                      setMessage(
+                        "Follow status could not save. Refresh and try again.",
+                      ),
+                    )
+                    .finally(() => setTagBusy(false));
+                }}
+              >
+                <FollowIcon size={22} color={color.text} strokeWidth={1.7} />
+                <Text
+                  style={{
+                    color: color.text,
+                    fontFamily: font.medium,
+                    fontSize: 11,
+                  }}
+                >
+                  {followLabel}
+                </Text>
+              </Pressable>
+            )}
+            {profile?.access === "allowed" &&
+              session?.user.id !== profile.creator.id && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Tag creator in a creation"
+                  onPress={() => setTagOpen(true)}
+                  style={({ pressed }) => ({
+                    minWidth: 64,
+                    minHeight: 52,
+                    gap: 5,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: pressed ? 0.55 : 1,
+                  })}
+                >
+                  <Tag size={22} color={color.text} strokeWidth={1.7} />
+                  <Text
+                    style={{
+                      color: color.text,
+                      fontFamily: font.medium,
+                      fontSize: 11,
+                    }}
+                  >
+                    Tag
+                  </Text>
+                </Pressable>
+              )}
+          </View>
           {profile?.access === "followers_only" && (
             <Notice text="This profile is followers-only. Request to follow; the creator must approve before their profile artwork and creations become available." />
           )}
@@ -177,14 +243,6 @@ export function VisitorProfileScreen({
           {!!(result.error || message) && (
             <Notice text={result.error || message} />
           )}
-          {profile?.access === "allowed" &&
-            session?.user.id !== profile.creator.id && (
-              <Action
-                title="Tag in a creation"
-                secondary
-                onPress={() => setTagOpen(true)}
-              />
-            )}
           <ProfileContentControls
             collection={collection}
             grid={grid}
