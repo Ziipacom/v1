@@ -100,7 +100,7 @@ import {
   sourceCaptionsForEdit,
   validateCaptionCues,
 } from "../lib/auto-captions";
-import { audioCreationSource, sourceMintItem } from "../lib/editor-source";
+import { audioCreationSource, isStudioMediaCategory, sourceMintItem } from "../lib/editor-source";
 import { iosLimitedTestflight } from "../lib/config";
 import { inCreativeWorld, parseEditing, parsePrice } from "../lib/domain";
 import {
@@ -194,9 +194,9 @@ export function ComposerScreen({
   const advancedOverlaysSupported =
     guest || overlayLayoutSupported(overlayConfig);
   const originalUpload = !guest && session ? route.params?.upload : undefined;
+  const seedCategory = remix?.category || route.params?.category;
   const [category, setCategory] = useState<Category>(
-    existing?.category || remix?.category ||
-    (route.params?.category === "nft" ? undefined : route.params?.category) || "music",
+    existing?.category || (isStudioMediaCategory(seedCategory) ? seedCategory : "music"),
   );
   const samples = data.items.filter((i) => inCreativeWorld(i, category));
   const [sample, setSample] = useState<Item | undefined>(
@@ -1935,7 +1935,7 @@ export function ComposerScreen({
             editable={!busy}
           />
           <View style={[styles.row, { flexWrap: "wrap" }]}>
-            {worlds.map((w) => (
+            {worlds.filter((w) => isStudioMediaCategory(w.id)).map((w) => (
               <Pill
                 key={w.id}
                 title={w.title}

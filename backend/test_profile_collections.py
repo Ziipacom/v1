@@ -30,7 +30,7 @@ def ctx(monkeypatch):
         if actor['user'] is None:
             raise HTTPException(401, 'Sign in')
         return actor['user']
-    api = FastAPI(); api.include_router(profiles.router); api.include_router(following.router)
+    api = FastAPI(); api.include_router(creator.router); api.include_router(profiles.router); api.include_router(following.router)
     api.dependency_overrides.update({core.db: lambda: session, core.current_user: user, core.guard: lambda: None})
     import social_api
     monkeypatch.setattr(social_api, 'build_hub', lambda user, db: {'providers': [], 'media': []})
@@ -61,6 +61,55 @@ def test_visitor_only_receives_published_posts_and_no_private_collections(ctx):
     assert 'email' not in value['creator']
     assert 'private-bookmark' not in response.text and 'private-like' not in response.text
     assert 'no-store' in response.headers['cache-control']
+
+
+def test_only_owner_can_delete_a_creation_without_deleting_its_upload(ctx, monkeypatch):
+    monkeypatch.setattr('media_workflows.notify_workflows', lambda _owner: None)
+    source = creator.CreatorMedia(id=str(uuid.uuid4()), owner_id=ctx.owner.id,
+                                  content_type='image/png', size=128)
+    ctx.session.add(source); ctx.session.commit()
+    published = creator.save_item(creator.ItemInput(title='Published photo', media_id=source.id,
+                                  visibility='published'), ctx.session, ctx.owner)
+    draft = creator.save_item(creator.ItemInput(title='Private draft', media_id=source.id),
+                              ctx.session, ctx.owner)
+    hidden = post(ctx, visibility='hidden')
+    item_id = published['id']
+    path = f'/api/creator/items/{item_id}'
+    profile = f'/api/creator/profiles/{ctx.owner.id}'
+    assert [row['id'] for row in ctx.client.get(profile).json()['items']] == [item_id]
+    assert ctx.client.delete(path).status_code == 404
+    assert ctx.session.get(creator.CreatorItem, item_id) is not None
+    ctx.actor['user'] = None
+    assert ctx.client.delete(path).status_code == 401
+    ctx.actor['user'] = ctx.owner
+    assert ctx.client.delete(f'/api/creator/items/{hidden.id}').status_code == 409
+    assert ctx.client.delete(path).json() == {'id': item_id, 'deleted': True}
+    assert ctx.client.delete(f"/api/creator/items/{draft['id']}").status_code == 200
+    assert ctx.client.delete(path).status_code == 404
+    assert ctx.session.get(creator.CreatorMedia, source.id) is not None
+    ctx.actor['user'] = ctx.viewer
+    assert ctx.client.get(profile).json()['items'] == []
+
+
+def test_owner_can_publish_retired_category_draft_as_regular_post(ctx, monkeypatch):
+    monkeypatch.setattr('media_workflows.notify_workflows', lambda _owner: None)
+    source = creator.CreatorMedia(id=str(uuid.uuid4()), owner_id=ctx.owner.id,
+                                  content_type='image/png', size=128)
+    ctx.session.add(source); ctx.session.commit()
+    ctx.actor['user'] = ctx.owner
+    draft = ctx.client.post('/api/creator/items', json={
+        'title': 'Saved photo', 'category': 'nft', 'media_id': source.id,
+    }).json()
+    path = f"/api/creator/items/{draft['id']}"
+    assert ctx.client.post(path, json={'title': draft['title'], 'visibility': 'published'}).status_code == 409
+    recovered = ctx.client.post(path, json={
+        'title': draft['title'], 'category': 'music', 'visibility': 'published',
+    })
+    assert recovered.status_code == 200
+    assert recovered.json()['id'] == draft['id'] and recovered.json()['media_id'] == source.id
+    ctx.actor['user'] = ctx.viewer
+    items = ctx.client.get(f'/api/creator/profiles/{ctx.owner.id}').json()['items']
+    assert [(item['id'], item['category']) for item in items] == [(draft['id'], 'music')]
 
 
 def test_photo_series_preserves_order_and_only_shares_published_images(monkeypatch, tmp_path):

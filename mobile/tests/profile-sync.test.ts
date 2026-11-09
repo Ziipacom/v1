@@ -4,6 +4,7 @@ import test from "node:test";
 import ts from "typescript";
 import { createProfileImageSync } from "../src/lib/profile-sync.ts";
 import { createGalleryStillCache } from "../src/lib/gallery-still-cache.ts";
+import { recoverLegacyCreationDrafts } from "../src/lib/editor-source.ts";
 import type { ProfileImages } from "../src/lib/types.ts";
 
 const images = (id: string): ProfileImages => ({
@@ -313,6 +314,9 @@ function providerUI() {
       return { emptyNetworkHub: () => ({ providers: [] }) };
     if (name === "./lib/editor-save")
       return { applyConfirmedEditorItem: (state: any) => state };
+    if (name === "./lib/editor-source") return { recoverLegacyCreationDrafts };
+    if (name === "./lib/creator-request")
+      return { creatorRequest: () => { throw new Error("Unexpected creation write"); } };
     if (name === "./lib/profile-sync") return { createProfileImageSync };
     if (name === "./lib/gallery-still-cache")
       return { webGalleryStillCache: stillCache };

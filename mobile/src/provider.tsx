@@ -34,6 +34,8 @@ import demo from "./lib/demo.json";
 import { disconnectWallet } from "./lib/wallet-connector";
 import { emptyNetworkHub, type NetworkHub } from "./lib/network-hub";
 import { applyConfirmedEditorItem } from "./lib/editor-save";
+import { recoverLegacyCreationDrafts } from "./lib/editor-source";
+import { creatorRequest } from "./lib/creator-request";
 import { createProfileImageSync } from "./lib/profile-sync";
 import { useTheme } from "./theme";
 
@@ -124,6 +126,7 @@ type State = {
   forgetSession: () => Promise<void>;
   refresh: (options?: { throwOnError?: boolean }) => Promise<void>;
   recordSavedItem: (item: Item, ownerToken: string) => void;
+  deleteCreation: (itemId: string, ownerToken: string) => Promise<void>;
   recordProfileImages: (profile: ProfileImages, ownerToken: string) => void;
   refreshProfileImages: () => Promise<void>;
   api: <T>(path: string, data?: unknown) => Promise<T>;
@@ -163,11 +166,11 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
   const profileOwnerToken = useRef<string | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const putData = useCallback((value: Bootstrap) => {
-    // Keep these records on the server; hide them in the release UI.
+    // Hide the retired category on public surfaces, but keep private drafts editable.
     const visible = {
       ...value,
       items: withoutNft(value.items),
-      drafts: withoutNft(value.drafts),
+      drafts: recoverLegacyCreationDrafts(value.drafts),
       feeds: withoutNft(value.feeds),
       community_feeds: withoutNft(value.community_feeds),
     };
@@ -397,6 +400,28 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
     },
     [session, guest, putData],
   );
+  const deleteCreation = useCallback(
+    async (itemId: string, ownerToken: string) => {
+      if (!session || guest || activeToken.current !== ownerToken || session.access_token !== ownerToken)
+        throw new Error("Your account changed. Reopen the library before deleting.");
+      const result = await creatorRequest<{ id: string; deleted: boolean }>(
+        `/api/creator/items/${encodeURIComponent(itemId)}`, ownerToken, "DELETE",
+      );
+      if (result?.id !== itemId || result.deleted !== true)
+        throw new Error("Ziipa could not confirm deletion. Refresh your library to check.");
+      if (activeToken.current !== ownerToken)
+        throw new Error("Your account changed. Reopen the library to check.");
+      const current = dataRef.current;
+      refreshEpoch.current++;
+      setRefreshing(false);
+      putData({
+        ...current,
+        items: current.items.filter((item) => item.id !== itemId),
+        drafts: current.drafts.filter((item) => item.id !== itemId),
+      });
+    },
+    [session, guest, putData],
+  );
   async function authenticate(email: string, password: string, name?: string) {
     const result = await request<
       Session | { verification_required: true; message: string }
@@ -558,6 +583,7 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
         forgetSession,
         refresh,
         recordSavedItem,
+        deleteCreation,
         recordProfileImages,
         refreshProfileImages,
         preferences,

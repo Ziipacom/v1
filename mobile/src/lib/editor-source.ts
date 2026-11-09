@@ -1,5 +1,22 @@
 import type { UploadFile } from "./api";
-import type { Item } from "./types";
+import type { Category, Item } from "./types";
+
+export function isStudioMediaCategory(
+  category: Category | undefined,
+): category is Exclude<Category, "store" | "nft"> {
+  return category !== undefined && category !== "store" && category !== "nft";
+}
+
+/** Retired NFT categories stay out of public surfaces. The owner's private
+ * drafts keep their original ID and media and can be saved as regular posts. */
+export function recoverLegacyCreationDrafts(rows: Item[]): Item[] {
+  if (!rows.some((item) => item.category === "nft")) return rows;
+  return rows.flatMap((item): Item[] => {
+    if (item.category !== "nft") return [item];
+    if (item.visibility !== "draft" || item.demo) return [];
+    return [{ ...item, category: item.content_type?.startsWith("video/") ? "video" : "music" }];
+  });
+}
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -36,11 +37,12 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Upload,
   X,
   type LucideIcon,
 } from "lucide-react-native";
-import { Notice, allCategories } from "../components/ui";
+import { Action, Notice, allCategories } from "../components/ui";
 import {
   ProfileMediaPreview,
   useProfilePreviewActivity,
@@ -49,6 +51,7 @@ import { useDesktopLayout } from "../components/desktop-layout";
 import { useZiipa } from "../provider";
 import { themedStyles, themeValue, color, font, headerTitleStyle } from "../theme";
 import type { Category, Item, RootStack } from "../lib/types";
+import { isStudioMediaCategory } from "../lib/editor-source";
 import {
   creatorConnectionLabel,
   creatorLibrary,
@@ -224,22 +227,30 @@ function LibraryThumbnail({
 }
 
 export function CreatorStudioScreen({ route, navigation }: Props) {
-  const { data, session, guest, refreshing, error, refresh } = useZiipa();
+  const { data, session, guest, refreshing, error, refresh, deleteCreation } = useZiipa();
   const { contentWidth, desktop } = useDesktopLayout();
   const insets = useSafeAreaInsets();
   const tab = route.params?.tab || "overview";
   const [query, setQuery] = useState(route.params?.query || "");
+  const routeCategory = route.params?.category;
+  const libraryCategory = isStudioMediaCategory(routeCategory) ? routeCategory : "all";
   const [category, setCategory] = useState<Category | "all">(
-    route.params?.category || "all",
+    libraryCategory,
   );
   const [status, setStatus] = useState<CreatorLibraryStatus>("all");
   const [mode, setMode] = useState<"grid" | "list">("grid");
   const [scrollY, setScrollY] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<{ item: Item; ownerToken: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleteNotice, setDeleteNotice] = useState("");
+  const deleteLock = useRef(false);
+  const activeDelete = deleteTarget?.ownerToken === session?.access_token ? deleteTarget : null;
   const previewActivity = useProfilePreviewActivity(false);
   useEffect(() => setQuery(route.params?.query || ""), [route.params?.query]);
   useEffect(
-    () => setCategory(route.params?.category || "all"),
-    [route.params?.category],
+    () => setCategory(libraryCategory),
+    [libraryCategory],
   );
   const entries = useMemo(
     () => creatorLibrary(data, session?.user.id ?? null, guest),
@@ -303,42 +314,68 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
         category: entry.item.category,
       });
   }
+  function askToDelete(item: Item) {
+    if (!session || guest || deleteLock.current) return;
+    setDeleteError("");
+    setDeleteNotice("");
+    setDeleteTarget({ item, ownerToken: session.access_token });
+  }
+  async function confirmDelete() {
+    if (!activeDelete || deleteLock.current) return;
+    deleteLock.current = true;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteCreation(activeDelete.item.id, activeDelete.ownerToken);
+      setDeleteTarget(null);
+      setDeleteNotice("Creation deleted from Ziipa.");
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : "Couldn’t confirm deletion. Refresh your library to check.");
+    } finally {
+      deleteLock.current = false;
+      setDeleting(false);
+    }
+  }
   function renderMedia(entry: CreatorLibraryEntry, list = false) {
     const { item } = entry;
     const editable = entry.owned && item.visibility !== "hidden";
+    const canDelete = editable && !guest && !!session && !item.demo;
     return (
       <View key={item.id} style={[s.mediaCard, list && s.mediaList]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${item.visibility === "hidden" ? "Review" : entry.owned && item.visibility === "draft" ? "Open draft" : "Watch"} ${item.title}`}
-          onPress={() => open(entry)}
-          style={[s.mediaImage, list && s.listImage]}
-        >
-          <LibraryThumbnail
-            item={item}
-            scrollY={scrollY}
-            activity={previewActivity}
-          />
-          {!list && (
-            <View style={s.imageStatus}>
-              <Status entry={entry} guest={guest} />
-            </View>
-          )}
-          <View
-            style={[
-              s.mediaPlay,
-              list && { width: 27, height: 27, borderRadius: 14 },
-            ]}
+        <View style={[s.mediaImage, list && s.listImage]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${item.visibility === "hidden" ? "Review" : entry.owned && item.visibility === "draft" ? "Open draft" : "Watch"} ${item.title}`}
+            onPress={() => open(entry)}
+            style={s.mediaSurface}
           >
-            {item.visibility === "hidden" ? (
-              <ShieldCheck size={list ? 13 : 17} color="white" />
-            ) : item.visibility === "draft" ? (
-              <Pencil size={list ? 13 : 17} color="white" />
-            ) : (
-              <Play size={list ? 13 : 17} color="white" fill="white" />
+            <LibraryThumbnail item={item} scrollY={scrollY} activity={previewActivity} />
+            {!list && (
+              <View style={s.imageStatus}>
+                <Status entry={entry} guest={guest} />
+              </View>
             )}
-          </View>
-        </Pressable>
+            <View style={[s.mediaPlay, list && { width: 27, height: 27, borderRadius: 14 }]}>
+              {item.visibility === "hidden" ? (
+                <ShieldCheck size={list ? 13 : 17} color="white" />
+              ) : item.visibility === "draft" ? (
+                <Pencil size={list ? 13 : 17} color="white" />
+              ) : (
+                <Play size={list ? 13 : 17} color="white" fill="white" />
+              )}
+            </View>
+          </Pressable>
+          {canDelete && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Delete ${item.title}`}
+              onPress={() => askToDelete(item)}
+              style={[s.mediaPlay, s.mediaTrash, list && s.listTrash]}
+            >
+              <Trash2 size={list ? 13 : 17} color="white" />
+            </Pressable>
+          )}
+        </View>
         <View style={[s.mediaDetails, list && { flex: 1, paddingVertical: 8 }]}>
           <View
             style={[
@@ -385,7 +422,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                     : "Saved from Discover"}
               </Text>
             )}
-            <View style={[s.row, { gap: 12 }]}>
+            <View style={[s.row, { gap: 12, flexWrap: "wrap" }]}>
               {editable && (
                 <Pressable
                   accessibilityRole="button"
@@ -424,6 +461,17 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                   </Text>
                 </Pressable>
               )}
+              {canDelete && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete creation ${item.title}`}
+                  onPress={() => askToDelete(item)}
+                  style={s.inlineAction}
+                >
+                  <Trash2 size={13} color={color.danger} />
+                  <Text style={[s.inlineText, { color: color.danger }]}>Delete</Text>
+                </Pressable>
+              )}
               {!editable && (
                 <Pressable
                   accessibilityRole="button"
@@ -442,6 +490,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
     );
   }
   return (
+    <>
     <ScrollView
       style={s.screen}
       keyboardShouldPersistTaps="handled"
@@ -457,6 +506,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
         },
       ]}
     >
+      {tab === "library" && !!deleteNotice && <Notice text={deleteNotice} />}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Back"
@@ -1003,7 +1053,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
             ))}
           </View>
           <View style={[s.row, { flexWrap: "wrap", gap: 8 }]}>
-            {[{ id: "all" as const, title: "All types" }, ...allCategories].map(
+            {[{ id: "all" as const, title: "All types" }, ...allCategories.filter(({ id }) => isStudioMediaCategory(id))].map(
               ({ id, title }) => (
                 <Pressable
                   key={id}
@@ -1122,6 +1172,30 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
         </>
       )}
     </ScrollView>
+    <Modal
+      visible={!!activeDelete}
+      transparent
+      animationType="fade"
+      onRequestClose={() => { if (!deleteLock.current) setDeleteTarget(null); }}
+    >
+      {activeDelete && (
+        <View style={s.deleteBackdrop}>
+          <View style={s.deleteDialog} accessibilityViewIsModal>
+            <Text accessibilityRole="header" style={s.sectionTitle}>Delete creation?</Text>
+            <Text style={s.panelFootnote}>
+              “{activeDelete.item.title}” will be permanently removed from Ziipa.
+              Your original upload and any posts already shared to other networks will stay.
+            </Text>
+            {!!deleteError && <Notice text={deleteError} error />}
+            <View style={[s.row, { justifyContent: "flex-end", flexWrap: "wrap" }]}>
+              <Action title="Cancel" secondary disabled={deleting} onPress={() => setDeleteTarget(null)} />
+              <Action title={deleting ? "Deleting…" : "Delete creation"} icon={Trash2} danger busy={deleting} onPress={() => void confirmDelete()} />
+            </View>
+          </View>
+        </View>
+      )}
+    </Modal>
+    </>
   );
 }
 
@@ -1397,6 +1471,7 @@ const s = themedStyles(() =>
       width: "100%",
       backgroundColor: themeValue("#2B203A", color.accentSoft),
     },
+    mediaSurface: { flex: 1 },
     imageStatus: { position: "absolute", top: 11, left: 11 },
     mediaPlay: {
       position: "absolute",
@@ -1412,6 +1487,10 @@ const s = themedStyles(() =>
       justifyContent: "center",
     },
     mediaDetails: { padding: 15, gap: 10, minWidth: 0 },
+    mediaTrash: { right: 53, minWidth: 38, minHeight: 38 },
+    listTrash: { right: 45, width: 30, height: 30, minWidth: 30, minHeight: 30 },
+    deleteBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: "#0009" },
+    deleteDialog: { width: "100%", maxWidth: 430, borderRadius: 16, padding: 20, gap: 14, borderWidth: 1, borderColor: color.border, backgroundColor: color.panel },
     mediaTitle: {
       fontFamily: font.semibold,
       fontSize: 15,

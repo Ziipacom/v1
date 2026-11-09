@@ -637,6 +637,24 @@ def edit_item(item_id: str, data: ItemInput, user: User = Depends(current_user),
     return save_item(data, session, user, row)
 
 
+@router.delete('/items/{item_id}', dependencies=[Depends(guard)])
+def delete_item(item_id: uuid.UUID, user: User = Depends(current_user), session: Session = Depends(db)):
+    row = session.scalar(select(CreatorItem).where(
+        CreatorItem.id == str(item_id), CreatorItem.owner_id == user.id).with_for_update())
+    if row is None:
+        raise HTTPException(404, 'Your creation was not found.')
+    if row.visibility not in ('draft', 'published'):
+        raise HTTPException(409, 'A creation removed by moderation cannot be deleted here.')
+    # The item owns the post and its discussion, not the uploaded files,
+    # shared renditions or delivery receipts. Those can outlive this item.
+    session.execute(delete(CreatorComment).where(CreatorComment.item_id == row.id))
+    session.delete(row)
+    session.commit()
+    from media_workflows import notify_workflows
+    notify_workflows(user.id)
+    return {'id': str(item_id), 'deleted': True}
+
+
 @router.get('/connections')
 def list_connections(user: User = Depends(current_user), session: Session = Depends(db)):
     return connections_for(user, session)

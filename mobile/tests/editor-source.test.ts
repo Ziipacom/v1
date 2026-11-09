@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   sourceMintItem,
   audioCreationSource,
+  recoverLegacyCreationDrafts,
 } from "../src/lib/editor-source.ts";
 import type { Item } from "../src/lib/types.ts";
 
@@ -22,6 +23,18 @@ const owned: Item = {
   demo: false,
   label: "Draft",
 };
+
+test("a retired NFT photo draft reopens as a regular creation with its original ID and media", () => {
+  const photo = { ...owned, category: "nft", content_type: "image/jpeg" } satisfies Item;
+  const video = { ...photo, id: "second", content_type: "video/mp4" };
+  const [recoverPhoto, recoverVideo, ordinary] = recoverLegacyCreationDrafts([
+    photo, video, owned, { ...photo, visibility: "published" }, { ...photo, demo: true },
+  ]);
+  assert.deepEqual([recoverPhoto, recoverVideo, ordinary], [
+    { ...photo, category: "music" }, { ...video, category: "video" }, owned,
+  ]);
+  assert.equal(photo.category, "nft");
+});
 test("source mint handoff permits owned saved private media without publication", () => {
   assert.equal(sourceMintItem(owned, 7, false), owned);
   assert.equal(
