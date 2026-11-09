@@ -1,6 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calendarAuthorizationUrl } from "../src/lib/calendar-connections.ts";
+import {
+  calendarAuthorizationUrl,
+  deviceCalendarAppLink,
+  isDeviceCalendarAppLink,
+} from "../src/lib/calendar-connections.ts";
+
+test("only the fixed device-calendar link can open the native picker entry point", () => {
+  assert.ok(isDeviceCalendarAppLink(deviceCalendarAppLink));
+  assert.ok(isDeviceCalendarAppLink("ziipa-preview://calendar/connect"));
+  for (const url of [
+    null,
+    "https://ziipa.com/calendar/connect",
+    "ziipa://calendar/connect?token=secret",
+    "ziipa://calendar/connect#other-route",
+    "ziipa://other/calendar/connect",
+  ])
+    assert.equal(isDeviceCalendarAppLink(url), false);
+});
 
 test("native calendar connection hands off to the Ziipa portal without bearer credentials", () => {
   assert.equal(

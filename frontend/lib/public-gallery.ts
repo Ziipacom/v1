@@ -69,6 +69,7 @@ export function parsePublicGalleryItem(
   if (!publicGallerySlug(slug) || !value || typeof value !== "object")
     throw new Error("Invalid public creation.");
   const row = value as Record<string, unknown>;
+  if (row.category === "nft") throw new Error("This creation is unavailable.");
   if (
     !publicGalleryItemId(row.id) ||
     row.visibility !== "published" ||
@@ -124,7 +125,9 @@ export function parsePublicGallery(
     name: text(row.name, 100),
     avatar_url: artwork(row.avatar_url, slug, "avatar"),
     cover_url: artwork(row.cover_url, slug, "cover"),
-    items: row.items.map((item) => parsePublicGalleryItem(item, slug)),
+    items: row.items
+      .filter((item) => item?.category !== "nft")
+      .map((item) => parsePublicGalleryItem(item, slug)),
     next_cursor: cursor,
     unavailable_count: unavailable,
   };

@@ -26,7 +26,7 @@ test("desktop route views round-trip only their declared filters and identifiers
     ],
     ["CreatorStudio", { tab: "overview" }],
     ["CreatorStudio", { tab: "library", category: "video", query: "draft" }],
-    ["Composer", { category: "nft", draftId: first }],
+    ["Composer", { category: "music", draftId: first }],
     ["Watch", { category: "games", itemId: first }],
     ["Calendar", { eventId: first, streamId: second, kind: "stream" }],
     ["Campaigns", { itemId: first, campaignId: second }],
@@ -36,7 +36,7 @@ test("desktop route views round-trip only their declared filters and identifiers
     ["Connections", { tab: "outbox" }],
     ["Publishing", { itemId: first, renderId: second }],
     ["MediaOS", { tab: "Agent" }],
-    ["Utility", { kind: "wallet" }],
+      ["Utility", { kind: "wallet" }],
     ["Utility", { kind: "promote" }],
     ["Utility", { kind: "inbox" }],
     ["Profile", undefined],
@@ -67,8 +67,8 @@ test("desktop route views round-trip only their declared filters and identifiers
 
 test("legacy Studio editing links retain library intent and exports require a source", () => {
   assert.equal(
-    destinationSearch("Studio", { edit: true, category: "nft" }),
-    "?view=library&category=nft",
+    destinationSearch("Studio", { edit: true, category: "music" }),
+    "?view=library&category=music",
   );
   assert.deepEqual(
     destinationFromSearch(destinationSearch("Studio", { edit: true })!),
@@ -167,6 +167,12 @@ test("full owned-item routes serialize only an ID and never credentials or signe
   }
   assert.equal(params.item.title, "private title");
   assert.equal(params.session.access_token, "secret-bearer");
+});
+
+test("the hidden NFT category cannot be opened through old portal links", () => {
+  for (const view of ["explore", "studio", "library", "create", "watch"]) {
+    assert.equal(destinationFromSearch(`?view=${view}&category=nft`), null);
+  }
 });
 
 test("fixed views do not grant permissions or accept route-supplied identity", () => {

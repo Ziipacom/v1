@@ -61,6 +61,7 @@ export function profileVideoSelection(
     items
       .filter(
         (item) =>
+          item.visibility !== "draft" &&
           profileMediaKind(item) === "video" &&
           profileCardVisible(bounds[item.id], viewport),
       )

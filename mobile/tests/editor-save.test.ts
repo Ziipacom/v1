@@ -2,6 +2,8 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import {
   applyConfirmedEditorItem,
+  creationPublishRestriction,
+  creationPublishTargets,
   createEditorSaveController,
   matchesEditorSubmission,
 } from "../src/lib/editor-save.ts";
@@ -14,6 +16,17 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+
+test("an unconfirmed external delivery does not block publishing a regular draft to Ziipa", () => {
+  assert.equal(creationPublishRestriction("video", "draft"), null);
+  assert.equal(creationPublishRestriction("music", "draft"), null);
+  assert.equal(creationPublishRestriction("games", "draft"), null);
+  assert.deepEqual(creationPublishTargets(["tiktok"], true), []);
+  assert.deepEqual(creationPublishTargets(["tiktok"], false), ["tiktok"]);
+  assert.equal(creationPublishRestriction("live", "draft"), "category");
+  assert.equal(creationPublishRestriction("nft", "draft"), "category");
+  assert.equal(creationPublishRestriction("video", "hidden"), "removed");
+});
 
 test("same-turn Save and Publish taps share one in-flight write", async () => {
   const controller = createEditorSaveController();

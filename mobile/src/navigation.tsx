@@ -1,6 +1,12 @@
-import { useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Text } from "react-native";
-import { X } from "lucide-react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Linking,
+  Platform,
+  Pressable,
+  Text,
+} from "react-native";
+import { ArrowLeft, X } from "lucide-react-native";
 import {
   NavigationContainer,
   DarkTheme,
@@ -12,7 +18,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useZiipa } from "./provider";
-import { color, font, styles, useTheme } from "./theme";
+import { color, headerTitleStyle, styles, useTheme } from "./theme";
 import { portalMode } from "./lib/config";
 import { Action, Logo, Notice } from "./components/ui";
 import type { RootStack } from "./lib/types";
@@ -54,6 +60,7 @@ import {
   destinationSearch,
 } from "./lib/desktop-navigation";
 import { composerRouteId } from "./lib/composer-navigation";
+import { isDeviceCalendarAppLink } from "./lib/calendar-connections";
 import {
   LegalScreen,
   ModerationScreen,
@@ -101,6 +108,37 @@ function NavigationContent() {
   const [activeRoute, setActiveRoute] = useState<DesktopRoute>({
     name: "Main",
   });
+  const [deviceCalendarRequest, setDeviceCalendarRequest] = useState(0);
+  const handledCalendarRequest = useRef(0);
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    let active = true;
+    const receive = (url: string | null) => {
+      if (active && isDeviceCalendarAppLink(url))
+        setDeviceCalendarRequest((request) => request + 1);
+    };
+    const subscription = Linking.addEventListener("url", ({ url }) =>
+      receive(url),
+    );
+    void Linking.getInitialURL().then(receive).catch(() => {});
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
+  useEffect(() => {
+    if (
+      !session ||
+      guest ||
+      !navigation.isReady() ||
+      deviceCalendarRequest === handledCalendarRequest.current
+    )
+      return;
+    handledCalendarRequest.current = deviceCalendarRequest;
+    navigation.navigate("Calendar", {
+      deviceConnectRequest: deviceCalendarRequest,
+    });
+  }, [activeRoute, deviceCalendarRequest, guest, navigation, session]);
   const currentData = useRef(data);
   currentData.current = data;
   // React Navigation owns browser history, including rollback of prevented Back
@@ -250,7 +288,9 @@ function NavigationContent() {
             headerShown: !desktop,
             headerStyle: { backgroundColor: color.bg },
             headerTintColor: color.text,
-            headerTitleStyle: { fontFamily: font.medium, fontSize: 18 },
+            headerTitleStyle,
+            headerBackTitle: "Back",
+            headerBackTitleStyle: headerTitleStyle,
             contentStyle: { backgroundColor: color.bg },
             headerShadowVisible: false,
             animation: desktop ? "none" : "slide_from_right",
@@ -320,10 +360,39 @@ function NavigationContent() {
               <Stack.Screen
                 name="Utility"
                 component={UtilityScreen}
-                options={({ route }) => ({
-                  title: "Ziipa Studio",
-                  headerShown: !desktop && route.params.kind !== "wallet",
-                })}
+                options={({ route, navigation: utilityNavigation }) =>
+                  route.params.kind === "wallet"
+                    ? { title: "Wallet", headerShown: false }
+                    : route.params.kind === "promote"
+                    ? {
+                        title: "Promote",
+                        headerTitle: () => null,
+                        headerBackVisible: false,
+                        headerLeft: () => (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Back"
+                            onPress={() =>
+                              utilityNavigation.canGoBack()
+                                ? utilityNavigation.goBack()
+                                : utilityNavigation.navigate("Studio")
+                            }
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 8,
+                              minHeight: 44,
+                            }}
+                          >
+                            <ArrowLeft size={24} color={color.text} />
+                            <Text style={[headerTitleStyle, { color: color.text }]}>
+                              Back
+                            </Text>
+                          </Pressable>
+                        ),
+                      }
+                    : { title: "Messages" }
+                }
               />
               <Stack.Screen
                 name="Composer"
@@ -398,7 +467,7 @@ function NavigationContent() {
               <Stack.Screen
                 name="Inbox"
                 component={InboxScreen}
-                options={{ title: "Inbox" }}
+                options={{ title: "Messages" }}
               />
               <Stack.Screen
                 name="NotificationMessages"

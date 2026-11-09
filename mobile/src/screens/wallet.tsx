@@ -65,6 +65,7 @@ import {
 } from "../lib/wallet-connector";
 import { readPending, savePending, type Pending } from "../lib/wallet-pending";
 import { iosInternalTestflight } from "../lib/config";
+import { sourceMintItem } from "../lib/editor-source";
 import { MediaRewards, RewardRuleFields } from "../components/media-rewards";
 import {
   emptyRewardDraft,
@@ -127,7 +128,7 @@ function InternalWalletScreen({ navigation }: Props) {
     }
   }
   return <SafeAreaView style={styles.screen}><ScrollView contentContainerStyle={styles.page}>
-    <Action secondary title="Back" onPress={() => navigation.goBack()} />
+    <Action secondary title="Back" onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Studio")} />
     <Text style={styles.title}>Wallet privacy</Text>
     <Notice text="Pairing, signatures, minting and transfers are unavailable in this private iPhone beta. You can remove an existing Ziipa wallet link without connecting or signing with a wallet." />
     {(saved && saved.owner === token ? saved.links : []).map((row) => <View key={row.id} style={styles.panel}>
@@ -155,7 +156,9 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
     !initialItem?.demo ? initialItem?.media_id || "" : "",
   );
   const [mediaName, setMediaName] = useState(
-    !initialItem?.demo && initialItem?.media_id ? initialItem.title : "",
+    !initialItem?.demo && initialItem?.media_id
+      ? `${initialItem.title}${initialItem.photo_ids?.length ? " · Cover photo" : ""}`
+      : "",
   );
   const [trait, setTrait] = useState("");
   const [royalty, setRoyalty] = useState("5");
@@ -564,7 +567,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
     }
     setStep(Math.min(step + 1, 3));
   }
-  const ownedMedia = data.drafts.filter((d) => !d.demo && d.media_id);
+  const ownedMedia = data.drafts.filter((item) => sourceMintItem(item, session?.user.id, false));
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.screen}>
@@ -586,8 +589,8 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Back to Studio"
-            onPress={() => navigation.navigate("Studio")}
+            accessibilityLabel="Back"
+            onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Studio")}
             style={s.icon}
           >
             <ChevronLeft size={27} color={color.text} strokeWidth={1.4} />
@@ -1809,7 +1812,9 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
             </>
           )}
           {sheet === "media" &&
-            ownedMedia.map((d) => (
+            ownedMedia.map((d) => {
+              const label = `${d.title}${d.photo_ids?.length ? " · Cover photo" : ""}`;
+              return (
               <Pressable
                 key={d.id}
                 accessibilityRole="button"
@@ -1817,15 +1822,16 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 onPress={() => {
                   changed(() => {
                     setMediaId(d.media_id!);
-                    setMediaName(d.title);
+                    setMediaName(label);
                     setImageUri("");
                   });
                   setSheet(null);
                 }}
               >
-                <Text style={s.label}>{d.title}</Text>
+                <Text style={s.label}>{label}</Text>
               </Pressable>
-            ))}
+              );
+            })}
           {sheet && error && <Notice text={error} error />}
           {sheet && notice && <Text style={s.hint}>{notice}</Text>}
         </Sheet>

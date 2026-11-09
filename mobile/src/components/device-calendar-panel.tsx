@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Platform, Text, View } from "react-native";
+import { Linking, Platform, Text, View } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import { useZiipa } from "../provider";
@@ -18,6 +18,7 @@ export function DeviceCalendarPanel({ events }: { events: CalendarEvent[] }) {
   const [selected, setSelected] = useState<CalendarChoice | null>(null);
   const [exporting, setExporting] = useState<CalendarEvent | null>(null);
   const [busy, setBusy] = useState(false);
+  const [needsSettings, setNeedsSettings] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const alive = useRef(true);
@@ -62,24 +63,52 @@ export function DeviceCalendarPanel({ events }: { events: CalendarEvent[] }) {
       );
     }
   }
+  async function requireCalendarAccess(
+    calendar: Awaited<ReturnType<typeof module>>,
+    prompt = false,
+  ) {
+    let permission = await calendar.getCalendarPermissions(false);
+    check();
+    // iOS can report write-only access as denied for reads. An explicit tap
+    // may upgrade that permission, even when the full-access status is denied.
+    if (
+      !permission.granted &&
+      prompt &&
+      (permission.canAskAgain || Platform.OS === "ios")
+    ) {
+      permission = await calendar.requestCalendarPermissions(false);
+      check();
+    }
+    if (!permission.granted) {
+      setNeedsSettings(!permission.canAskAgain);
+      setCalendars([]);
+      setSelected(null);
+      setExporting(null);
+      throw new Error(
+        Platform.OS === "ios"
+          ? "Allow Ziipa to read Calendar in Settings. If you see Full Access, choose it. Then return here and check access."
+          : "Allow Ziipa to access Calendar in device Settings, then return and check access.",
+      );
+    }
+    setNeedsSettings(false);
+  }
   async function list() {
     const calendar = await module();
     check();
-    const permission = await calendar.requestCalendarPermissions(false);
+    await requireCalendarAccess(calendar, true);
     check();
-    if (!permission.granted)
-      throw new Error(
-        "Calendar permission was not granted. You can enable it in device Settings when ready.",
-      );
     const available = await calendar.getCalendars(calendar.EntityTypes.EVENT);
     check();
-    setCalendars(
-      available.map((item) => ({
-        id: item.id,
-        title: item.title,
-        writable: item.allowsModifications,
-      })),
+    const choices = available.map((item) => ({
+      id: item.id,
+      title: item.title,
+      writable: item.allowsModifications,
+    }));
+    setCalendars(choices);
+    setSelected(
+      (current) => choices.find((choice) => choice.id === current?.id) ?? null,
     );
+    setExporting(null);
     if (!available.length)
       setNotice(
         "No calendars are configured on this device. Add an account in your device’s Calendar settings, then refresh.",
@@ -89,10 +118,8 @@ export function DeviceCalendarPanel({ events }: { events: CalendarEvent[] }) {
     if (!selected || !session) return;
     const calendar = await module();
     check();
-    const permission = await calendar.getCalendarPermissions(false);
+    await requireCalendarAccess(calendar);
     check();
-    if (!permission.granted)
-      throw new Error("Calendar permission is no longer available.");
     const start = new Date(Date.now() - 30 * 86400000),
       end = new Date(Date.now() + 90 * 86400000);
     const remote = await calendar.listEvents([selected.id], start, end);
@@ -140,6 +167,8 @@ export function DeviceCalendarPanel({ events }: { events: CalendarEvent[] }) {
     if (!occurrence)
       throw new Error("There is no upcoming occurrence to export.");
     const calendar = await module();
+    check();
+    await requireCalendarAccess(calendar);
     check();
     const available = await calendar.ExpoCalendar.get(selected.id);
     check();
@@ -211,10 +240,31 @@ export function DeviceCalendarPanel({ events }: { events: CalendarEvent[] }) {
       </Text>
       <Action
         secondary
-        title="Allow access and choose calendar"
+        title={
+          needsSettings ? "Check calendar access" : "Allow access and choose calendar"
+        }
+        busy={busy}
         disabled={busy}
         onPress={() => void run(list)}
       />
+      {needsSettings && (
+        <Action
+          secondary
+          title="Open Ziipa Settings"
+          disabled={busy}
+          onPress={() =>
+            void run(async () => {
+              try {
+                await Linking.openSettings();
+              } catch {
+                throw new Error(
+                  "Open Settings on your device and find Ziipa’s Calendar permission.",
+                );
+              }
+            })
+          }
+        />
+      )}
       {calendars.map((choice) => (
         <Action
           key={choice.id}

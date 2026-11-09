@@ -23,6 +23,21 @@ export function editorSaveLabel(phase: EditorSavePhase, progress = 0) {
   }[phase];
 }
 
+/** These match the API's draft-only and moderation rules. External delivery
+ * is a separate operation and must never make a Ziipa post draft-only. */
+export function creationPublishRestriction(
+  category: ItemInput["category"],
+  visibility: Item["visibility"] | undefined,
+) {
+  if (visibility === "hidden") return "removed";
+  if (category === "live" || category === "nft") return "category";
+  return null;
+}
+
+export function creationPublishTargets<T>(targets: T[], deliveryNeedsReview: boolean) {
+  return deliveryNeedsReview ? [] : targets;
+}
+
 type SaveResult<T> =
   | { kind: "busy" | "blocked" }
   | { kind: "failed" | "unconfirmed"; error: unknown }

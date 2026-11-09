@@ -938,7 +938,7 @@ function ScopedMusicWorkspace({
                       : "Offline procedural. "}
                     {(generated.file.size / 1024 / 1024).toFixed(1)} MB ·
                     synthesized audio. Review the source and musical rights
-                    before sharing or minting. AI generation does not establish
+                    before sharing. AI generation does not establish
                     ownership or copyright exclusivity.
                   </Text>
                   <Action

@@ -51,7 +51,7 @@ export function PortalStudio({member,onLogout,logoutBusy,onSessionEnded}:{member
         <span>{slow?'Studio is taking longer than expected.':'Opening your Studio…'}</span>
         {slow&&<><p>Your account and saved media are safe. Open the same Studio directly, or retry this frame.</p><div className="portal-studio-recovery"><a href="/studio/index.html" target="_blank" rel="noopener">Open Studio in its own tab</a><Button variant="ghost" onClick={()=>setAttempt(value=>value+1)}>Retry Studio</Button></div></>}
       </div>}
-      <iframe key={attempt} ref={frame} title="Ziipa Studio — Discover, create, connect and mint" allow="camera; microphone; autoplay; fullscreen; clipboard-write" allowFullScreen onLoad={studioLoaded} onError={()=>setSlow(true)}/>
+      <iframe key={attempt} ref={frame} title="Ziipa Studio — Discover, create and connect" allow="camera; microphone; autoplay; fullscreen; clipboard-write" allowFullScreen onLoad={studioLoaded} onError={()=>setSlow(true)}/>
     </section>
     <footer className="portal-studio-footer"><Link href="/"><ArrowLeft size={14}/> Website</Link><span>One Studio for web, Android and iOS · shared creations and connected accounts</span><Link href="/account-deletion">Account & privacy</Link></footer>
   </main>;

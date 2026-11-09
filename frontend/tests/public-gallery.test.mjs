@@ -100,6 +100,18 @@ test("unpublished and sample records cannot appear as public gallery creations",
   );
 });
 
+test("legacy NFT records are hidden without losing other public gallery items or pagination", () => {
+  const legacy = { ...item, id: otherId, category: "nft", media_url: media.replace(id, otherId) };
+  const page = parsePublicGallery(
+    { ...gallery, items: [legacy, item], next_cursor: "next_page" },
+    "my-gallery",
+  );
+  assert.equal(page.items.length, 1);
+  assert.equal(page.items[0].id, id);
+  assert.equal(page.next_cursor, "next_page");
+  assert.throws(() => parsePublicGalleryItem(legacy, "my-gallery"), /unavailable/i);
+});
+
 test("public response bounds reject malformed media, pagination and counts", () => {
   for (const content_type of ["text/html", "image/svg+xml?script=1", ""])
     assert.throws(() =>

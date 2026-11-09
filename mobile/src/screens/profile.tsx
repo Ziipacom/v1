@@ -193,7 +193,15 @@ function OwnedProfileScreen({
         ? data.items.filter((i) => data.preferences.saved.includes(i.id))
         : guest
           ? data.items
-          : data.drafts.filter((i) => i.visibility === "published");
+          : session
+            ? data.drafts.filter(
+                (item) =>
+                  (item.visibility === "published" ||
+                    item.visibility === "draft") &&
+                  (item.creator_id === undefined ||
+                    item.creator_id === session.user.id),
+              )
+            : [];
   const items = profileCreations(source, category);
   const layoutKey = `${category}:${collection}:${grid}:${items.map((item) => item.id).join(",")}`;
   const layoutIdentity = useRef(layoutKey);
@@ -249,7 +257,7 @@ function OwnedProfileScreen({
         {desktop && (
           <WorkspaceHeading
             title="Your profile"
-            description="Your published creations and saved inspiration."
+            description="Your drafts, published creations and saved inspiration."
           />
         )}
         <ImageBackground
@@ -542,6 +550,8 @@ function OwnedProfileScreen({
           }}
         >
           {items.map((item) => {
+            const isDraft =
+              !guest && collection === "creations" && item.visibility === "draft";
             const world = allCategories.find(
               (entry) => entry.id === item.category,
             );
@@ -562,7 +572,11 @@ function OwnedProfileScreen({
                   else webCards.current.delete(item.id);
                 }}
                 accessibilityRole="button"
-                accessibilityLabel={`Watch ${item.title} · ${worldTitle}`}
+                accessibilityLabel={
+                  isDraft
+                    ? `Edit draft ${item.title}`
+                    : `Watch ${item.title} · ${worldTitle}`
+                }
                 onLayout={(event) => {
                   const { y, height } = event.nativeEvent.layout;
                   if (layoutIdentity.current !== layoutKey) return;
@@ -583,10 +597,12 @@ function OwnedProfileScreen({
                   });
                 }}
                 onPress={() =>
-                  navigation.navigate("Watch", {
-                    itemId: item.id,
-                    category: item.category,
-                  })
+                  isDraft
+                    ? navigation.navigate("Composer", { item })
+                    : navigation.navigate("Watch", {
+                        itemId: item.id,
+                        category: item.category,
+                      })
                 }
                 style={{
                   width: grid ? (gridCardSize ?? "33.333333%") : "100%",
@@ -600,16 +616,40 @@ function OwnedProfileScreen({
               >
                 <ProfileMediaPreview
                   item={item}
-                  thumbnailOnly={grid}
+                  thumbnailOnly={grid || isDraft}
                   visible={
                     activity.visible &&
                     profileCardVisible(cardBounds[item.id], viewport)
                   }
                   videoActive={activeVideo === item.id}
-                  autoplay={activity.autoplay}
+                  autoplay={activity.autoplay && !isDraft}
                   allowVideoStill={activity.mountVideo}
                 />
-                {!grid && (
+                {isDraft && (
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: "absolute",
+                      right: grid ? 5 : 10,
+                      top: grid ? 5 : 10,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 5,
+                      paddingHorizontal: grid ? 6 : 9,
+                      paddingVertical: 4,
+                      borderRadius: 12,
+                      backgroundColor: "#110B1FE6",
+                    }}
+                  >
+                    <Pencil size={grid ? 12 : 14} color="white" />
+                    <Text
+                      style={{ color: "white", fontFamily: font.semibold, fontSize: 11 }}
+                    >
+                      Draft
+                    </Text>
+                  </View>
+                )}
+                {(!grid || isDraft) && (
                   <View
                     style={{
                       position: "absolute",
@@ -621,25 +661,28 @@ function OwnedProfileScreen({
                       gap: 6,
                     }}
                   >
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <WorldIcon size={15} color="white" />
-                      <Text
+                    {!grid && (
+                      <View
                         style={{
-                          color: "white",
-                          fontFamily: font.medium,
-                          fontSize: 11,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
                         }}
                       >
-                        {worldTitle}
-                      </Text>
-                    </View>
+                        <WorldIcon size={15} color="white" />
+                        <Text
+                          style={{
+                            color: "white",
+                            fontFamily: font.medium,
+                            fontSize: 11,
+                          }}
+                        >
+                          {worldTitle}
+                        </Text>
+                      </View>
+                    )}
                     <Text
+                      numberOfLines={grid ? 1 : undefined}
                       style={{
                         color: "white",
                         fontSize: grid ? 11 : 19,
@@ -1104,14 +1147,6 @@ function OwnedProfileScreen({
                 onPress={() => {
                   setSheet(null);
                   navigation.navigate("Connections");
-                }}
-              />
-              <Action
-                title="Wallet"
-                secondary
-                onPress={() => {
-                  setSheet(null);
-                  navigation.navigate("Utility", { kind: "wallet" });
                 }}
               />
               <Pill

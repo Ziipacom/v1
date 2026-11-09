@@ -16,6 +16,7 @@ export function Recorder({
   onCapture,
   onNetworks,
 }: RecorderProps) {
+  const photo = mode === "photo";
   const video = useRef<HTMLVideoElement | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -34,7 +35,7 @@ export function Recorder({
   const supported =
     typeof navigator !== "undefined" &&
     !!navigator.mediaDevices?.getUserMedia &&
-    typeof MediaRecorder !== "undefined";
+    (photo || typeof MediaRecorder !== "undefined");
   const unavailable = !secure
     ? "Browsers block camera and microphone access on this HTTP Wi-Fi address. On the computer running Ziipa, open the localhost preview below. Other devices need a trusted HTTPS preview or the native Ziipa app. Do not disable browser security."
     : !supported
@@ -112,7 +113,7 @@ export function Recorder({
           height: { ideal: 1280 },
           frameRate: { ideal: 30, max: 30 },
         },
-        audio: { echoCancellation: true, noiseSuppression: true },
+        audio: photo ? false : { echoCancellation: true, noiseSuppression: true },
       });
       if (
         !mounted.current ||
@@ -156,6 +157,35 @@ export function Recorder({
         );
     });
   }, [enabled, facing]);
+
+  async function takePhoto() {
+    const frame = video.current;
+    if (!frame?.videoWidth || !frame.videoHeight || busy) return;
+    const current = operation.current;
+    setBusy(true);
+    setError("");
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = frame.videoWidth;
+      canvas.height = frame.videoHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("This browser could not capture a photo.");
+      context.drawImage(frame, 0, 0);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+      if (!mounted.current || current !== operation.current) return;
+      if (!blob?.size) throw new Error("No photo was captured. Try again.");
+      const uri = URL.createObjectURL(blob);
+      clipUrl.current = uri;
+      setClip({ uri, name: `ziipa-photo-${Date.now()}.jpg`, mimeType: "image/jpeg", size: blob.size });
+      stopStream();
+      setEnabled(false);
+      setReady(false);
+    } catch (error) {
+      if (mounted.current && current === operation.current) setError(cameraError(error));
+    } finally {
+      if (mounted.current && current === operation.current) setBusy(false);
+    }
+  }
 
   function start() {
     if (
@@ -289,7 +319,7 @@ export function Recorder({
       }
       onEnable={() => void enable()}
       onFlip={() => void enable(facing === "user" ? "environment" : "user")}
-      onRecord={start}
+      onRecord={photo ? () => void takePhoto() : start}
       onStop={stop}
       onRetake={retake}
       onUse={useClip}
@@ -297,7 +327,9 @@ export function Recorder({
       onNetworks={onNetworks}
     >
       {clip
-        ? createElement("video", {
+        ? photo
+          ? createElement("img", { src: clip.uri, alt: "Captured photo", style: { width: "100%", height: "100%", objectFit: "contain" } })
+          : createElement("video", {
             key: clip.uri,
             src: clip.uri,
             controls: true,

@@ -135,6 +135,19 @@ test("Web and audio-only selection directly invoke Files without losing user act
     await pending;
   }
 });
+
+test("the editor uploader enables multiple files and ordered selection of up to ten library photos", async () => {
+  const library = harness("ios", "photos");
+  await library.pick(["image/*", "video/*"], "media", () => true, true);
+  assert.equal(library.settings().allowsMultipleSelection, true);
+  assert.equal(library.settings().selectionLimit, 10);
+  assert.equal(library.settings().orderedSelection, true);
+  for (const os of ["web", "android"]) {
+    const files = harness(os, "files");
+    await files.pick(["image/*", "video/*"], "media", () => true, true);
+    assert.equal(files.settings().multiple, true);
+  }
+});
 test("Provider failures propagate instead of replacing the current media selection", async () => {
   const h = harness("ios", "photos", true);
   await assert.rejects(h.pick(["video/*"]), /Photo provider unavailable/);

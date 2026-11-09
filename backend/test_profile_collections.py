@@ -63,6 +63,49 @@ def test_visitor_only_receives_published_posts_and_no_private_collections(ctx):
     assert 'no-store' in response.headers['cache-control']
 
 
+def test_photo_series_preserves_order_and_only_shares_published_images(monkeypatch, tmp_path):
+    engine = create_engine('sqlite://')
+    core.Base.metadata.create_all(engine)
+    monkeypatch.setattr('media_workflows.notify_workflows', lambda _owner: None)
+    monkeypatch.setattr(creator, 'MEDIA_ROOT', tmp_path)
+    monkeypatch.setattr(creator, 'storage', creator.LocalStorage)
+    with Session(engine) as session:
+        author = core.User(name='Author', email='author@example.test', password_hash='unused')
+        viewer = core.User(name='Viewer', email='viewer@example.test', password_hash='unused')
+        session.add_all([author, viewer])
+        session.flush()
+        photos = [creator.CreatorMedia(id=str(uuid.uuid4()), owner_id=author.id,
+                                       content_type='image/jpeg', size=1) for _ in range(10)]
+        foreign = creator.CreatorMedia(id=str(uuid.uuid4()), owner_id=viewer.id,
+                                       content_type='image/jpeg', size=1)
+        session.add_all([*photos, foreign])
+        session.flush()
+        cover, *additional = [photo.id for photo in photos]
+        (tmp_path / additional[-1]).write_bytes(b'x')
+        draft = creator.save_item(creator.ItemInput(title='Series', media_id=cover,
+                                                    photo_ids=additional), session, author)
+        assert draft['photo_ids'] == additional
+        with pytest.raises(HTTPException) as private:
+            creator.read_media(additional[-1], viewer, session)
+        assert private.value.status_code == 404
+        row = session.get(creator.CreatorItem, draft['id'])
+        with pytest.raises(HTTPException) as rejected:
+            creator.save_item(creator.ItemInput(title='Series', photo_ids=[foreign.id]),
+                              session, author, row)
+        assert rejected.value.status_code == 404
+        published = creator.save_item(creator.ItemInput(title='Series', visibility='published'),
+                                      session, author, row)
+        assert published['photo_ids'] == additional
+        assert creator.read_media(additional[-1], viewer, session).media_type == 'image/jpeg'
+        updated = creator.save_item(creator.ItemInput(title='Single photo', media_id=additional[0]),
+                                    session, author, row)
+        assert updated['photo_ids'] == []
+        with pytest.raises(HTTPException) as removed:
+            creator.read_media(additional[-1], viewer, session)
+        assert removed.value.status_code == 404
+    engine.dispose()
+
+
 @pytest.mark.parametrize('privacy', ['private'])
 def test_private_profile_and_its_post_are_hidden(ctx, privacy):
     item = post(ctx)

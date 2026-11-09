@@ -44,3 +44,11 @@ export function calendarAuthorizationUrl(value: string, apiOrigin: string) {
   }
   return target.href;
 }
+
+export const deviceCalendarAppLink = "ziipa://calendar/connect";
+
+export function isDeviceCalendarAppLink(value: string | null) {
+  return (
+    value === deviceCalendarAppLink || value === "ziipa-preview://calendar/connect"
+  );
+}

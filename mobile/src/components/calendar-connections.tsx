@@ -63,12 +63,17 @@ const labels: Record<string, string> = {
 export function CalendarConnections({
   events,
   onChanged,
+  deviceConnectRequest,
 }: {
   events: CalendarEvent[];
   onChanged?: () => void;
+  deviceConnectRequest?: number;
 }) {
   const { session, guest } = useZiipa();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<"all" | "device" | null>(null);
+  useEffect(() => {
+    if (deviceConnectRequest && Platform.OS === "ios") setOpen("device");
+  }, [deviceConnectRequest]);
   return (
     <>
       <Pressable
@@ -76,7 +81,7 @@ export function CalendarConnections({
         accessibilityLabel="Connect external calendar"
         accessibilityState={{ disabled: !session || guest }}
         disabled={!session || guest}
-        onPress={() => setOpen(true)}
+        onPress={() => setOpen("all")}
         style={({ pressed }) => ({
           flexDirection: "row",
           alignItems: "center",
@@ -101,10 +106,11 @@ export function CalendarConnections({
       </Pressable>
       {open && session && (
         <ConnectionPanel
-          key={session.access_token}
+          key={`${session.access_token}:${open}`}
           events={events}
+          openDevice={open === "device"}
           onClose={() => {
-            setOpen(false);
+            setOpen(null);
             onChanged?.();
           }}
         />
@@ -116,13 +122,17 @@ export function CalendarConnections({
 function ConnectionPanel({
   events,
   onClose,
+  openDevice,
 }: {
   events: CalendarEvent[];
   onClose: () => void;
+  openDevice: boolean;
 }) {
   const { api } = useZiipa();
   const [state, setState] = useState<State | null>(null);
-  const [provider, setProvider] = useState<string | null>(null);
+  const [provider, setProvider] = useState<string | null>(
+    openDevice ? "device" : null,
+  );
   const [choices, setChoices] = useState<{ id: string; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -275,7 +285,7 @@ function ConnectionPanel({
                 <Text style={styles.small}>
                   {name === "device"
                     ? Platform.OS === "web"
-                      ? "Connect from the Ziipa mobile app"
+                      ? "Requires the installed Ziipa app"
                       : "Device permission required"
                     : linked
                       ? linked.calendar_name || "Choose a calendar"

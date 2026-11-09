@@ -71,6 +71,10 @@ export type Item = {
   cover: string;
   media_url: string | null;
   media_id?: string | null;
+  /** Additional photos in display order. The first photo is the main media. */
+  photo_ids?: string[];
+  /** Device-only attachments for guest preview drafts. */
+  local_photo_uris?: string[];
   content_type?: string | null;
   demo: boolean;
   label: string;
@@ -96,6 +100,7 @@ export type ItemInput = Pick<
 > & {
   visibility: "draft" | "published";
   media_id: string | null;
+  photo_ids?: string[];
   trim_start: number;
   trim_end: number | null;
   captions: Caption[];
@@ -210,6 +215,7 @@ export type RootStack = {
         streamId?: string;
         campaignId?: string;
         kind?: "reminder" | "stream" | "campaign";
+        deviceConnectRequest?: number;
       }
     | undefined;
   Live: { tab?: "watch" | "broadcast"; streamId?: string } | undefined;

@@ -9,12 +9,14 @@ type PickedAsset = {
   size?: number;
 };
 type Result = { canceled: boolean; assets: PickedAsset[] };
+export const maxCreationPhotos = 10;
 
 /** Web keeps its direct user gesture; phones offer Photos separately from Files. */
 export async function pickCreatorMedia(
   types: string[],
   library: "images" | "media" | false = "media",
   isCurrent: () => boolean = () => true,
+  photoSeries = false,
 ): Promise<Result> {
   const canceled = (): Result => ({ canceled: true, assets: [] });
   if (!isCurrent()) return canceled();
@@ -22,7 +24,7 @@ export async function pickCreatorMedia(
     return DocumentPicker.getDocumentAsync({
       type: types,
       copyToCacheDirectory: true,
-      multiple: false,
+      multiple: photoSeries,
     }).then((result) =>
       !isCurrent()
         ? canceled()
@@ -52,7 +54,7 @@ export async function pickCreatorMedia(
     const result = await DocumentPicker.getDocumentAsync({
       type: types,
       copyToCacheDirectory: true,
-      multiple: false,
+      multiple: photoSeries,
     });
     return !isCurrent()
       ? canceled()
@@ -61,7 +63,8 @@ export async function pickCreatorMedia(
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: library === "images" ? ["images"] : ["images", "videos"],
     allowsEditing: false,
-    allowsMultipleSelection: false,
+    allowsMultipleSelection: photoSeries,
+    ...(photoSeries && { selectionLimit: maxCreationPhotos, orderedSelection: true }),
     quality: 1,
     exif: false,
     base64: false,

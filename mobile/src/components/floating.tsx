@@ -10,7 +10,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Gamepad2,
-  Hexagon,
   MailOpen,
   Music2,
   Video,
@@ -32,10 +31,8 @@ export const worlds: {
   { id: "games", title: "Games", icon: Gamepad2 },
   { id: "live", title: "Live Feed", icon: Video, concept: true },
   { id: "music", title: "Music & Film", icon: Music2 },
-  { id: "nft", title: "NFTs", icon: Hexagon, concept: true },
   { id: "store", title: "Store", icon: Store },
-  // Category navigation is distinct from enabling a service. Keep the iPhone
-  // beta's menu/dock complete; wallet/import actions retain their own guards.
+  // Live navigation remains visible in the iPhone beta without enabling a provider.
 ].filter((w) => conceptsEnabled || iosLimitedTestflight || !w.concept) as {
   id: Category;
   title: string;
@@ -60,29 +57,6 @@ export function WorldGlyph({
     : active
       ? color.onAccent
       : color.text;
-  if (id === "nft")
-    return (
-      <View
-        style={{
-          width: size + 6,
-          height: size + 6,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Hexagon size={size + 6} fill={foreground} color={foreground} />
-        <Text
-          style={{
-            position: "absolute",
-            color: media || active ? "#120D1F" : color.bg,
-            fontFamily: font.bold,
-            fontSize: 9,
-          }}
-        >
-          NFT
-        </Text>
-      </View>
-    );
   if (id === "live")
     return (
       <View style={{ alignItems: "center" }}>

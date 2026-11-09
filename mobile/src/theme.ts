@@ -19,6 +19,7 @@ export const font = {
   semibold: "BarlowSemiBold",
   bold: "BarlowBold",
 };
+export const headerTitleStyle = { fontFamily: font.medium, fontSize: 18 };
 export const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: color.bg },
   page: { padding: 22, paddingBottom: 32, gap: 22 },

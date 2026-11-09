@@ -10,7 +10,6 @@ import {
   Compass,
   Gamepad2,
   Heart,
-  Hexagon,
   Layers3,
   Menu,
   MessageCircle,
@@ -375,9 +374,6 @@ export function InteractiveWalkthrough() {
                   </span>
                   <span>
                     <Radio /> Live
-                  </span>
-                  <span>
-                    <Hexagon /> NFTs
                   </span>
                 </div>
                 <div className="zl-demo-feature">

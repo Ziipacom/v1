@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
-import { Bell, Check, Inbox, RefreshCw, Settings } from "lucide-react-native";
+import { Bell, Check, Inbox, RefreshCw, Settings, type LucideIcon } from "lucide-react-native";
 import { Action, Notice } from "../components/ui";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
@@ -24,7 +24,7 @@ export function InboxContent({ navigation }: { navigation: Navigation }) {
   const { desktop } = useDesktopLayout();
   const { session, guest } = useZiipa();
   return <ScrollView style={styles.screen} contentContainerStyle={desktop ? [workspace.page, workspace.narrow] : styles.page}>
-    {desktop ? <WorkspaceHeading title="Inbox" description="Your creator conversations." /> : <Text accessibilityRole="header" style={styles.title}>Inbox</Text>}
+    {desktop ? <WorkspaceHeading title="Messages" description="Your creator conversations." /> : <Text accessibilityRole="header" style={styles.title}>Messages</Text>}
     <View style={[styles.panel, { alignItems: "center", gap: 15, paddingVertical: 32 }]}>
       <Inbox color={color.muted} size={38} />
       <Text style={[styles.heading, { textAlign: "center" }]}>Direct messages are not available yet</Text>
@@ -41,6 +41,42 @@ export function NotificationMessagesScreen({ navigation }: NativeStackScreenProp
   return <NotificationMessagesContent key={session?.access_token || "guest"} navigation={navigation} />;
 }
 
+function NotificationShortcut({ title, label, icon: Icon, onPress, disabled, busy }: {
+  title: string;
+  label: string;
+  icon: LucideIcon;
+  onPress: () => void;
+  disabled?: boolean;
+  busy?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!(disabled || busy), busy }}
+      disabled={disabled || busy}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        minWidth: 66,
+        minHeight: 52,
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 5,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: color.border,
+        backgroundColor: color.panel,
+        opacity: disabled || busy || pressed ? 0.6 : 1,
+      })}
+    >
+      {busy ? <ActivityIndicator size="small" color={color.text} /> : <Icon size={19} color={color.text} />}
+      <Text style={{ color: color.text, fontFamily: font.medium, fontSize: 11 }}>{title}</Text>
+    </Pressable>
+  );
+}
+
 function NotificationMessagesContent({ navigation }: { navigation: Navigation }) {
   const { desktop } = useDesktopLayout();
   const { session, guest } = useZiipa();
@@ -50,9 +86,9 @@ function NotificationMessagesContent({ navigation }: { navigation: Navigation })
     contentContainerStyle={desktop ? [workspace.page, workspace.narrow] : styles.page}>
     {desktop ? <WorkspaceHeading title="Notifications" description="Private updates from your Ziipa activity." />
       : <Text accessibilityRole="header" style={styles.title}>Notifications</Text>}
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-      <Action title="Refresh notifications" secondary icon={RefreshCw} busy={loading} disabled={!!markingId || !session || guest} onPress={() => void refresh()} />
-      <Action title="Notification settings" secondary icon={Settings} onPress={() => navigation.navigate("Notifications")} />
+    <View accessibilityRole="toolbar" accessibilityLabel="Notification tools" style={{ flexDirection: "row", gap: 8 }}>
+      <NotificationShortcut title="Refresh" label="Refresh notifications" icon={RefreshCw} busy={loading} disabled={!!markingId || !session || guest} onPress={() => void refresh()} />
+      <NotificationShortcut title="Settings" label="Notification settings" icon={Settings} onPress={() => navigation.navigate("Notifications")} />
     </View>
     {!session || guest ? <Notice text="Sign in to see your private Ziipa notification history. No sample messages are shown." /> : <>
       {!!error && <Notice text={error} error />}

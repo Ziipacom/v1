@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   Pressable,
   ScrollView,
   Text,
@@ -14,13 +15,19 @@ import type { AssistantReply } from "../lib/media-os-types";
 import { useZiipa } from "../provider";
 import { color, font, styles } from "../theme";
 
-/** Mounted by the desktop shell, keyed to the signed-in session. */
-export function DesktopAgentDock({
+/** Shared portal and editor assistant, keyed to the signed-in session. */
+export function AutomationAgentDock({
   routeKey,
   openWorkspace,
+  openAudio,
+  bottom = 18,
+  compact = false,
 }: {
   routeKey: string;
   openWorkspace: () => void;
+  openAudio?: () => void;
+  bottom?: number;
+  compact?: boolean;
 }) {
   const { session, api } = useZiipa();
   const [draft, setDraft] = useState("");
@@ -51,6 +58,7 @@ export function DesktopAgentDock({
   const send = () => {
     if (sending || dictation.listening || dictation.pending) return;
     dictation.cancel();
+    if (compact) Keyboard.dismiss();
     if (!draft.trim()) {
       setExpanded(true);
       return;
@@ -90,9 +98,9 @@ export function DesktopAgentDock({
       pointerEvents="box-none"
       style={{
         position: "absolute",
-        bottom: 18,
-        left: 24,
-        right: 24,
+        bottom,
+        left: compact ? 12 : 24,
+        right: compact ? 12 : 24,
         alignItems: "center",
         zIndex: 30,
       }}
@@ -146,7 +154,9 @@ export function DesktopAgentDock({
                   ? "Ziipa is preparing a reply…"
                   : error ||
                     reply?.message?.body ||
-                    "Ask Ziipa to plan your next creation or organize your workspace. Review proposed changes in Media OS before they run."}
+                    (openAudio
+                      ? "Ask Ziipa for a script, shot list or creation plan. You can also create music or narration in Audio."
+                      : "Ask Ziipa to plan your next creation or organize your workspace. Review proposed changes in Media OS before they run.")}
               </Text>
               {!!reply?.proposal && (
                 <Text style={[styles.small, { marginTop: 10 }]}>
@@ -154,6 +164,21 @@ export function DesktopAgentDock({
                 </Text>
               )}
             </ScrollView>
+            {openAudio && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  dictation.cancel();
+                  setExpanded(false);
+                  openAudio();
+                }}
+                style={{ alignSelf: "flex-start", paddingVertical: 8 }}
+              >
+                <Text style={{ color: color.lime, fontFamily: font.medium, fontSize: 13 }}>
+                  Create music or narration
+                </Text>
+              </Pressable>
+            )}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Open Ziipa AI conversation in Media OS"
@@ -237,8 +262,8 @@ export function DesktopAgentDock({
             )}
           </Pressable>
           <TextInput
-            accessibilityLabel="Ask Ziipa to Automate"
-            placeholder="Ask Ziipa to Automate..."
+            accessibilityLabel="Ask Ziipa"
+            placeholder={openAudio && !session ? "Sign in to use Ziipa AI" : "Ask Ziipa..."}
             placeholderTextColor={color.faint}
             value={draft}
             editable={!blocked}

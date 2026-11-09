@@ -19,7 +19,6 @@ import {
   ShieldCheck,
   Trash2,
   UserRound,
-  Wallet,
 } from "lucide-react-native";
 import { Action, Field, Notice } from "../components/ui";
 import { SettingsControls } from "../components/settings-controls";
@@ -380,8 +379,8 @@ function ScopedSettingsScreen({
           Account & connected tools
         </Text>
         <Text style={styles.small}>
-          Manage your profile, networks, wallet and workspace here. Opening a
-          tool does not connect, publish or sign a transaction.
+          Manage your profile, networks and workspace here. Opening a tool does
+          not connect an account or publish anything.
         </Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           <Action
@@ -399,12 +398,6 @@ function ScopedSettingsScreen({
             onPress={() =>
               navigation.navigate("Connections", { tab: "accounts" })
             }
-          />
-          <Action
-            title="Wallet & tokens"
-            icon={Wallet}
-            secondary
-            onPress={() => navigation.navigate("Utility", { kind: "wallet" })}
           />
           <Action
             title="Personal library & rights"
@@ -537,7 +530,7 @@ function ScopedSettingsScreen({
       )}
       {__DEV__ && (
         <Notice
-          text={`Development server: ${apiOrigin}\nWalletConnect pairs with an external wallet. Test networks only; no private keys or seed phrases are collected by Ziipa.`}
+          text={`Development server: ${apiOrigin}`}
         />
       )}
     </ScrollView>
@@ -558,7 +551,7 @@ const policies = {
       ],
       [
         "Your choices",
-        "Camera and microphone access are optional and requested when you open capture or enable a live preview. A private preview is not a broadcast; Go live requires confirmation before media is sent to the configured streaming provider. Connecting a social account does not automatically publish media: each post and live relay needs your approval. File selection uses the operating system picker. WalletConnect uses a third-party relay when you connect. Ziipa stores linked public wallet addresses, chain IDs, metadata and transaction history; it never collects seed phrases or private keys. No contacts, precise location or advertising access is requested.",
+        "Camera and microphone access are optional and requested when you open capture or enable a live preview. A private preview is not a broadcast; Go live requires confirmation before media is sent to the configured streaming provider. Connecting a social account does not automatically publish media: each post and live relay needs your approval. File selection uses the operating system picker. No contacts, precise location or advertising access is requested.",
       ],
       [
         "Deletion and support",
@@ -583,7 +576,7 @@ const policies = {
       ],
       [
         "Preview limitations",
-        "Wallet connections, metadata storage, collectible minting, fixed-supply creator tokens, transfers and tips operate on configured test networks only. Assets have no promised value. IPFS and on-chain records may be permanent; Ziipa does not hold private keys. Live broadcasting, supported social publishing and video rendering require configured provider services and any required approvals. Bluesky support covers supported AT Protocol accounts and posts, not unrestricted federation or every network's private feeds. Twitch supports live relay, not finished-video uploads. Subscriptions and checkout remain unavailable. Full commercial terms require owner and legal review before public distribution.",
+        "Live broadcasting, supported social publishing and video rendering require configured provider services and any required approvals. Bluesky support covers supported AT Protocol accounts and posts, not unrestricted federation or every network's private feeds. Twitch supports live relay, not finished-video uploads. Subscriptions and checkout remain unavailable. Full commercial terms require owner and legal review before public distribution.",
       ],
     ],
   },

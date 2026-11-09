@@ -47,24 +47,24 @@ function nodes(value: unknown): Element[] {
   return [node, ...nodes(node.props.children)];
 }
 
-test("limited iPhone beta keeps every category in the shared menu and bottom dock without enabling concepts", () => {
+test("limited iPhone beta keeps the live category but hides NFTs in the shared menu and dock", () => {
   const ui = categoryUI(true);
-  assert.deepEqual(ui.worlds.map((world: any) => world.id), ["games", "live", "music", "nft", "store"]);
-  assert.deepEqual(ui.worlds.filter((world: any) => world.concept).map((world: any) => world.id), ["live", "nft"]);
+  assert.deepEqual(ui.worlds.map((world: any) => world.id), ["games", "live", "music", "store"]);
+  assert.deepEqual(ui.worlds.filter((world: any) => world.concept).map((world: any) => world.id), ["live"]);
   const selected: string[] = [];
   let inbox = 0;
   const rendered = ui.CategoryDock({ selected: "all", onSelect: (id: string) => selected.push(id), onInbox: () => inbox++ });
   const buttons = nodes(rendered).filter((node) => typeof node.props.label === "string");
-  assert.deepEqual(buttons.map((node) => node.props.label), ["Games", "Live Feed", "Music & Film", "NFTs", "Store", "Inbox"]);
+  assert.deepEqual(buttons.map((node) => node.props.label), ["Games", "Live Feed", "Music & Film", "Store", "Inbox"]);
   for (const button of buttons) button.props.onPress();
-  assert.deepEqual(selected, ["games", "live", "music", "nft", "store"]);
+  assert.deepEqual(selected, ["games", "live", "music", "store"]);
   assert.equal(inbox, 1);
-  for (const id of ["games", "live", "music", "nft", "store", "inbox"]) {
+  for (const id of ["games", "live", "music", "store", "inbox"]) {
     assert.ok(nodes(ui.WorldGlyph({ id })).every((node) => node.type !== undefined), `${id} has a real glyph`);
   }
 });
 
 test("Store is available in ordinary releases while unimplemented concepts remain gated", () => {
   assert.deepEqual(categoryUI(false).worlds.map((world: any) => world.id), ["games", "music", "store"]);
-  assert.deepEqual(categoryUI(false, true).worlds.map((world: any) => world.id), ["games", "live", "music", "nft", "store"]);
+  assert.deepEqual(categoryUI(false, true).worlds.map((world: any) => world.id), ["games", "live", "music", "store"]);
 });

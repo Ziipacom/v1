@@ -8,7 +8,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator, model_serializer
-from sqlalchemy import ForeignKey, String, JSON, DateTime, select, func, delete, update, UniqueConstraint
+from sqlalchemy import ForeignKey, String, JSON, DateTime, select, func, delete, update, or_, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, Session
 from app import Base, User, db, current_user, guard, settings
 from catalog import CATALOG
@@ -19,6 +19,7 @@ from timeline_edit import TimelineEdit, VisualEffect
 router = APIRouter(prefix='/api/creator', dependencies=[Depends(current_user)])
 MEDIA_ROOT = Path(settings.uploads_dir).expanduser().resolve()
 Category = Literal['video', 'music', 'games', 'live', 'nft', 'store']
+MAX_ADDITIONAL_PHOTOS = 9
 SocialProvider = Literal['bluesky', 'facebook', 'instagram', 'tiktok', 'twitch', 'youtube']
 PROVIDERS = {
     'bluesky': ('Bluesky / AT Protocol', 'Posts and portable identity'),
@@ -159,7 +160,7 @@ OVERLAY_LAYOUT = {'version': 1, 'coordinates': 'normalized_media_center',
 @router.get('/config')
 def editor_configuration():
     """Save/preview support is independent of render-worker availability."""
-    return {'overlay_layout': dict(OVERLAY_LAYOUT),
+    return {'overlay_layout': dict(OVERLAY_LAYOUT), 'photo_series': True,
             'profile_images': {'version': 1, 'max_bytes': PROFILE_IMAGE_MAX_BYTES,
                                'content_types': list(PROFILE_IMAGE_TYPES),
                                'cover_samples': list(PROFILE_COVER_SAMPLES)}}
@@ -179,6 +180,7 @@ class ItemInput(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=12)
     city: str = Field(default='', max_length=80)
     media_id: str | None = Field(default=None, max_length=36)
+    photo_ids: list[str] = Field(default_factory=list, max_length=MAX_ADDITIONAL_PHOTOS)
     visibility: Literal['draft', 'published'] = 'draft'
     trim_start: float = Field(default=0, ge=0, le=86400)
     trim_end: float | None = Field(default=None, gt=0, le=86400)
@@ -569,11 +571,14 @@ def save_item(data, session, user, row=None):
                   **data.model_dump(include=data.model_fields_set)}
         if merged.get('media_id') != row.data.get('media_id'):
             merged['caption_source_cues'] = None
+            if 'photo_ids' not in data.model_fields_set:
+                merged['photo_ids'] = []
         try:
             data = ItemInput.model_validate(merged)
         except ValidationError as exc:
             issue = exc.errors(include_url=False, include_context=False, include_input=False)[0]
             raise HTTPException(422, f'The saved draft and these changes are invalid: {issue["msg"]}') from exc
+    media = None
     if data.media_id:
         media = session.get(CreatorMedia, data.media_id)
         if not media or media.owner_id != user.id:
@@ -582,6 +587,17 @@ def save_item(data, session, user, row=None):
             raise HTTPException(422, 'A timeline requires an owned video or audio source.')
     elif data.timeline:
         raise HTTPException(422, 'Save an owned source file before saving timeline regions.')
+    if data.photo_ids:
+        if not media or not media.content_type.startswith('image/'):
+            raise HTTPException(422, 'A photo series must start with an owned image.')
+        if media.id in data.photo_ids or len(set(data.photo_ids)) != len(data.photo_ids):
+            raise HTTPException(422, 'Each photo in the series must be different.')
+        photos = session.scalars(select(CreatorMedia).where(
+            CreatorMedia.id.in_(data.photo_ids), CreatorMedia.owner_id == user.id,
+            CreatorMedia.content_type.startswith('image/'),
+        )).all()
+        if len(photos) != len(data.photo_ids):
+            raise HTTPException(404, 'One or more of your photos could not be found.')
     if data.soundtrack and data.soundtrack.media_id:
         soundtrack = session.get(CreatorMedia, data.soundtrack.media_id)
         if not soundtrack or soundtrack.owner_id != user.id or not soundtrack.content_type.startswith('audio/'):
@@ -816,7 +832,14 @@ def read_media(media_id: str, user: User = Depends(current_user), session: Sessi
     if row.owner_id != user.id:
         if row.owner_id in prefs_for(session, user)['blocked_user_ids']:
             raise HTTPException(404, 'Media not found')
-        shared = session.scalar(select(CreatorItem.id).where(CreatorItem.owner_id == row.owner_id, CreatorItem.visibility == 'published', CreatorItem.data['media_id'].as_string() == media_id))
+        sources = [CreatorItem.data['media_id'].as_string() == media_id]
+        if row.content_type.startswith('image/'):
+            sources.extend(CreatorItem.data['photo_ids'][index].as_string() == media_id
+                           for index in range(MAX_ADDITIONAL_PHOTOS))
+        shared = session.scalar(select(CreatorItem.id).where(
+            CreatorItem.owner_id == row.owner_id, CreatorItem.visibility == 'published',
+            or_(*sources),
+        ).limit(1))
         if not shared:
             raise HTTPException(404, 'Media not found')
         if not account_allows_view(session, row.owner_id, user.id):

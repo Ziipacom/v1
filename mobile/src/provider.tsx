@@ -46,30 +46,19 @@ const empty: Bootstrap = {
   connections: [],
   distributions: [],
 };
+function withoutNft<T extends { category: string }>(rows: T[]): T[] {
+  return rows.some((row) => row.category === "nft")
+    ? rows.filter((row) => row.category !== "nft")
+    : rows;
+}
 function previewData(): Bootstrap {
-  const items = demoEnabled ? (demo as Item[]) : [];
+  const items = demoEnabled ? withoutNft(demo as Item[]) : [];
   const drafts: Item[] = items.map((item) => ({
     ...item,
     id: `preview-${item.id}`,
     creator: "Ziipa Studio",
     visibility: "draft",
   }));
-  const nft = drafts.find((item) => item.category === "nft");
-  if (nft)
-    drafts.push(
-      {
-        ...nft,
-        id: "preview-tidal",
-        title: "Tidal / 002",
-        cover: "/media/ocean.jpg",
-      },
-      {
-        ...nft,
-        id: "preview-frequency",
-        title: "Frequency / 003",
-        cover: "/media/dj.jpg",
-      },
-    );
   return {
     ...empty,
     items,
@@ -174,8 +163,16 @@ export function ZiipaProvider({ children }: React.PropsWithChildren) {
   const profileOwnerToken = useRef<string | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const putData = useCallback((value: Bootstrap) => {
-    dataRef.current = value;
-    setData(value);
+    // Keep these records on the server; hide them in the release UI.
+    const visible = {
+      ...value,
+      items: withoutNft(value.items),
+      drafts: withoutNft(value.drafts),
+      feeds: withoutNft(value.feeds),
+      community_feeds: withoutNft(value.community_feeds),
+    };
+    dataRef.current = visible;
+    setData(visible);
   }, []);
   const profileSync = useRef<ReturnType<typeof createProfileImageSync> | null>(
     null,

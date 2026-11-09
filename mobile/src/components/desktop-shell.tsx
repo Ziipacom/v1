@@ -45,7 +45,7 @@ import {
 } from "lucide-react-native";
 import { Logo } from "./ui";
 import { AccountMenu } from "./account-menu";
-import { DesktopAgentDock } from "./desktop-agent-dock";
+import { AutomationAgentDock } from "./automation-agent-dock";
 import { useDesktopLayout } from "./desktop-layout";
 import { useZiipa } from "../provider";
 import {
@@ -436,12 +436,26 @@ export function DesktopShell({
         minHeight: 0,
       }}
     >
-      {chrome &&
-        Platform.OS === "web" &&
+      {Platform.OS === "web" &&
         createElement(
           "style",
           null,
-          `#ziipa-desktop-portal :focus-visible{outline:2px solid ${color.lime}!important;outline-offset:3px}#ziipa-desktop-portal input:focus-visible{outline-offset:0}@media(prefers-reduced-motion:reduce){#ziipa-desktop-portal *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}`,
+          `
+            #ziipa-desktop-portal :focus-visible {
+              outline: 2px solid ${color.lime} !important;
+              outline-offset: 3px;
+            }
+            #root :is(input, textarea, select, [contenteditable="true"]):focus {
+              outline: none !important;
+            }
+            @media (prefers-reduced-motion: reduce) {
+              #ziipa-desktop-portal * {
+                scroll-behavior: auto !important;
+                animation: none !important;
+                transition: none !important;
+              }
+            }
+          `,
         )}
       {chrome && (
         <View
@@ -733,8 +747,8 @@ export function DesktopShell({
         >
           {children}
         </View>
-        {chrome && (
-          <DesktopAgentDock
+        {chrome && route.name !== "Composer" && (
+          <AutomationAgentDock
             key={session?.access_token || "guest"}
             routeKey={route.name}
             openWorkspace={() => navigate("MediaOS", { tab: "Assistant" })}

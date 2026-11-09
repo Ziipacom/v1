@@ -14,7 +14,6 @@ import {
   ArrowRight,
   Clapperboard,
   Gamepad2,
-  Hexagon,
   Music2,
   Radio,
   Store,
@@ -214,7 +213,6 @@ export const allCategories: {
   { id: "games", title: "Games", icon: Gamepad2 },
   { id: "music", title: "Music & film", icon: Music2 },
   { id: "live", title: "Live feeds", icon: Radio, concept: true },
-  { id: "nft", title: "NFTs", icon: Hexagon, concept: true },
   { id: "store", title: "Store", icon: Store, concept: true },
 ];
 export const categories = allCategories.filter(

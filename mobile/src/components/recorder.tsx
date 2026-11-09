@@ -7,6 +7,7 @@ import {
 } from "expo-camera";
 import * as FileSystem from "expo-file-system/legacy";
 import { VideoView, useVideoPlayer } from "expo-video";
+import { Image } from "expo-image";
 import type { UploadFile } from "../lib/api";
 import { RecorderLayout, type RecorderProps } from "./recorder-ui";
 import { Action } from "./ui";
@@ -45,6 +46,7 @@ export function Recorder({
   onCapture,
   onNetworks,
 }: RecorderProps) {
+  const photo = mode === "photo";
   const camera = useRef<CameraView | null>(null);
   const mounted = useRef(true);
   const working = useRef(false);
@@ -116,14 +118,16 @@ export function Recorder({
         throw new Error(
           "Allow camera access to show your live preview. You can update access in your device settings.",
         );
-      const mic = microphonePermission?.granted
-        ? microphonePermission
-        : await requestMicrophone();
-      if (!mounted.current) return;
-      if (!mic.granted)
-        throw new Error(
-          "Allow microphone access to record video with sound. You can update access in your device settings.",
-        );
+      if (!photo) {
+        const mic = microphonePermission?.granted
+          ? microphonePermission
+          : await requestMicrophone();
+        if (!mounted.current) return;
+        if (!mic.granted)
+          throw new Error(
+            "Allow microphone access to record video with sound. You can update access in your device settings.",
+          );
+      }
       if (AppState.currentState !== "active")
         throw new Error("Return to Ziipa, then enable your camera again.");
       setReady(false);
@@ -138,20 +142,23 @@ export function Recorder({
   async function start() {
     if (!camera.current || !ready || recordingRef.current || working.current)
       return;
-    recordingRef.current = true;
+    recordingRef.current = !photo;
     working.current = true;
-    setRecording(true);
+    setRecording(!photo);
+    if (photo) setBusy(true);
     setSeconds(0);
     setError("");
     let uri: string | undefined;
     try {
-      const result = await camera.current.recordAsync({
+      const result = photo
+        ? await camera.current.takePictureAsync({ quality: 0.9, exif: false })
+        : await camera.current.recordAsync({
         maxDuration: recordingSeconds,
         maxFileSize: recordingBytes,
         ...(Platform.OS === "ios" ? { codec: "avc1" as const } : {}),
       });
       uri = result?.uri;
-      if (!uri) throw new Error("No clip was captured. Try recording again.");
+      if (!uri) throw new Error(photo ? "No photo was captured. Try again." : "No clip was captured. Try recording again.");
       if (!mounted.current) {
         await FileSystem.deleteAsync(uri, { idempotent: true });
         return;
@@ -167,8 +174,8 @@ export function Recorder({
       clipUri.current = uri;
       setClip({
         uri,
-        name: `ziipa-recording-${Date.now()}.${isMov ? "mov" : "mp4"}`,
-        mimeType: isMov ? "video/quicktime" : "video/mp4",
+        name: photo ? `ziipa-photo-${Date.now()}.jpg` : `ziipa-recording-${Date.now()}.${isMov ? "mov" : "mp4"}`,
+        mimeType: photo ? "image/jpeg" : isMov ? "video/quicktime" : "video/mp4",
         size,
       });
     } catch (e) {
@@ -214,7 +221,7 @@ export function Recorder({
       error={error}
       recovery={
         cameraPermission?.canAskAgain === false ||
-        microphonePermission?.canAskAgain === false ? (
+        (!photo && microphonePermission?.canAskAgain === false) ? (
           <Action
             title="Open device settings"
             secondary
@@ -235,7 +242,7 @@ export function Recorder({
       onNetworks={onNetworks}
     >
       {clip ? (
-        <ClipReview uri={clip.uri} />
+        photo ? <Image source={{ uri: clip.uri }} style={StyleSheet.absoluteFill} contentFit="contain" accessibilityLabel="Captured photo" /> : <ClipReview uri={clip.uri} />
       ) : enabled ? (
         <CameraView
           key={facing}
@@ -243,7 +250,7 @@ export function Recorder({
           style={StyleSheet.absoluteFill}
           facing={facing}
           mirror={facing === "front"}
-          mode="video"
+          mode={photo ? "picture" : "video"}
           mute={false}
           videoQuality="720p"
           videoBitrate={recordingBitrate}

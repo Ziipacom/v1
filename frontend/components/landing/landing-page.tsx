@@ -7,7 +7,6 @@ import {
   Clapperboard,
   Gamepad2,
   Globe2,
-  Hexagon,
   Layers3,
   Menu,
   Music2,
@@ -20,7 +19,6 @@ import {
   Sparkles,
   Store,
   Users,
-  Wallet,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -49,13 +47,12 @@ const worlds = [
   { name: 'Music & film', icon: Music2 },
   { name: 'Gaming', icon: Gamepad2 },
   { name: 'Live feeds', icon: Radio },
-  { name: 'NFTs', icon: Hexagon },
   { name: 'Marketplace', icon: Store },
 ];
 const faqs = [
   [
     'What is Ziipa?',
-    'Ziipa brings media discovery and creator tools into one space. The web preview lets you browse collections, upload and publish to Ziipa, create custom feeds, and choose personal content filters. Gaming, live, NFT, and marketplace experiences are part of the wider product vision.',
+    'Ziipa brings media discovery and creator tools into one space. The web preview lets you browse collections, upload and publish to Ziipa, create custom feeds, and choose personal content filters.',
   ],
   [
     'Can I use Ziipa today?',
@@ -67,7 +64,7 @@ const faqs = [
   ],
   [
     'Which features are still coming?',
-    'AT Protocol identity and federation, live broadcasting, adaptive streaming, AI editing, licensed sound libraries, wallet payments, creator subscriptions, NFT minting, and marketplace checkout still require production integrations. They are not active in the current web demo.',
+    'AT Protocol identity and federation, live broadcasting, adaptive streaming, AI editing, licensed sound libraries, creator subscriptions, and marketplace checkout still require production integrations. They are not active in the current web demo.',
   ],
   [
     'What does “your feed, your rules” mean?',
@@ -194,8 +191,7 @@ export default function LandingPage() {
             <span>iOS & Android coming soon</span>
           </div>
           <p className="zl-hero-disclosure">
-            Creator tools are available in the web demo. Live broadcasts, wallets, and
-            on-chain features are in development.
+            Creator tools are available in the web demo.
           </p>
         </div>
         <HeroAppPreview />
@@ -356,22 +352,6 @@ export default function LandingPage() {
           <article className="zl-feature zl-feature-small">
             <div className="zl-feature-top">
               <span className="zl-feature-icon">
-                <Hexagon />
-              </span>
-              <span className="zl-status planned">CONCEPT PREVIEW</span>
-            </div>
-            <h3>Collect a little possibility.</h3>
-            <p>
-              Explore digital collection concepts and draft your own. Wallets,
-              token ownership, and minting come later.
-            </p>
-            <Link href="/portal">
-              Discover collections <ArrowUpRight size={16} />
-            </Link>
-          </article>
-          <article className="zl-feature zl-feature-small">
-            <div className="zl-feature-top">
-              <span className="zl-feature-icon">
                 <Store />
               </span>
               <span className="zl-status planned">LISTINGS PREVIEW</span>
@@ -486,7 +466,7 @@ export default function LandingPage() {
           </article>
           <article className="zl-capability-future">
             <span>
-              <Wallet />
+              <Store />
             </span>
             <div>
               <div className="zl-future-label">ON THE ROADMAP</div>

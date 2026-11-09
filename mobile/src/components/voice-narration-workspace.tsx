@@ -517,7 +517,7 @@ function ScopedVoiceNarrationWorkspace({
             {held.kind === "preset"
               ? "AI-generated preset speech. "
               : "Your direct microphone recording. "}
-            Review the result before saving, sharing or minting. Generation does
+            Review the result before saving or sharing. Generation does
             not establish exclusive rights.
           </Text>
         </View>

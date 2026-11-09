@@ -9,7 +9,8 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { pickCreatorMedia } from "../lib/creator-media-picker";
+import { maxCreationPhotos, pickCreatorMedia } from "../lib/creator-media-picker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system/legacy";
 import { useIsFocused, usePreventRemove } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -41,6 +42,8 @@ import {
 } from "lucide-react-native";
 import { Action, Cover, Field, Notice, Pill } from "../components/ui";
 import { FloatButton, worlds } from "../components/floating";
+import { AutomationAgentDock } from "../components/automation-agent-dock";
+import { PhotoSteps } from "../components/photo-steps";
 import {
   EditorPreview,
   EditorSoundtrack,
@@ -87,6 +90,8 @@ import {
 import { savedComposerParams } from "../lib/composer-navigation";
 import {
   createEditorSaveController,
+  creationPublishRestriction,
+  creationPublishTargets,
   editorSaveLabel,
   matchesEditorSubmission,
   type EditorSavePhase,
@@ -96,6 +101,7 @@ import {
   validateCaptionCues,
 } from "../lib/auto-captions";
 import { audioCreationSource, sourceMintItem } from "../lib/editor-source";
+import { iosLimitedTestflight } from "../lib/config";
 import { inCreativeWorld, parseEditing, parsePrice } from "../lib/domain";
 import {
   rememberLocalMedia,
@@ -137,9 +143,10 @@ export function ComposerScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Composer">) {
   const { desktop } = useDesktopLayout();
-  const existing = route.params?.item;
+  const insets = useSafeAreaInsets();
+  const existing = route.params?.item?.category === "nft" ? undefined : route.params?.item;
   const persistedId = useRef(existing?.id);
-  const remix = route.params?.remix;
+  const remix = route.params?.remix?.category === "nft" ? undefined : route.params?.remix;
   const {
     data,
     session,
@@ -188,7 +195,8 @@ export function ComposerScreen({
     guest || overlayLayoutSupported(overlayConfig);
   const originalUpload = !guest && session ? route.params?.upload : undefined;
   const [category, setCategory] = useState<Category>(
-    existing?.category || remix?.category || route.params?.category || "music",
+    existing?.category || remix?.category ||
+    (route.params?.category === "nft" ? undefined : route.params?.category) || "music",
   );
   const samples = data.items.filter((i) => inCreativeWorld(i, category));
   const [sample, setSample] = useState<Item | undefined>(
@@ -220,6 +228,16 @@ export function ComposerScreen({
       : "",
   );
   const [file, setFile] = useState<UploadFile | null>(null);
+  const [photos, setPhotos] = useState<
+    { id?: string; file?: UploadFile; localUri?: string }[]
+  >(() =>
+    guest
+      ? (existing?.local_photo_uris || [])
+          .filter(isRetainedDraftMedia)
+          .map((localUri) => ({ localUri }))
+      : (existing?.photo_ids || []).map((id) => ({ id })),
+  );
+  const [photoIndex, setPhotoIndex] = useState(0);
   const generatedSource = useRef<{
     uri: string;
     release: () => Promise<void>;
@@ -235,7 +253,7 @@ export function ComposerScreen({
     },
     [],
   );
-  const [recorderMode, setRecorderMode] = useState<"record" | "live" | null>(
+  const [recorderMode, setRecorderMode] = useState<"record" | "photo" | null>(
     null,
   );
   const capturedUris = useRef(new Set<string>());
@@ -248,10 +266,10 @@ export function ComposerScreen({
   useEffect(
     () => () => {
       for (const uri of selectedUris.current) {
-        if (!retainedCaptureUris.current.has(uri)) forgetLocalMedia(uri);
+        if (!isRetainedDraftMedia(uri) && !retainedCaptureUris.current.has(uri)) forgetLocalMedia(uri);
       }
       for (const uri of capturedUris.current) {
-        if (retainedCaptureUris.current.has(uri)) continue;
+        if (isRetainedDraftMedia(uri) || retainedCaptureUris.current.has(uri)) continue;
         if (Platform.OS === "web") URL.revokeObjectURL(uri);
         else
           void FileSystem.deleteAsync(uri, { idempotent: true }).catch(
@@ -262,19 +280,20 @@ export function ComposerScreen({
     [],
   );
   useEffect(() => {
+    const active = new Set([file?.uri, ...photos.map((photo) => photo.localUri)]);
     for (const uri of selectedUris.current) {
-      if (uri === file?.uri || retainedCaptureUris.current.has(uri)) continue;
+      if (active.has(uri) || isRetainedDraftMedia(uri) || retainedCaptureUris.current.has(uri)) continue;
       forgetLocalMedia(uri);
       selectedUris.current.delete(uri);
     }
     for (const uri of capturedUris.current) {
-      if (uri === file?.uri || retainedCaptureUris.current.has(uri)) continue;
+      if (active.has(uri) || isRetainedDraftMedia(uri) || retainedCaptureUris.current.has(uri)) continue;
       if (Platform.OS === "web") URL.revokeObjectURL(uri);
       else
         void FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
       capturedUris.current.delete(uri);
     }
-  }, [file]);
+  }, [file, photos]);
   const [mediaId, setMediaId] = useState(
     existing?.media_id || originalUpload?.id || null,
   );
@@ -408,6 +427,8 @@ export function ComposerScreen({
     [start, end],
   );
   function resetSource() {
+    setPhotos([]);
+    setPhotoIndex(0);
     const held = generatedSource.current;
     generatedSource.current = null;
     if (held && !isRetainedDraftMedia(held.uri))
@@ -464,7 +485,6 @@ export function ComposerScreen({
     | "share-draft"
     | "share-publish"
     | "desktop-draft"
-    | "mint-draft"
     | "caption-draft";
   type PendingSubmission = {
     payload: ItemInput;
@@ -486,6 +506,7 @@ export function ComposerScreen({
   const [rechecking, setRechecking] = useState(false);
   const recheckLock = useRef(false);
   const [deliveryNeedsReview, setDeliveryNeedsReview] = useState(false);
+  const publishRestriction = creationPublishRestriction(category, existing?.visibility);
   const saveOwner = useRef(session?.access_token || (guest ? "guest" : null));
   saveOwner.current = session?.access_token || (guest ? "guest" : null);
   const saveGeneration = useRef(0);
@@ -533,6 +554,7 @@ export function ComposerScreen({
     sourceCaptionTrack,
     price,
     mediaId,
+    photos,
     file: file
       ? {
           uri: file.uri,
@@ -567,11 +589,7 @@ export function ComposerScreen({
     !existing && (originalUpload || remix) ? "" : fingerprint,
   );
   const unsaved = fingerprint !== cleanFingerprint || captionDraftPending;
-  const mintSource = sourceMintItem(
-    saved || existing,
-    session?.user.id,
-    unsaved,
-  );
+  const mintSource = sourceMintItem(saved || existing, session?.user.id, unsaved);
   usePreventRemove(
     busy && savePhase !== "refresh" && savePhase !== "distribution",
     () =>
@@ -663,6 +681,13 @@ export function ComposerScreen({
       : (!file ? existing?.timeline : null) || null,
     visual_effect: visualEffect,
   };
+  const selectedPhoto = photos[photoIndex - 1];
+  const photoPreview = selectedPhoto?.id
+    ? { ...canvas, cover: `/api/creator/media/${selectedPhoto.id}`, media_url: null }
+    : canvas;
+  const mainLocalUri = file?.uri ||
+    (guest && base.media_url && isRetainedDraftMedia(base.media_url) ? base.media_url : undefined);
+  const photoPreviewUri = selectedPhoto ? selectedPhoto.localUri : mainLocalUri;
   function fileFromAsset(
     asset: {
       uri: string;
@@ -695,17 +720,25 @@ export function ComposerScreen({
         kind === "media" ? ["image/*", "video/*", "audio/*"] : ["audio/*"],
         kind === "media" ? "media" : false,
         current,
+        kind === "media",
       );
       if (result.canceled || !current()) return;
-      const asset = result.assets[0];
-      const info =
-        Platform.OS === "web" ? null : await FileSystem.getInfoAsync(asset.uri);
+      if (result.assets.length > maxCreationPhotos)
+        throw new Error(`Choose up to ${maxCreationPhotos} photos.`);
+      const files = await Promise.all(result.assets.map(async (asset) => {
+        const info = asset.size == null && Platform.OS !== "web"
+          ? await FileSystem.getInfoAsync(asset.uri)
+          : null;
+        const size = asset.size ?? (info?.exists && !info.isDirectory ? info.size : 0);
+        if (!size || size > uploadLimit)
+          throw new Error("Choose files no larger than 100 MB each.");
+        return fileFromAsset({ ...asset, size });
+      }));
       if (!current()) return;
-      const size =
-        asset.size ?? (info?.exists && !info.isDirectory ? info.size : 0);
-      if (!size || size > uploadLimit)
-        throw new Error("Choose a non-empty file no larger than 100 MB.");
-      const selected = fileFromAsset({ ...asset, size });
+      const [selected, ...additional] = files;
+      if (!selected) return;
+      if (additional.length && files.some((entry) => !entry.mimeType.startsWith("image/")))
+        throw new Error("Choose up to 10 photos together, or select one video or audio file.");
       if (kind !== "media" && !selected.mimeType.startsWith("audio/"))
         throw new Error("Choose an audio file.");
       if (kind === "soundtrack") {
@@ -721,9 +754,14 @@ export function ComposerScreen({
         setSoundtrackName(selected.name.replace(/\.[^.]+$/, ""));
       } else {
         resetSource();
-        rememberLocalMedia(selected.uri);
-        selectedUris.current.add(selected.uri);
+        for (const entry of files) {
+          rememberLocalMedia(entry.uri);
+          selectedUris.current.add(entry.uri);
+          if (Platform.OS === "web" && entry.uri.startsWith("blob:"))
+            capturedUris.current.add(entry.uri);
+        }
         setFile(selected);
+        setPhotos(additional.map((entry) => ({ file: entry, localUri: entry.uri })));
         setMediaId(null);
         setTitle((current) => current || selected.name.replace(/\.[^.]+$/, ""));
         setTab("Edit");
@@ -736,17 +774,23 @@ export function ComposerScreen({
     }
   }
   function useRecording(cameraFile: UploadFile) {
-    resetSource();
     rememberLocalMedia(cameraFile.uri);
     selectedUris.current.add(cameraFile.uri);
     capturedUris.current.add(cameraFile.uri);
-    setFile(cameraFile);
-    setMediaId(null);
-    setCategory("video");
+    const photo = cameraFile.mimeType.startsWith("image/");
+    const append = photo && canvas.content_type?.startsWith("image/") && !!(file || mediaId || mainLocalUri);
+    if (append && photos.length + 1 < maxCreationPhotos) {
+      setPhotos([...photos, { file: cameraFile, localUri: cameraFile.uri }]);
+      setPhotoIndex(photos.length + 1);
+    } else if (!append) {
+      resetSource();
+      setFile(cameraFile);
+      setMediaId(null);
+      if (!photo) setCategory("video");
+    }
+    if (photo) setTitle((current) => current || cameraFile.name.replace(/\.[^.]+$/, ""));
     setSaved(null);
     setError("");
-    setStart("0");
-    setEnd("");
     setPaused(true);
     setRecorderMode(null);
     setTab("Edit");
@@ -762,12 +806,11 @@ export function ComposerScreen({
       );
       return;
     }
-    if (visibility === "published" && deliveryNeedsReview && targets.length) {
-      setError(
-        "Your creation was saved. Check the network outbox before requesting delivery again, or deselect external destinations to update only Ziipa.",
-      );
-      return;
-    }
+    if (visibility === "published" && (guest || publishRestriction)) return;
+    const publishingToZiipaOnly = visibility === "published" && deliveryNeedsReview && targets.length > 0;
+    const saveTargets = visibility === "published"
+      ? creationPublishTargets(targets, deliveryNeedsReview)
+      : targets;
     if (
       visibility === "published" &&
       saved?.visibility === "published" &&
@@ -870,6 +913,7 @@ export function ComposerScreen({
           category,
           media_url: file?.uri || base.media_url,
           content_type: file?.mimeType || base.content_type,
+          local_photo_uris: photos.flatMap((photo) => photo.localUri ? [photo.localUri] : []),
           tags: parsedTags,
           city: city.trim(),
           price_cents,
@@ -918,7 +962,15 @@ export function ComposerScreen({
               generatedSource.current.release,
             );
             generatedSource.current = null;
+          } else if (file.mimeType.startsWith("image/")) {
+            retainDraftMedia(`${draft.id}:source`, file.uri);
           }
+        }
+        for (let index = 0; index < maxCreationPhotos - 1; index++) {
+          const key = `${draft.id}:photo:${index}`;
+          const uri = draft.local_photo_uris?.[index];
+          if (uri) retainDraftMedia(key, uri);
+          else releaseDraftMedia(key);
         }
         if (soundtrackFile) {
           retainDraftMedia(
@@ -957,35 +1009,52 @@ export function ComposerScreen({
             assertCurrent();
             // Older APIs ignore unknown overlay fields. Check before uploading
             // or writing so an unsupported edit is never silently discarded.
-            if (hasAdvancedOverlays(overlays)) {
+            if (hasAdvancedOverlays(overlays) || photos.length) {
               let config: unknown;
               try {
                 config = await api("/api/creator/config");
               } catch (error) {
                 if ((error as { status?: number }).status === 404)
-                  throw new Error(OVERLAY_API_REQUIRED);
+                  throw new Error(photos.length ? "Photo series saves require the updated Ziipa server." : OVERLAY_API_REQUIRED);
                 throw new Error(
-                  "Could not verify overlay save support. Your changes are still here. Refresh overlay status and try again.",
+                  "Could not verify save support. Your changes are still here. Try again shortly.",
                 );
               }
               assertCurrent();
               setOverlayConfig(config);
-              if (!overlayLayoutSupported(config))
+              if (hasAdvancedOverlays(overlays) && !overlayLayoutSupported(config))
                 throw new Error(OVERLAY_API_REQUIRED);
+              if (photos.length && (config as { photo_series?: boolean } | null)?.photo_series !== true)
+                throw new Error("Photo series saves require the updated Ziipa server.");
             }
             let selectedId = mediaId;
+            const sourceCount = photos.length + 1;
             if (file && !selectedId) {
               phase("upload_source");
               const uploaded = await uploadMedia(
                 file,
                 session!.access_token,
                 (value) => {
-                  if (current()) setProgress(value);
+                  if (current()) setProgress(value / sourceCount);
                 },
               );
               assertCurrent();
               selectedId = uploaded.id;
               setMediaId(selectedId);
+            }
+            const uploadedPhotos = [...photos];
+            if (photos.some((photo) => !photo.id)) {
+              phase("upload_source");
+              for (const [index, photo] of photos.entries()) {
+                if (photo.id) continue;
+                if (!photo.file) throw new Error("Select the missing photo again.");
+                const uploaded = await uploadMedia(photo.file, session!.access_token, (value) => {
+                  if (current()) setProgress((100 * (index + 1) + value) / sourceCount);
+                });
+                assertCurrent();
+                uploadedPhotos[index] = { ...photo, id: uploaded.id };
+                setPhotos([...uploadedPhotos]);
+              }
             }
             let selectedSoundtrackId = soundtrackId;
             if (soundtrackFile && !selectedSoundtrackId) {
@@ -1008,6 +1077,9 @@ export function ComposerScreen({
               tags: parsedTags,
               city: city.trim(),
               media_id: selectedId,
+              ...(uploadedPhotos.length || existing?.photo_ids?.length
+                ? { photo_ids: uploadedPhotos.map((photo) => photo.id!) }
+                : {}),
               visibility,
               ...parsed,
               caption_source_cues: sourceCaptionTrack,
@@ -1024,13 +1096,14 @@ export function ComposerScreen({
                     start: soundtrackStart,
                   }
                 : null,
-              distribution_targets: targets,
+              distribution_targets: saveTargets,
             };
             return {
               payload,
               cleanFingerprint: JSON.stringify({
                 ...formSnapshot,
                 mediaId: selectedId,
+                photos: uploadedPhotos,
                 soundtrackId: selectedSoundtrackId,
                 remixId: null,
               }),
@@ -1061,13 +1134,13 @@ export function ComposerScreen({
             setCleanFingerprint(prepared.cleanFingerprint);
             navigation.replaceParams(savedComposerParams(result));
           },
-          ...(visibility === "published" && targets.length
+          ...(visibility === "published" && saveTargets.length
             ? {
                 distribute: async (result: Item) => {
                   assertCurrent();
                   const distribution = await api<Distribution[]>(
                     `/api/creator/items/${result.id}/distribute`,
-                    { providers: targets },
+                      { providers: saveTargets },
                   );
                   assertCurrent();
                   const confirmed = { ...result, distribution };
@@ -1090,9 +1163,14 @@ export function ComposerScreen({
             "Ziipa did not confirm the save response. It may already have saved or published this creation. Your edits are intact. Use Check saved status; do not publish again yet.",
           );
         } else if (outcome.kind === "confirmed") {
-          setDeliveryNeedsReview(outcome.distributionUnconfirmed);
+          setDeliveryNeedsReview(deliveryNeedsReview || outcome.distributionUnconfirmed);
           setSaveNotice(
-            outcome.warnings.join("\n") ||
+            [
+              ...outcome.warnings,
+              ...(publishingToZiipaOnly
+                ? ["Published to Ziipa only. Check the network outbox for the earlier delivery."]
+                : []),
+            ].join("\n") ||
               (visibility === "published"
                 ? "Creation published to Ziipa."
                 : "Private draft saved to your account."),
@@ -1225,10 +1303,10 @@ export function ComposerScreen({
       }}
     >
       <EditorPreview
-        item={canvas}
+        item={photoPreview}
         paused={paused}
         muted={muted}
-        localUri={file?.uri}
+        localUri={photoPreviewUri}
         clips={clips}
         seek={seek}
         onTime={setCurrentTime}
@@ -1283,9 +1361,11 @@ export function ComposerScreen({
           alignItems: "center",
         }}
       >
-        <Text style={eStyle.badge}>
-          {guest ? "SAMPLE EDITOR" : "YOUR CREATION"}
-        </Text>
+        {photos.length ? (
+          <PhotoSteps index={photoIndex} count={photos.length + 1} onChange={setPhotoIndex} />
+        ) : (
+          <Text style={eStyle.badge}>{guest ? "SAMPLE EDITOR" : "YOUR CREATION"}</Text>
+        )}
         <FloatButton
           label={paused ? "Play editing preview" : "Pause editing preview"}
           icon={paused ? Play : Pause}
@@ -1353,7 +1433,11 @@ export function ComposerScreen({
       ))}
     </View>
   );
-  const timeline = canvas.content_type?.startsWith("image/") ? (
+  const timeline = photos.length ? (
+    <Text style={[styles.small, { padding: 16 }]}>
+      Use the arrows on the preview to review all {photos.length + 1} photos.
+    </Text>
+  ) : canvas.content_type?.startsWith("image/") ? (
     <View style={{ padding: 16, gap: 5 }}>
       <Text style={styles.label}>Still canvas · 6 seconds</Text>
       <Text style={[styles.small, { fontSize: 11 }]}>
@@ -1488,6 +1572,14 @@ export function ComposerScreen({
       </View>
       {tab === "Media" && (
         <>
+          <Field
+            label="Creation title"
+            value={title}
+            onChangeText={setTitle}
+            maxLength={140}
+            editable={!busy}
+            placeholder="Give it a name"
+          />
           {guest && (
             <>
               <Text style={styles.small}>
@@ -1537,16 +1629,17 @@ export function ComposerScreen({
                   Add your media
                 </Text>
                 <Text style={styles.small}>
-                  Images, video, audio, GIF, HEIC, MOV and more · up to 100 MB
+                  Up to 10 photos, or one video or audio file · 100 MB per file
                 </Text>
               </View>
             </View>
-            {!!file && (
+            {!!photos.length ? (
+              <Text style={styles.small}>{photos.length + 1} photos selected</Text>
+            ) : !!file ? (
               <Text style={[styles.small, { color: color.text }]}>
                 {file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB
               </Text>
-            )}
-            {!file && !!mediaId && (
+            ) : !!mediaId && (
               <Text style={styles.small}>Using your uploaded media</Text>
             )}
             <View style={styles.row}>
@@ -1561,8 +1654,22 @@ export function ComposerScreen({
               </View>
               <View style={{ flex: 1 }}>
                 <Action
-                  title="Record"
+                  title="Camera"
                   icon={Camera}
+                  secondary
+                  disabled={busy || photos.length + 1 >= maxCreationPhotos}
+                  onPress={() => {
+                    setPaused(true);
+                    setRecorderMode("photo");
+                  }}
+                />
+              </View>
+            </View>
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Action
+                  title="Record video"
+                  icon={Film}
                   secondary
                   disabled={busy}
                   onPress={() => {
@@ -1571,18 +1678,20 @@ export function ComposerScreen({
                   }}
                 />
               </View>
+              <View style={{ flex: 1 }}>
+                <Action
+                  title="AI Creation"
+                  icon={Sparkles}
+                  secondary
+                  disabled={busy}
+                  onPress={() => {
+                    setPaused(true);
+                    setMusicPurpose("creation");
+                    setTab("Audio");
+                  }}
+                />
+              </View>
             </View>
-            <Action
-              title="AI Creation"
-              icon={Sparkles}
-              secondary
-              disabled={busy}
-              onPress={() => {
-                setPaused(true);
-                setMusicPurpose("creation");
-                setTab("Audio");
-              }}
-            />
             <Text style={styles.small}>
               Create instrumental music or voice narration, then preview and
               choose the audio before saving. Video generation and voice cloning
@@ -1604,14 +1713,6 @@ export function ComposerScreen({
               </Text>
             </Pressable>
           </View>
-          <Field
-            label="Creation title"
-            value={title}
-            onChangeText={setTitle}
-            maxLength={140}
-            editable={!busy}
-            placeholder="Give it a name"
-          />
         </>
       )}
       {tab === "Edit" && (
@@ -1891,61 +1992,6 @@ export function ComposerScreen({
             icon={Pencil}
             onPress={() => setTab("Save")}
           />
-          <View style={[styles.panel, { gap: 10 }]}>
-            <View style={styles.row}>
-              <Wallet size={20} color={color.lime} />
-              <Text style={styles.label}>Optional source minting</Text>
-            </View>
-            <Text style={styles.small}>
-              Sharing does not require minting. Wallet reviews the saved source
-              file, not your rendered edits or an attached soundtrack. Export
-              your edited version first if you want that version. Uploading or
-              generating audio does not establish rights or copyright
-              exclusivity; review permissions before sharing or minting.
-            </Text>
-            {guest ? (
-              <Text style={styles.small}>
-                Sign in and save your own media to review source minting.
-                Samples cannot be minted.
-              </Text>
-            ) : mintSource ? (
-              <Action
-                title="Mint source media"
-                icon={Wallet}
-                secondary
-                disabled={busy}
-                onPress={() =>
-                  navigation.navigate("Utility", {
-                    kind: "wallet",
-                    item: mintSource,
-                  })
-                }
-              />
-            ) : (
-              <Action
-                title={
-                  busy && activeSaveButton === "mint-draft"
-                    ? editorSaveLabel(savePhase, progress)
-                    : "Save private draft for source mint review"
-                }
-                icon={Save}
-                secondary
-                busy={busy && activeSaveButton === "mint-draft"}
-                disabled={
-                  busy ||
-                  !!pendingSubmission ||
-                  rechecking ||
-                  (!file && !mediaId) ||
-                  existing?.visibility === "hidden"
-                }
-                onPress={() => void save("draft", "mint-draft")}
-              />
-            )}
-            <Text style={[styles.small, { fontSize: 11 }]}>
-              No mint occurs here. IPFS storage, public metadata and wallet
-              signatures require separate review in Wallet.
-            </Text>
-          </View>
           <View style={styles.separator} />
           <View style={styles.between}>
             <View style={{ flex: 1, gap: 3 }}>
@@ -1974,7 +2020,7 @@ export function ComposerScreen({
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Ziipa</Text>
                 <Text style={styles.small}>
-                  Creator profile · discovery · wallet metadata
+                  Creator profile · discovery
                 </Text>
               </View>
               <Check size={20} color={color.lime} />
@@ -2068,11 +2114,10 @@ export function ComposerScreen({
           text={`Remix attribution: ${remix.title} by ${remix.creator}. ${guest ? "Sample media only." : "Bring your own licensed media; the source is not copied."}`}
         />
       )}
-      {(category === "nft" || category === "live") && (
+      {category === "live" && (
         <Text style={styles.small}>
-          {category === "nft"
-            ? "Save your own media as a private draft, then mint it through Wallet. Sample artwork cannot be minted."
-            : "Save the broadcast setup as a draft, then connect a live provider in Connected networks."}
+          Save the broadcast setup as a draft, then connect a live provider in
+          Connected networks.
         </Text>
       )}
       {!!error && <Notice text={error} error />}
@@ -2165,7 +2210,7 @@ export function ComposerScreen({
               navigation.navigate("Connections", { tab: "outbox" })
             }
           />
-          {!guest && saved.media_id && (
+          {!guest && saved.media_id && !saved.photo_ids?.length && (
             <Action
               title="Render & export saved edit"
               icon={Share2}
@@ -2186,7 +2231,7 @@ export function ComposerScreen({
                 }
               />
             )}
-          {!guest && saved.visibility === "published" && saved.media_id && (
+          {!guest && saved.visibility === "published" && saved.media_id && !saved.photo_ids?.length && (
             <Action
               title="Publish directly to authorized networks"
               icon={Share2}
@@ -2228,7 +2273,7 @@ export function ComposerScreen({
             />
           )}
           <Action
-            title="Continue to Share"
+            title="Publish"
             icon={ChevronRight}
             secondary
             disabled={busy || rechecking || !!pendingSubmission}
@@ -2237,6 +2282,24 @@ export function ComposerScreen({
         </>
       ) : tab === "Share" ? (
         <>
+          {!guest && publishRestriction === "category" && (
+            <>
+              <Notice text="This category is for broadcast or mint drafts. To publish the media as a Ziipa post, choose a different category in Save." />
+              <Action
+                title="Change category"
+                icon={Pencil}
+                secondary
+                disabled={busy}
+                onPress={() => setTab("Save")}
+              />
+            </>
+          )}
+          {!guest && publishRestriction === "removed" && (
+            <Notice text="This post was removed by moderation. Contact support to appeal." />
+          )}
+          {!guest && !publishRestriction && deliveryNeedsReview && !!targets.length && (
+            <Notice text="You can publish to Ziipa. This publish won’t retry external delivery. Review the earlier request in the network outbox." />
+          )}
           {!guest ? (
             <Action
               title={
@@ -2246,7 +2309,6 @@ export function ComposerScreen({
                     ? "Published to Ziipa"
                     : "Publish Creation"
               }
-              secondary
               icon={Upload}
               onPress={() => void save("published", "share-publish")}
               busy={busy && activeSaveButton === "share-publish"}
@@ -2255,14 +2317,31 @@ export function ComposerScreen({
                 rechecking ||
                 !!pendingSubmission ||
                 (saved?.visibility === "published" && !unsaved) ||
-                (deliveryNeedsReview && !!targets.length) ||
-                category === "live" ||
-                category === "nft" ||
-                existing?.visibility === "hidden"
+                !!publishRestriction
               }
             />
           ) : (
             <Notice text="Sign in to publish your creation. Your session draft is available in Save." />
+          )}
+          {!guest && !iosLimitedTestflight && (file || mediaId) && (
+            <>
+              <Action
+                title={mintSource ? "Review mint in Wallet" : "Save a draft before minting"}
+                icon={Wallet}
+                secondary
+                disabled={busy || rechecking || !!pendingSubmission || existing?.visibility === "hidden"}
+                onPress={() => {
+                  if (mintSource)
+                    navigation.navigate("Utility", { kind: "wallet", item: mintSource });
+                  else setTab("Save");
+                }}
+              />
+              <Text style={styles.small}>
+                {photos.length
+                  ? "Wallet reviews the cover photo from this series."
+                  : "Wallet reviews the saved source file. Export first to mint an edited version."}
+              </Text>
+            </>
           )}
         </>
       ) : (
@@ -2284,13 +2363,15 @@ export function ComposerScreen({
       </Text>
     </View>
   );
+  const assistantBottom = desktop ? 18 : Math.max(10, insets.bottom);
+  const assistantClearance = assistantBottom + 66;
   return (
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       {desktop ? (
-        <View style={{ flex: 1, minHeight: 0, padding: 18, gap: 12 }}>
+        <View style={{ flex: 1, minHeight: 0, padding: 18, paddingBottom: assistantClearance, gap: 12 }}>
           <View style={[styles.between, { gap: 12 }]}>
             <View>
               <Text style={[styles.heading, { fontSize: 22 }]}>
@@ -2377,11 +2458,25 @@ export function ComposerScreen({
             style={{ flex: 1, minHeight: 0 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: 35 }}
+            contentContainerStyle={{ paddingBottom: assistantClearance }}
           >
             {inspector}
           </ScrollView>
         </View>
+      )}
+      {focused && !recorderMode && (
+        <AutomationAgentDock
+          key={session?.access_token || "guest"}
+          routeKey={route.key}
+          bottom={assistantBottom}
+          compact={!desktop}
+          openWorkspace={() => navigation.navigate("MediaOS", { tab: "Assistant" })}
+          openAudio={() => {
+            setPaused(true);
+            setMusicPurpose("creation");
+            setTab("Audio");
+          }}
+        />
       )}
       {recorderMode && focused && (
         <Recorder

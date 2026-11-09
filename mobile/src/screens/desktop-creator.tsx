@@ -47,7 +47,7 @@ import {
 } from "../components/profile-media-preview";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { useZiipa } from "../provider";
-import { themedStyles, themeValue, color, font } from "../theme";
+import { themedStyles, themeValue, color, font, headerTitleStyle } from "../theme";
 import type { Category, Item, RootStack } from "../lib/types";
 import {
   creatorConnectionLabel,
@@ -401,34 +401,26 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={
-                    item.category === "nft"
-                      ? `Mint ${item.title} in Wallet`
-                      : item.category === "live"
-                        ? `Prepare broadcast for ${item.title}`
-                        : `Review publishing for ${item.title}`
+                    item.category === "live"
+                      ? `Prepare broadcast for ${item.title}`
+                      : `Review publishing for ${item.title}`
                   }
                   onPress={() => {
-                    if (item.category === "nft")
-                      navigation.navigate("Utility", { kind: "wallet", item });
-                    else if (item.category === "live")
+                    if (item.category === "live")
                       navigation.navigate("Live", { tab: "broadcast" });
                     else navigation.navigate("Publishing", { itemId: item.id });
                   }}
                   style={s.inlineAction}
                 >
-                  {item.category === "nft" ? (
-                    <Sparkles size={13} color="#C6B1E7" />
-                  ) : item.category === "live" ? (
+                  {item.category === "live" ? (
                     <Radio size={13} color="#C6B1E7" />
                   ) : (
                     <Send size={13} color="#C6B1E7" />
                   )}
                   <Text style={s.inlineText}>
-                    {item.category === "nft"
-                      ? "Mint in Wallet"
-                      : item.category === "live"
-                        ? "Prepare broadcast"
-                        : "Review publishing"}
+                    {item.category === "live"
+                      ? "Prepare broadcast"
+                      : "Review publishing"}
                   </Text>
                 </Pressable>
               )}
@@ -467,7 +459,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Go back from Manage Creations"
+        accessibilityLabel="Back"
         onPress={() =>
           navigation.canGoBack()
             ? navigation.goBack()
@@ -481,12 +473,8 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
           alignSelf: "flex-start",
         }}
       >
-        <ArrowLeft size={18} color={color.text} />
-        <Text
-          style={{ color: color.text, fontFamily: font.medium, fontSize: 13 }}
-        >
-          Go back
-        </Text>
+        <ArrowLeft size={24} color={color.text} />
+        <Text style={[headerTitleStyle, { color: color.text }]}>Back</Text>
       </Pressable>
       <View
         style={[
@@ -576,37 +564,30 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
               gap: 16,
             }}
           >
-            <View
-              style={[
-                s.row,
-                { justifyContent: "space-between", flexWrap: "wrap", gap: 16 },
-              ]}
-            >
-              <View style={{ gap: 5 }}>
-                <Text style={[s.sectionTitle, { fontSize: 21 }]}>
-                  Create and edit
-                </Text>
-                <Text style={s.description}>
-                  Upload or record media, trim clips, add captions, text
-                  overlays and music.
-                </Text>
-              </View>
-              <View style={[s.row, { flexWrap: "wrap", gap: 10 }]}>
-                <Button
-                  title="Open editor"
-                  icon={Pencil}
-                  primary
-                  onPress={create}
-                />
-                <Button title="Upload media" icon={Upload} onPress={create} />
-                <Button
-                  title="Live studio"
-                  icon={Radio}
-                  onPress={() =>
-                    navigation.navigate("Live", { tab: "broadcast" })
-                  }
-                />
-              </View>
+            <View style={{ gap: 5 }}>
+              <Text style={[s.sectionTitle, { fontSize: 21 }]}>
+                Create and edit
+              </Text>
+              <Text style={s.description}>
+                Upload or record media, trim clips, add captions, text
+                overlays and music.
+              </Text>
+            </View>
+            <View style={[s.row, { flexWrap: "wrap" }]}>
+              <Button
+                title="Open editor"
+                icon={Pencil}
+                primary
+                onPress={create}
+              />
+              <Button title="Upload media" icon={Upload} onPress={create} />
+              <Button
+                title="Live studio"
+                icon={Radio}
+                onPress={() =>
+                  navigation.navigate("Live", { tab: "broadcast" })
+                }
+              />
             </View>
             <Text style={s.heroFootnote}>
               Open any creation in your library and choose Edit to continue.
@@ -912,13 +893,6 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                   body: "Review imported recordings and their clip-processing status.",
                   icon: Clapperboard,
                   action: () => navigation.navigate("Recordings"),
-                },
-                {
-                  title: "Wallet & ownership",
-                  body: "Manage wallet connections, collectibles and rewards.",
-                  icon: ShieldCheck,
-                  action: () =>
-                    navigation.navigate("Utility", { kind: "wallet" }),
                 },
               ].map(({ title, body, icon: Icon, action }) => (
                 <Pressable

@@ -531,7 +531,11 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
             preflight. Actual publishing stays in your reviewed campaign;
             broadcasting starts only in Live controls.
           </Text>
-          <CalendarConnections events={events} onChanged={() => void load()} />
+          <CalendarConnections
+            events={events}
+            onChanged={() => void load()}
+            deviceConnectRequest={route.params?.deviceConnectRequest}
+          />
           <Notice text="Use Connect to authorize a calendar, choose what to sync and review exports. Saving a Ziipa reminder does not publish media, start a broadcast or enable device push." />
           <Action
             secondary

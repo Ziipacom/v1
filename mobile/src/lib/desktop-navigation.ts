@@ -44,7 +44,6 @@ const categories: readonly Category[] = [
   "music",
   "games",
   "live",
-  "nft",
   "store",
 ];
 const mediaTabs = [
@@ -242,11 +241,7 @@ export function destinationSearch(
     if (choice(input.tab, ["overview", "library"]) === invalid) return null;
     view = input.tab === "library" ? "library" : "studio";
   } else if (screen === "Utility") {
-    if (
-      input.kind === "wallet" ||
-      input.kind === "promote" ||
-      input.kind === "inbox"
-    )
+    if (input.kind === "wallet" || input.kind === "promote" || input.kind === "inbox")
       view = input.kind;
   } else {
     view = (Object.keys(screens) as DesktopView[]).find(

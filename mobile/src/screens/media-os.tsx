@@ -1137,8 +1137,6 @@ export function MediaOSScreen({
                     navigation.navigate("Connections");
                   else if (result.screen === "Publishing")
                     navigation.navigate("Publishing", { itemId });
-                  else if (result.screen === "Wallet")
-                    navigation.navigate("Utility", { kind: "wallet" });
                 }}
               />
             ) : null}
@@ -2178,7 +2176,7 @@ function AssistantPanel({
                     </Text>
                   </View>
                 ))}
-                <Notice text="Approving executes only this proposed action. Publishing, messaging and wallet spending use their separate review screens." />
+                <Notice text="Approving executes only this proposed action. Publishing and messaging use their separate review screens." />
                 <Action
                   title="Approve this action"
                   busy={sending || busy}

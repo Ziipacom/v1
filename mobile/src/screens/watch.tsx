@@ -34,6 +34,7 @@ import { CategoryDock, FloatButton, Sheet } from "../components/floating";
 import { Action, Cover, Field, Notice } from "../components/ui";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { ReelMedia } from "../components/reel-media";
+import { PhotoSteps } from "../components/photo-steps";
 import { useDevicePreferences } from "../components/device-preferences";
 import { inCreativeWorld, pageAtOffset } from "../lib/domain";
 import { creatorProfileParams } from "../lib/profile-collections";
@@ -78,6 +79,7 @@ export function WatchScreen({
     if (id && !localPost && !guest && session) {
       void api<Item>(`/api/creator/items/${encodeURIComponent(id)}`)
         .then((item) => {
+          if (item.category === "nft") throw new Error("Creation unavailable");
           if (active) setRemotePost({ identity: requestedIdentity, item });
         })
         .catch(() => {
@@ -106,6 +108,7 @@ export function WatchScreen({
     items.findIndex((i) => i.id === route.params?.itemId),
   );
   const [index, setIndex] = useState(start);
+  const [photoSelection, setPhotoSelection] = useState({ postId: "", index: 0 });
   const [height, setHeight] = useState(0);
   const list = useRef<FlatList<Item>>(null);
   const [paused, setPaused] = useState(!autoplay);
@@ -124,6 +127,9 @@ export function WatchScreen({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const item = items[index];
+  const photoIndex = photoSelection.postId === item?.id &&
+    photoSelection.index <= (item?.photo_ids?.length || 0) ? photoSelection.index : 0;
+  const selectedPhotoId = item?.photo_ids?.[photoIndex - 1];
   const openCreator = (post: Item) => {
     const params = creatorProfileParams(post);
     if (params) navigation.navigate("Profile", params);
@@ -260,7 +266,9 @@ export function WatchScreen({
               aria-hidden={i !== index}
             >
               <ReelMedia
-                item={post}
+                item={i === index && selectedPhotoId
+                  ? { ...post, cover: `/api/creator/media/${selectedPhotoId}` }
+                  : post}
                 active={i === index}
                 paused={paused || !!panel}
                 muted={muted}
@@ -312,6 +320,13 @@ export function WatchScreen({
                   gap: 9,
                 }}
               >
+                {i === index && (
+                  <PhotoSteps
+                    index={photoIndex}
+                    count={(post.photo_ids?.length || 0) + 1}
+                    onChange={(next) => setPhotoSelection({ postId: post.id, index: next })}
+                  />
+                )}
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Open creator profile for ${post.creator}`}

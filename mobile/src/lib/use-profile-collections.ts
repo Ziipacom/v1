@@ -27,7 +27,16 @@ export function useProfileCollections(creatorId?: number) {
             : "/api/creator/profile/collections",
         )
           .then((value) => {
-            if (active) setReceipt({ identity, value });
+            if (active)
+              setReceipt({
+                identity,
+                value: {
+                  ...value,
+                  items: value.items.filter((item) => item.category !== "nft"),
+                  tagged: value.tagged.filter((item) => item.category !== "nft"),
+                  pending_tags: value.pending_tags.filter(({ item }) => item.category !== "nft"),
+                },
+              });
           })
           .catch(() => {
             if (active)

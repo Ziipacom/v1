@@ -23,7 +23,7 @@ import { Action, Notice } from "./ui";
 import { recordingSeconds, recordingTime } from "./recorder-utils";
 
 export type RecorderProps = {
-  mode: "record" | "live";
+  mode: "record" | "live" | "photo";
   onClose: () => void;
   onCapture: (file: UploadFile) => void;
   onNetworks: () => void;
@@ -71,6 +71,7 @@ export function RecorderLayout({
   onNetworks: () => void;
 }) {
   useTheme();
+  const photo = mode === "photo";
   const [discard, setDiscard] = useState(false);
   const insets = useSafeAreaInsets();
   function close() {
@@ -105,10 +106,10 @@ export function RecorderLayout({
           <View style={{ flex: 1 }}>
             <Text style={r.title}>
               {clip
-                ? "Review your clip"
+                ? (photo ? "Review your photo" : "Review your clip")
                 : mode === "live"
                   ? "Live studio"
-                  : "Record in Ziipa"}
+                  : photo ? "Camera" : "Record in Ziipa"}
             </Text>
             <Text style={r.small}>
               {recording
@@ -138,18 +139,19 @@ export function RecorderLayout({
                 Create with your live camera
               </Text>
               <Text style={r.explain}>
-                {unavailable ||
-                  "Enable your camera and microphone for a live preview. Tap Record when you’re ready, then review your clip before sharing."}
+                {unavailable || (photo
+                  ? "Enable your camera, take a photo, then review it before adding it to your creation."
+                  : "Enable your camera and microphone for a live preview. Tap Record when you’re ready, then review your clip before sharing.")}
               </Text>
               <View style={[styles.row, { justifyContent: "center" }]}>
-                <Mic size={16} color={color.lime} />
+                {photo ? <Camera size={16} color={color.lime} /> : <Mic size={16} color={color.lime} />}
                 <Text style={r.small}>
-                  Camera + microphone · only while this screen is open
+                  {photo ? "Camera" : "Camera + microphone"} · only while this screen is open
                 </Text>
               </View>
               {!unavailable && (
                 <Action
-                  title="Enable camera & mic"
+                  title={photo ? "Enable camera" : "Enable camera & mic"}
                   icon={Camera}
                   busy={busy}
                   onPress={onEnable}
@@ -192,8 +194,7 @@ export function RecorderLayout({
           {discard ? (
             <>
               <Text style={r.explain}>
-                Discard this recording and close the camera? It has not been
-                uploaded.
+                {photo ? "Discard this photo and close the camera?" : "Discard this recording and close the camera?"}
               </Text>
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
@@ -211,7 +212,7 @@ export function RecorderLayout({
           ) : clip ? (
             <>
               <Text style={r.explain}>
-                {recordingTime(seconds)} ·{" "}
+                {!photo && `${recordingTime(seconds)} · `}
                 {(clip.size / 1024 / 1024).toFixed(1)} MB · Add overlays and
                 music next
               </Text>
@@ -225,7 +226,7 @@ export function RecorderLayout({
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Action title="Use clip" icon={Check} onPress={onUse} />
+                  <Action title={photo ? "Add photo" : "Use clip"} icon={Check} onPress={onUse} />
                 </View>
               </View>
             </>
@@ -236,7 +237,7 @@ export function RecorderLayout({
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={
-                      recording ? "Stop recording" : "Start recording"
+                      photo ? "Take photo" : recording ? "Stop recording" : "Start recording"
                     }
                     accessibilityState={{ disabled: !ready || busy }}
                     disabled={!ready || busy}
@@ -247,10 +248,10 @@ export function RecorderLayout({
                   </Pressable>
                   <Text style={r.small}>
                     {busy
-                      ? "Preparing clip…"
+                      ? (photo ? "Preparing photo…" : "Preparing clip…")
                       : recording
                         ? `Tap to stop · ${recordingTime(recordingSeconds - seconds)} remaining`
-                        : "Record a clip · up to 2 minutes / 100 MB"}
+                        : photo ? "Take photo" : "Record a clip · up to 2 minutes / 100 MB"}
                   </Text>
                 </View>
               )}
@@ -276,7 +277,7 @@ export function RecorderLayout({
                 </View>
               )}
               <Text style={[r.small, { textAlign: "center" }]}>
-                  Recordings stay on this device until you save them to Ziipa.
+                  {photo ? "Photos" : "Recordings"} stay on this device until you save them to Ziipa.
                   Nothing is posted automatically.
               </Text>
             </>

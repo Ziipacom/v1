@@ -105,6 +105,14 @@ test("only one sufficiently visible video is selected without mutating the publi
     "second",
   );
   assert.equal(
+    profileVideoSelection([item("second", { visibility: "draft" })], positions, {
+      top: 260,
+      height: 300,
+      gridTop: 100,
+    }),
+    null,
+  );
+  assert.equal(
     profileVideoSelection(videos, positions, {
       top: 1000,
       height: 300,
@@ -847,7 +855,9 @@ function profileScreenHarness(
     item("art", { category: "nft" }),
     item("broadcast", { category: "live" }),
     item("product", { category: "store" }),
-    item("private", { visibility: "draft" }),
+    item("private", { visibility: "draft", creator_id: 1 }),
+    item("foreign", { visibility: "draft", creator_id: 2 }),
+    item("hidden", { visibility: "hidden", creator_id: 1 }),
   ];
   const preferences = { saved: ["game"], autoplay: true, startMuted: false };
   const activity = { mountVideo: true, visible: true, autoplay: true };
@@ -1159,7 +1169,7 @@ test("web Profile uses fresh DOM rectangles after a cold scroll and rejects old-
   const ui = profileScreenHarness(true, undefined, {
     observe(scroller, cards, receive) {
       assert.equal(typeof scroller.getBoundingClientRect, "function");
-      assert.equal(cards.size, 6);
+      assert.equal(cards.size, 7);
       const subscription = { receive, stopped: false };
       subscriptions.push(subscription);
       return () => {
@@ -1502,7 +1512,11 @@ test("Profile grid is three square thumbnail columns without caption/category ov
     )!;
     const cards = profileCards(feed);
     assert.equal(feed.props.style.gap, 0);
-    assert.equal(cards.length, 6);
+    assert.equal(cards.length, 7);
+    assert.equal(cards.at(-1).props.accessibilityLabel, "Edit draft private");
+    assert.ok(
+      tree.some((node) => node.type === "Text" && node.props.children === "Draft"),
+    );
     assert.ok(
       cards.every(
         (card) =>
@@ -1566,9 +1580,17 @@ test("owner and visitor grids give absolute thumbnail children measured square b
       const cards = feed.props.children
         .flat()
         .filter((node: any) =>
-          node?.props?.accessibilityLabel?.startsWith("Watch "),
+          /^(Watch|Edit draft) /.test(node?.props?.accessibilityLabel ?? ""),
         );
-      assert.equal(cards.length, 6);
+      assert.equal(cards.length, visitor ? 6 : 7);
+      if (visitor) {
+        assert.ok(
+          cards.every((card: any) =>
+            card.props.accessibilityLabel.startsWith("Watch "),
+          ),
+        );
+        assert.ok(!tree.some((node) => node.props.children === "Draft"));
+      }
       const side = Math.floor(width / 3);
       assert.ok(
         cards.every(
@@ -1581,7 +1603,7 @@ test("owner and visitor grids give absolute thumbnail children measured square b
       if (!visitor) {
         tree
           .find((node) => node.type === "ScrollView")!
-          .props.onLayout({ nativeEvent: { layout: { height: 500 } } });
+          .props.onLayout({ nativeEvent: { layout: { height: side * 3 } } });
         cards.forEach((card: any, index: number) =>
           card.props.onLayout({
             nativeEvent: {
@@ -1631,7 +1653,7 @@ test("empty Saved view stays inside the feed and leads to discovery", () => {
   assert.deepEqual(ui.navigations, [["Main"]]);
 });
 
-test("Profile stacks every published creation in one scrollable column and badges use each creation's own world", () => {
+test("Owner Profile stacks published creations and marked drafts, and opens drafts in the editor", () => {
   for (const desktop of [false, true]) {
     const ui = profileScreenHarness(desktop);
     const nodes = ui.render();
@@ -1650,6 +1672,7 @@ test("Profile stacks every published creation in one scrollable column and badge
         "Watch art · NFTs",
         "Watch broadcast · Live feeds",
         "Watch product · Store",
+        "Edit draft private",
       ],
     );
     assert.ok(cards.every((card: any) => card.props.style.width === "100%"));
@@ -1673,15 +1696,21 @@ test("Profile stacks every published creation in one scrollable column and badge
         "ArtIcon",
         "LiveIcon",
         "StoreIcon",
+        "FilmIcon",
       ],
     );
-    assert.equal(
-      nodes.some((node) => node.props.accessibilityLabel?.includes("private")),
-      false,
+    assert.ok(
+      nodes.some((node) => node.type === "Text" && node.props.children === "Draft"),
     );
+    const draftPreview = nodes.find(
+      (node) => node.type === "ProfileMediaPreview" && node.props.item.id === "private",
+    )!;
+    assert.ok(draftPreview.props.thumbnailOnly && !draftPreview.props.autoplay);
     cards[0].props.onPress();
+    cards.at(-1).props.onPress();
     assert.deepEqual(ui.navigations, [
       ["Watch", { itemId: "game", category: "games" }],
+      ["Composer", { item: ui.creations.find((row) => row.id === "private") }],
     ]);
     assert.deepEqual(ui.counts(), {
       requests: 0,
@@ -1751,7 +1780,7 @@ test("Profile reset clears only category and Saved view, preserving scroll and s
     nodes
       .filter((node) => node.type === "ProfileMediaPreview")
       .map((node) => node.props.item.id),
-    ["game", "film", "song", "art", "broadcast", "product"],
+    ["game", "film", "song", "art", "broadcast", "product", "private"],
   );
   assert.deepEqual(
     nodes

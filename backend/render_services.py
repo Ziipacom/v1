@@ -189,6 +189,8 @@ def input_snapshot(session, item: CreatorItem, rendition: Rendition = 'original'
         parsed = ItemInput.model_validate(item.data)
     except Exception as exc:
         raise HTTPException(422, 'Save valid editor settings before rendering.') from exc
+    if parsed.photo_ids:
+        raise HTTPException(422, 'Photo series can be viewed as Ziipa posts. Video export requires a single source.')
     source = _owned_media(session, item.owner_id, parsed.media_id)
     if parsed.timeline is not None and source['content_type'] in IMAGE_FORMATS:
         raise HTTPException(422, 'Still images export as six-second videos; timeline regions require audio or video.')

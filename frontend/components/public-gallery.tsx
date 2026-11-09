@@ -368,7 +368,6 @@ function categoryName(category: string) {
         music: "Music & Film",
         games: "Games",
         live: "Live",
-        nft: "Collectibles",
         store: "Store",
       } as Record<string, string>
     )[category] || "Creation"

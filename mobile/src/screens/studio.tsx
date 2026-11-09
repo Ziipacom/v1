@@ -43,7 +43,9 @@ import { inCreativeWorld } from "../lib/domain";
 import { useDiscoveryFeed } from "../lib/use-discovery-feed";
 import type { Category, RootStack } from "../lib/types";
 
-const menuOrder: Category[] = ["nft", "games", "live", "music", "store"];
+const menuOrder: Category[] = ["games", "live", "music", "store"];
+const menuIconSize = 20;
+
 export function StudioScreen({
   route,
   navigation,
@@ -53,14 +55,15 @@ export function StudioScreen({
   const { reducedMotion } = useDevicePreferences();
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<Category>(
-    route.params?.category || "nft",
+    route.params?.category === "nft" ? "music" : route.params?.category || "music",
   );
   const [editing, setEditing] = useState(route.params?.edit || false);
   const [menuVisible, setMenuVisible] = useState(true);
   const [page, setPage] = useState(0);
   const slide = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (route.params?.category) setSelected(route.params.category);
+    if (route.params?.category)
+      setSelected(route.params.category === "nft" ? "music" : route.params.category);
     if (route.params?.edit !== undefined) setEditing(route.params.edit);
   }, [route.params]);
   useEffect(() => {
@@ -155,8 +158,8 @@ export function StudioScreen({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{
               alignItems: "flex-end",
-              gap: 8,
-              paddingTop: 12,
+              gap: 3,
+              paddingTop: 10,
               paddingRight: 20,
               paddingBottom: 22,
             }}
@@ -164,7 +167,7 @@ export function StudioScreen({
               position: "absolute",
               top: 0,
               right: 0,
-              width: 172,
+              width: 150,
               maxWidth: "52%",
               bottom: editing ? 240 : 70,
             }}
@@ -177,7 +180,7 @@ export function StudioScreen({
             >
               <Text style={s.menuText}>Create</Text>
               <View style={s.circleSlot}>
-                <SquarePlus size={25} color={color.onMedia} strokeWidth={1.5} />
+                <SquarePlus size={menuIconSize} color={color.onMedia} strokeWidth={1.5} />
               </View>
             </Pressable>
             {menuOrder
@@ -224,10 +227,21 @@ export function StudioScreen({
                         },
                     ]}
                   >
-                    <WorldGlyph id={w.id} size={25} media />
+                    <WorldGlyph id={w.id} size={menuIconSize} media />
                   </View>
                 </Pressable>
               ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open Wallet"
+              onPress={() => navigation.navigate("Utility", { kind: "wallet" })}
+              style={s.menuRow}
+            >
+              <Text style={s.menuText}>Wallet</Text>
+              <View style={[s.circleSlot, s.circle]}>
+                <Wallet size={menuIconSize} color={color.onMedia} strokeWidth={1.5} />
+              </View>
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Open connected networks"
@@ -236,7 +250,7 @@ export function StudioScreen({
             >
               <Text style={s.menuText}>Networks</Text>
               <View style={[s.circleSlot, s.circle]}>
-                <Network size={25} color={color.onMedia} strokeWidth={1.5} />
+                <Network size={menuIconSize} color={color.onMedia} strokeWidth={1.5} />
               </View>
             </Pressable>
             <Pressable
@@ -249,7 +263,7 @@ export function StudioScreen({
               <View
                 style={[s.circleSlot, s.circle, { backgroundColor: "#32145A" }]}
               >
-                <Sparkles size={25} color={color.lime} strokeWidth={1.5} />
+                <Sparkles size={menuIconSize} color={color.lime} strokeWidth={1.5} />
               </View>
             </Pressable>
             <Pressable
@@ -265,7 +279,7 @@ export function StudioScreen({
               <Text style={s.menuText}>Close</Text>
               <View style={s.circleSlot}>
                 <ChevronDown
-                  size={29}
+                  size={menuIconSize}
                   color={color.onMedia}
                   strokeWidth={1.5}
                 />
@@ -282,7 +296,7 @@ export function StudioScreen({
               s.menuRow,
               {
                 position: "absolute",
-                top: 12,
+                top: 10,
                 right: 20,
                 paddingLeft: 14,
                 borderRadius: 36,
@@ -292,7 +306,7 @@ export function StudioScreen({
           >
             <Text style={s.menuText}>Menu</Text>
             <View style={[s.circleSlot, s.circle]}>
-              <ChevronRight size={29} color={color.onMedia} strokeWidth={1.5} />
+              <ChevronRight size={menuIconSize} color={color.onMedia} strokeWidth={1.5} />
             </View>
           </Pressable>
         )}
@@ -316,7 +330,7 @@ export function StudioScreen({
               gap: 10,
             }}
           >
-            <Text style={s.menuText}>{world?.title}</Text>
+            <Text style={[s.menuText, { fontSize: 14 }]}>{world?.title}</Text>
             <FloatButton
               label={`Browse ${world?.title}`}
               size={42}
@@ -556,24 +570,26 @@ const s = themedStyles(() => ({
   menuRow: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    gap: 13,
-    minHeight: 45,
+    gap: 9,
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: "flex-end" as const,
   },
   menuText: {
     color: "#FAF7FF",
     fontFamily: font.medium,
-    fontSize: 14,
+    fontSize: 13,
     textShadowColor: "#000",
     textShadowRadius: 8,
   },
   circleSlot: {
-    width: 48,
-    height: 48,
+    width: 38,
+    height: 38,
     justifyContent: "center" as const,
     alignItems: "center" as const,
   },
   circle: {
-    borderRadius: 25,
+    borderRadius: 19,
     borderWidth: 1,
     borderColor: "#B5ADBF",
     backgroundColor: "#120D1F80",
