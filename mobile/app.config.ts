@@ -2,7 +2,10 @@ import type { ExpoConfig } from "expo/config";
 
 const production = process.env.APP_VARIANT === "production";
 const portal = process.env.EXPO_PUBLIC_PORTAL_MODE === "true";
-const identifier = process.env.ZIIPA_APP_ID || "com.ziipa.app";
+const admobTestAds = !production && !portal && process.env.ZIIPA_ADMOB_TEST_ADS === "true";
+const identifier = admobTestAds
+  ? "com.ziipa.app.adtest"
+  : process.env.ZIIPA_APP_ID || "com.ziipa.app";
 const projectId = process.env.EXPO_EAS_PROJECT_ID;
 const internalTestflight =
   process.env.ZIIPA_BUILD_SCOPE === "ios-internal-testflight" ||
@@ -54,7 +57,7 @@ const microphonePermission =
 const photoLibraryPermission =
   "Allow Ziipa to access the photos and videos you choose to upload for creations, product listings, profile avatar and cover artwork.";
 const config: ExpoConfig = {
-  name: production ? "Ziipa" : "Ziipa Preview",
+  name: admobTestAds ? "Ziipa Ads QA" : production ? "Ziipa" : "Ziipa Preview",
   slug: "ziipa",
   version: "1.0.19",
   platforms: limitedTestflight
@@ -71,7 +74,7 @@ const config: ExpoConfig = {
   },
   ...(portal ? { experiments: { baseUrl: "/studio" } } : {}),
   owner: process.env.EXPO_OWNER || undefined,
-  scheme: production ? "ziipa" : "ziipa-preview",
+  scheme: admobTestAds ? "ziipa-ad-test" : production ? "ziipa" : "ziipa-preview",
   orientation: "portrait",
   userInterfaceStyle: "automatic",
   icon: "./assets/brand/ziipa-favicon.png",
@@ -125,6 +128,18 @@ const config: ExpoConfig = {
     ],
   },
   plugins: [
+    ...(admobTestAds
+      ? [
+          [
+            "react-native-google-mobile-ads",
+            {
+              androidAppId: "ca-app-pub-3940256099942544~3347511713",
+              iosAppId: "ca-app-pub-3940256099942544~1458002511",
+              delayAppMeasurementInit: true,
+            },
+          ] as [string, Record<string, unknown>],
+        ]
+      : []),
     [
       "expo-calendar",
       {
@@ -208,6 +223,7 @@ const config: ExpoConfig = {
   extra: {
     ...(projectId ? { eas: { projectId } } : {}),
     variant: production ? "production" : "preview",
+    ...(admobTestAds ? { admobTestAds: true } : {}),
     ...(internalTestflight
       ? {
           buildScope: "ios-internal-testflight",

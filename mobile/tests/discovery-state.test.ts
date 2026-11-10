@@ -419,10 +419,12 @@ test("Studio Discover's media surface opens Ziipa's existing feed and attributed
     items: [ziipa],
     entries,
     editing: false,
+    adsEligible: false,
     refreshKey: 1,
     onOpen: (item: Item) => opened.push(item.id),
     onOpenNetwork: (item: NetworkMedia) => network.push(item.url),
   };
+  let availableAd: object | null = null;
   const jsx = (type: unknown, values: any) => ({ type, props: values });
   const exported = compile("../src/components/studio-feed.tsx", (name) => {
     if (name === "react") return runtime.react;
@@ -440,6 +442,12 @@ test("Studio Discover's media surface opens Ziipa's existing feed and attributed
     if (name === "lucide-react-native")
       return new Proxy({}, { get: (_, key) => String(key) });
     if (name === "./reel-media") return { ReelMedia: "ReelMedia" };
+    if (name === "./sponsored-ad")
+      return {
+        SponsoredAdCard: "SponsoredAdCard",
+        useSponsoredAd: (_placement: string, eligible: boolean) =>
+          eligible ? availableAd : null,
+      };
     if (name === "./discovery-network-card")
       return { DiscoveryNetworkPreview: "NetworkPreview" };
     if (name === "./device-preferences")
@@ -500,5 +508,24 @@ test("Studio Discover's media surface opens Ziipa's existing feed and attributed
     )!.props.disabled,
     true,
   );
+  props.editing = false;
+  props.adsEligible = true;
+  props.entries = Array.from({ length: 8 }, (_, index) => ({
+    ...entries[0],
+    id: `ziipa:${index}`,
+  }));
+  const feed = () => render().find((node) => node.type === "FlatList")!;
+  assert.equal(feed().props.data.length, 8, "no fill leaves all posts contiguous");
+  availableAd = {};
+  const sponsoredFeed = feed();
+  assert.equal(sponsoredFeed.props.data[6].source, "sponsored");
+  assert.equal(sponsoredFeed.props.data[7].id, "ziipa:6");
+  sponsoredFeed.props.onScroll({ nativeEvent: { contentOffset: { y: 3600 } } });
+  const activeFeed = feed();
+  assert.ok(flatten(activeFeed.props.renderItem({
+    item: activeFeed.props.data[6],
+    index: 6,
+  })).some((node) => node.type === "SponsoredAdCard"));
+  assert.equal(render().some((node) => node.props.accessibilityLabel === "Open public"), false);
   runtime.unmount();
 });

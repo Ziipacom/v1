@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -30,6 +30,7 @@ import { FloatButton, Sheet } from "../components/floating";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { Disclosure } from "../components/disclosure";
 import { StoreSellWizard } from "../components/store-sell-wizard";
+import { SponsoredAdCard, useSponsoredAd } from "../components/sponsored-ad";
 import { applyListingSuggestion, type SellStep } from "../lib/store-flow";
 import { uploadMedia } from "../lib/api";
 import { iosLimitedTestflight } from "../lib/config";
@@ -508,6 +509,18 @@ function ScopedStoreScreen({
     );
   }
 
+  const marketplaceAdAfter = 8;
+  const marketplaceAd = useSponsoredAd(
+    "marketplace",
+    !!session &&
+      !guest &&
+      tab === "browse" &&
+      !selected &&
+      !route.params?.sellerId &&
+      !query.trim() &&
+      items.length > marketplaceAdAfter,
+  );
+
   if (!session || guest)
     return (
       <View
@@ -781,47 +794,59 @@ function ScopedStoreScreen({
                 marginHorizontal: desktop ? -2 : -18,
               }}
             >
-              {items.map((item) => (
-                <Pressable
-                  key={item.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${item.title}, ${money(item.price_cents)}, ${item.store_name}`}
-                  onPress={() => {
-                    setSelectedPhoto(0);
-                    setSelected(item);
-                  }}
-                  style={{
-                    width: `${100 / columns}%`,
-                    gap: 5,
-                    paddingHorizontal: 2,
-                    paddingBottom: 8,
-                  }}
-                >
-                  <ProductDisplay
-                    key={`${item.id}:${photoEpoch}`}
-                    tile
-                    item={item}
-                    path={item.photos[0]}
-                  />
-                  <Text
+              {items.map((item, index) => (
+                <Fragment key={item.id}>
+                  {marketplaceAd && index === marketplaceAdAfter && (
+                    <View
+                      style={{
+                        width: `${100 / columns}%`,
+                        paddingHorizontal: 2,
+                        paddingBottom: 8,
+                      }}
+                    >
+                      <SponsoredAdCard ad={marketplaceAd} tile />
+                    </View>
+                  )}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${item.title}, ${money(item.price_cents)}, ${item.store_name}`}
+                    onPress={() => {
+                      setSelectedPhoto(0);
+                      setSelected(item);
+                    }}
                     style={{
-                      color: color.text,
-                      fontFamily: font.bold,
-                      fontSize: 16,
+                      width: `${100 / columns}%`,
+                      gap: 5,
+                      paddingHorizontal: 2,
+                      paddingBottom: 8,
                     }}
                   >
-                    {money(item.price_cents)}
-                  </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.body, { fontSize: 14, lineHeight: 19 }]}
-                  >
-                    {item.title}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.small}>
-                    {item.store_name}
-                  </Text>
-                </Pressable>
+                    <ProductDisplay
+                      key={`${item.id}:${photoEpoch}`}
+                      tile
+                      item={item}
+                      path={item.photos[0]}
+                    />
+                    <Text
+                      style={{
+                        color: color.text,
+                        fontFamily: font.bold,
+                        fontSize: 16,
+                      }}
+                    >
+                      {money(item.price_cents)}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.body, { fontSize: 14, lineHeight: 19 }]}
+                    >
+                      {item.title}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.small}>
+                      {item.store_name}
+                    </Text>
+                  </Pressable>
+                </Fragment>
               ))}
             </View>
             {next !== null && (

@@ -1,5 +1,25 @@
 # Ziipa monetization: setup and readiness
 
+## Native ad test · 2026-11-10
+
+The optional `android-ad-test` profile builds Ziipa Ads QA alongside the normal
+Ziipa app. It requests Google's demo units for a muted sponsored card after six
+Discover posts and a square sponsored tile after eight Marketplace listings.
+Each screen shows up to one ad when Google returns inventory. The mobile SDK is
+linked only for explicitly enabled native QA builds. The web portal excludes it.
+
+The signed-in AdMob dashboard shows two active ad units per platform. Both apps
+show **Requires review** and **Limited ad serving** and ask for a store listing.
+Both preparation mediation groups are paused. The confirmed Google publisher
+entry is in `frontend/public/app-ads.txt` for the next website deployment.
+The public store listings need to link to the developer website before Google
+can verify that file. Live ads also require verified privacy choices, age
+treatment and a remote serving control.
+
+The signed-in Unity dashboard still offers Rewarded, Interstitial and Banner
+for each Ziipa app. Meta still requires a valid store listing to complete its
+application.
+
 ## Verified setup · 2026-11-03
 
 These are issued console IDs, not evidence of live ad serving. No advertising

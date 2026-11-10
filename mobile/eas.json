@@ -39,6 +39,12 @@
       },
       "env": { "EXPO_NO_DOTENV": "1" }
     },
+    "android-ad-test": {
+      "extends": "android-universal-apk",
+      "env": {
+        "ZIIPA_ADMOB_TEST_ADS": "true"
+      }
+    },
     "ios-internal-testflight": {
       "extends": "production",
       "distribution": "store",

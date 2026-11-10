@@ -10,12 +10,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStack } from "../lib/types";
+import { useZiipa } from "../provider";
 import { color, font } from "../theme";
 import { useDesktopLayout } from "./desktop-layout";
 export function StudioDock() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStack>>();
   const { desktop } = useDesktopLayout();
+  const { guest } = useZiipa();
   if (desktop) return null;
   return (
     <View
@@ -41,7 +43,10 @@ export function StudioDock() {
         {
           label: "Gallery",
           Icon: Images,
-          action: () => navigation.navigate("Main"),
+          action: () =>
+            guest
+              ? navigation.navigate("Main")
+              : navigation.navigate("CreatorGallery"),
         },
         {
           label: "Create",

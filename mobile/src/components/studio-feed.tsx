@@ -13,6 +13,7 @@ import {
 } from "lucide-react-native";
 import { ReelMedia } from "./reel-media";
 import { DiscoveryNetworkPreview } from "./discovery-network-card";
+import { SponsoredAdCard, useSponsoredAd } from "./sponsored-ad";
 import type { DiscoveryEntry } from "../lib/discovery-feed";
 import { discoveryProviderName } from "../lib/discovery-feed";
 import type { NetworkMedia } from "../lib/network-hub";
@@ -20,6 +21,9 @@ import { useDevicePreferences } from "./device-preferences";
 import { pageAtOffset, isPlayableMedia } from "../lib/domain";
 import type { Item } from "../lib/types";
 import { color, font, themedStyles, useTheme } from "../theme";
+
+type FeedEntry = DiscoveryEntry | { id: "discover-sponsored"; source: "sponsored" };
+const discoverAdAfter = 6;
 
 /** The menu is a sibling overlay: this list owns gestures on the exposed media. */
 export function StudioFeed({
@@ -32,6 +36,7 @@ export function StudioFeed({
   refreshing = false,
   refreshKey,
   networkNotice,
+  adsEligible = false,
 }: {
   items: Item[];
   editing: boolean;
@@ -42,6 +47,7 @@ export function StudioFeed({
   refreshing?: boolean;
   refreshKey?: number;
   networkNotice?: string;
+  adsEligible?: boolean;
 }) {
   useTheme();
   const { preferences, ready, reducedMotion } = useDevicePreferences();
@@ -52,7 +58,7 @@ export function StudioFeed({
   const [muted, setMuted] = useState(preferences.startMuted);
   useEffect(() => setPaused(!autoplay), [autoplay]);
   useEffect(() => setMuted(preferences.startMuted), [preferences.startMuted]);
-  const entries = useMemo(
+  const organicEntries = useMemo(
     () =>
       feedEntries ||
       items.map((item) => ({
@@ -62,7 +68,21 @@ export function StudioFeed({
       })),
     [feedEntries, items],
   );
-  const list = useRef<FlatList<DiscoveryEntry>>(null);
+  const ad = useSponsoredAd(
+    "discover",
+    adsEligible && !editing && organicEntries.length > discoverAdAfter,
+  );
+  const entries = useMemo<FeedEntry[]>(
+    () => ad
+      ? [
+          ...organicEntries.slice(0, discoverAdAfter),
+          { id: "discover-sponsored", source: "sponsored" },
+          ...organicEntries.slice(discoverAdAfter),
+        ]
+      : organicEntries,
+    [ad, organicEntries],
+  );
+  const list = useRef<FlatList<FeedEntry>>(null);
   const currentIndex = useRef(0);
   const activeItemId = useRef(entries[0]?.id);
   const priorRefresh = useRef(refreshKey);
@@ -153,54 +173,64 @@ export function StudioFeed({
               }
               aria-hidden={i !== index}
             >
-              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                {entry.source === "ziipa" ? (
-                  <ReelMedia
-                    item={entry.item}
-                    active={i === index && isPlayableMedia(entry.item)}
-                    paused={paused || editing}
-                    muted={muted}
-                  />
-                ) : (
-                  <DiscoveryNetworkPreview media={entry.media} />
-                )}
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={
-                  entry.source === "ziipa"
-                    ? `Open ${entry.item.title} in Gallery feed`
-                    : `Open ${entry.media.title || "public post"} on ${discoveryProviderName(entry.media.provider)}`
-                }
-                disabled={
-                  editing || (entry.source === "network" && !onOpenNetwork)
-                }
-                onPress={() =>
-                  entry.source === "ziipa"
-                    ? onOpen(entry.item)
-                    : onOpenNetwork?.(entry.media)
-                }
-                style={StyleSheet.absoluteFill}
-              />
-              <LinearGradient
-                pointerEvents="none"
-                colors={["#120D1F20", "#120D1F18", "#120D1FB8"]}
-                locations={[0, 0.48, 1]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFill}
-              />
-              <LinearGradient
-                pointerEvents="none"
-                colors={[
-                  "#120D1F65",
-                  "transparent",
-                  "transparent",
-                  "#120D1FF5",
-                ]}
-                locations={[0, 0.2, 0.57, 1]}
-                style={StyleSheet.absoluteFill}
-              />
+              {entry.source === "sponsored" ? (
+                ad && i === index && (
+                  <View style={s.sponsored}>
+                    <SponsoredAdCard ad={ad} />
+                  </View>
+                )
+              ) : (
+                <>
+                  <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                      {entry.source === "ziipa" ? (
+                        <ReelMedia
+                          item={entry.item}
+                          active={i === index && isPlayableMedia(entry.item)}
+                          paused={paused || editing}
+                          muted={muted}
+                        />
+                      ) : (
+                        <DiscoveryNetworkPreview media={entry.media} />
+                      )}
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        entry.source === "ziipa"
+                          ? `Open ${entry.item.title} in Gallery feed`
+                          : `Open ${entry.media.title || "public post"} on ${discoveryProviderName(entry.media.provider)}`
+                      }
+                      disabled={
+                        editing || (entry.source === "network" && !onOpenNetwork)
+                      }
+                      onPress={() =>
+                        entry.source === "ziipa"
+                          ? onOpen(entry.item)
+                          : onOpenNetwork?.(entry.media)
+                      }
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={["#120D1F20", "#120D1F18", "#120D1FB8"]}
+                      locations={[0, 0.48, 1]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={[
+                        "#120D1F65",
+                        "transparent",
+                        "transparent",
+                        "#120D1FF5",
+                      ]}
+                      locations={[0, 0.2, 0.57, 1]}
+                      style={StyleSheet.absoluteFill}
+                    />
+                </>
+              )}
             </View>
           )}
         />
@@ -264,7 +294,7 @@ export function StudioFeed({
       </View>
       {!editing && current && (
         <View pointerEvents="box-none" style={s.bottom}>
-          <Pressable
+          {current.source !== "sponsored" && <Pressable
             accessibilityRole="button"
             accessibilityLabel={
               currentItem
@@ -304,7 +334,7 @@ export function StudioFeed({
                 {discoveryProviderName(currentNetwork.provider)}
               </Text>
             )}
-          </Pressable>
+          </Pressable>}
           <View style={s.footer}>
             <View pointerEvents="none" style={{ flex: 1, gap: 5 }}>
               <View style={s.swipe}>
@@ -354,6 +384,16 @@ export function StudioFeed({
   );
 }
 const s = themedStyles(() => ({
+  sponsored: {
+    flex: 1,
+    justifyContent: "center",
+    alignSelf: "center",
+    width: "100%",
+    maxWidth: 460,
+    paddingHorizontal: 18,
+    paddingTop: 82,
+    paddingBottom: 68,
+  },
   top: {
     position: "absolute",
     top: 22,

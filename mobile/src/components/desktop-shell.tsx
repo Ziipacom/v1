@@ -305,8 +305,8 @@ export function DesktopShell({
     links.push({
       label: "Gallery",
       Icon: Images,
-      name: "Main",
-      active: false,
+      name: guest ? "Main" : "CreatorGallery",
+      active: route.name === "CreatorGallery" && params.creatorId === undefined,
     });
   }
   const osLinks: NavItem[] = [

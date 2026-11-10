@@ -136,6 +136,7 @@ export function StudioScreen({
           items={discoverItems}
           entries={discovery.entries}
           editing={editing}
+          adsEligible={!guest && !menuVisible}
           onOpenNetwork={(media) => void discovery.openNetwork(media)}
           onRefresh={() => void discovery.refreshFeed()}
           refreshing={discovery.refreshing}
@@ -517,7 +518,10 @@ export function StudioScreen({
           {
             label: "Gallery",
             Icon: Images,
-            action: () => navigation.navigate("Main"),
+            action: () =>
+              guest
+                ? navigation.navigate("Main")
+                : navigation.navigate("CreatorGallery"),
           },
           { label: "Create", Icon: SquarePlus, action: add },
           {

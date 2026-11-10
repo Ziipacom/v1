@@ -18,6 +18,7 @@ import {
   Camera,
   Captions,
   Check,
+  ChevronDown,
   ChevronRight,
   Film,
   ImagePlus,
@@ -476,6 +477,7 @@ export function ComposerScreen({
   const [targets, setTargets] = useState<SocialProvider[]>(
     existing?.distribution_targets || [],
   );
+  const [socialNetworksExpanded, setSocialNetworksExpanded] = useState(false);
   const [tab, setTab] = useState<(typeof steps)[number]["name"]>(
     desktop && existing ? "Edit" : "Media",
   );
@@ -534,6 +536,11 @@ export function ComposerScreen({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState<Item | null>(null);
+  const isExistingCreation = Boolean(existing || saved);
+  const draftActionTitle = isExistingCreation ? "Re-Save Draft" : "Save Draft";
+  const publishActionTitle = isExistingCreation
+    ? "Re-Publish Creation"
+    : "Publish Creation";
   const { height } = useWindowDimensions();
   const [mobileEditorHeight, setMobileEditorHeight] = useState(height);
   // Preserve the desktop warning for this editing session after narrowing the
@@ -1994,13 +2001,7 @@ export function ComposerScreen({
           />
           <View style={styles.separator} />
           <View style={styles.between}>
-            <View style={{ flex: 1, gap: 3 }}>
-              <Text style={[styles.heading, { fontSize: 20 }]}>Publish to</Text>
-              <Text style={styles.small}>
-                Save the source in Ziipa and choose destinations. External
-                delivery requires each provider’s approved integration.
-              </Text>
-            </View>
+            <Text style={[styles.heading, { fontSize: 20 }]}>Publish to</Text>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Manage connected networks"
@@ -2026,7 +2027,26 @@ export function ComposerScreen({
               <Check size={20} color={color.lime} />
             </View>
           </View>
-          {socialProviders.map((provider) => {
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              targets.length ? `Social networks, ${targets.length} selected` : "Social networks"
+            }
+            accessibilityState={{ expanded: socialNetworksExpanded }}
+            onPress={() => setSocialNetworksExpanded((expanded) => !expanded)}
+            style={[eStyle.networkCard, styles.row, { minHeight: 44 }]}
+          >
+            <Text style={[styles.label, { flex: 1 }]}>Social networks</Text>
+            {!!targets.length && (
+              <Text style={styles.small}>{targets.length} selected</Text>
+            )}
+            {socialNetworksExpanded ? (
+              <ChevronDown size={18} color={color.muted} />
+            ) : (
+              <ChevronRight size={18} color={color.muted} />
+            )}
+          </Pressable>
+          {socialNetworksExpanded && socialProviders.map((provider) => {
             const connection = data.connections.find(
               (item) => item.provider === provider.id,
             );
@@ -2102,11 +2122,6 @@ export function ComposerScreen({
               </Pressable>
             );
           })}
-          {!!targets.length && (
-            <Notice
-              text={`${targets.length} external ${targets.length === 1 ? "destination" : "destinations"} selected. Ziipa will keep a status record for each one.`}
-            />
-          )}
         </>
       )}
       {remix && (
@@ -2256,7 +2271,7 @@ export function ComposerScreen({
             title={
               busy && activeSaveButton === "share-draft"
                 ? editorSaveLabel(savePhase, progress)
-                : "Save Draft"
+                : draftActionTitle
             }
             icon={Save}
             onPress={() => void save("draft", "share-draft")}
@@ -2307,7 +2322,7 @@ export function ComposerScreen({
                   ? editorSaveLabel(savePhase, progress)
                   : saved?.visibility === "published" && !unsaved
                     ? "Published to Ziipa"
-                    : "Publish Creation"
+                    : publishActionTitle
               }
               icon={Upload}
               onPress={() => void save("published", "share-publish")}
@@ -2390,7 +2405,7 @@ export function ComposerScreen({
               title={
                 busy && activeSaveButton === "desktop-draft"
                   ? editorSaveLabel(savePhase, progress)
-                  : "Save Draft"
+                  : draftActionTitle
               }
               icon={Save}
               busy={busy && activeSaveButton === "desktop-draft"}
@@ -2546,14 +2561,14 @@ const eStyle = themedStyles(() => ({
   networkCard: {
     borderWidth: 1,
     borderColor: color.border,
-    borderRadius: 17,
-    padding: 13,
+    borderRadius: 12,
+    padding: 10,
     backgroundColor: color.panel,
   },
   networkIcon: {
-    width: 39,
-    height: 39,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     borderWidth: 1,
