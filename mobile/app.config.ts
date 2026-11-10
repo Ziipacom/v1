@@ -65,7 +65,7 @@ const photoLibraryPermission =
 const config: ExpoConfig = {
   name: admobTestAds ? "Ziipa Ads QA" : production ? "Ziipa" : "Ziipa Preview",
   slug: "ziipa",
-  version: "1.0.19",
+  version: "1.0.20",
   platforms: limitedTestflight
     ? ["ios"]
     : portal
@@ -116,7 +116,7 @@ const config: ExpoConfig = {
     allowBackup: false,
     package: production ? identifier : `${identifier}.preview`,
     ...(googleServicesFile ? { googleServicesFile } : {}),
-    versionCode: 17,
+    versionCode: 22,
     adaptiveIcon: {
       foregroundImage: "./assets/brand/ziipa-favicon.png",
       backgroundColor: "#110D1C",
