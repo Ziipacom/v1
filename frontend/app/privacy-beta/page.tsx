@@ -7,7 +7,7 @@ import s from '@/components/network-imports.module.css';
 
 export const metadata: Metadata = {
   title: 'Ziipa beta privacy notice',
-  description: 'Privacy information for the current adult Ziipa iPhone beta, including account content, permissions, optional AI, TestFlight and deletion controls.',
+  description: 'Privacy information for the Ziipa adult beta on Apple TestFlight and Google Play internal testing.',
   robots: { index: false, follow: false },
 };
 
@@ -20,7 +20,7 @@ export default function BetaPrivacyNotice() {
           <Link href="/portal">Open Ziipa</Link>
         </nav>
         <article>
-          <p className={s.eyebrow}>TESTFLIGHT BETA · NOTICE VERSION OCTOBER 30, 2026</p>
+          <p className={s.eyebrow}>BETA PRIVACY NOTICE · {notice.version}</p>
           <h1>{notice.title}</h1>
           <p className={s.intro}>{notice.subtitle}</p>
           {process.env.NODE_ENV !== 'production' && (
