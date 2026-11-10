@@ -406,10 +406,7 @@ function OwnedProfileScreen({
               accessibilityRole="button"
               accessibilityLabel="Edit your creations"
               onPress={() =>
-                navigation.navigate("Studio", {
-                  category: createCategory,
-                  edit: true,
-                })
+                navigation.navigate("CreatorStudio", { tab: "library" })
               }
               style={p.action}
             >

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { avatarCropRect, centeredAvatarCrop, moveAvatarCrop } from "../src/lib/avatar-crop.ts";
 import {
   PROFILE_IMAGE_MAX_BYTES,
   PROFILE_IMAGE_TYPES,
@@ -117,6 +118,34 @@ test("cover uploads preserve unrelated profile settings by using a partial patch
   const check = scenario({ kind: "cover" });
   await check.run();
   assert.deepEqual(check.patches, [{ cover_media_id: "owned-image" }]);
+});
+
+test("avatar crop stays square and inside portrait and landscape photos when zoomed and moved", () => {
+  assert.deepEqual(avatarCropRect(1600, 900, centeredAvatarCrop), {
+    originX: 350, originY: 0, width: 900, height: 900,
+  });
+  const start = { ...centeredAvatarCrop, zoom: 2 };
+  const position = moveAvatarCrop(800, 1200, start, 2000, -2000, 220);
+  assert.deepEqual(avatarCropRect(800, 1200, position), {
+    originX: 0, originY: 800, width: 400, height: 400,
+  });
+});
+
+test("canceling avatar crop skips upload, and accepting uploads only the cropped file", async () => {
+  const canceled = scenario({ prepare: async () => null });
+  assert.equal(await canceled.run(), null);
+  assert.deepEqual(canceled.calls, ["pick", "measure"]);
+
+  const cropped = { uri: "file:///cache/avatar.png", name: "avatar.png", mimeType: "image/png", size: 256 };
+  const accepted = scenario({
+    prepare: async () => cropped,
+    upload: async (file: unknown) => {
+      assert.deepEqual(file, cropped);
+      return { id: "owned-image" };
+    },
+  });
+  assert.deepEqual(await accepted.run(), saved);
+  assert.deepEqual(accepted.patches, [{ avatar_media_id: "owned-image" }]);
 });
 
 test("an advertised protocol change after choosing a file prevents any upload", async () => {

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
+  Image,
   Pressable,
   ScrollView,
   Share,
@@ -8,6 +9,7 @@ import {
   View,
 } from "react-native";
 import type { ReactNode } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -38,6 +40,7 @@ import { PhotoSteps } from "../components/photo-steps";
 import { useDevicePreferences } from "../components/device-preferences";
 import { inCreativeWorld, pageAtOffset } from "../lib/domain";
 import { creatorProfileParams } from "../lib/profile-collections";
+import { useProfileImageSource } from "../lib/profile-image-source";
 import { useZiipa } from "../provider";
 import type { Category, Comment, Item, RootStack } from "../lib/types";
 import { color, font, styles, themedStyles } from "../theme";
@@ -445,9 +448,10 @@ export function WatchScreen({
           <FloatButton
             media
             label={`Open creator profile for ${item.creator}`}
-            icon={UserRound}
             onPress={() => openCreator(item)}
-          />
+          >
+            <CreatorPostAvatar item={item} />
+          </FloatButton>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
@@ -623,6 +627,26 @@ export function WatchScreen({
         <Sheet
           title={panel === "comments" ? "The conversation" : "Make it your own"}
           onClose={() => setPanel(null)}
+          footer={panel === "comments" ? (
+            <View style={{ gap: 8 }}>
+              {!!error && <Notice text={error} error />}
+              <Field
+                label="Add a comment"
+                value={body}
+                onChangeText={setBody}
+                maxLength={1000}
+                multiline
+                placeholder="Share a little good energy…"
+                style={{ minHeight: 48, maxHeight: 66, paddingVertical: 9 }}
+              />
+              <Action
+                title={guest ? "Add sample comment" : "Post comment"}
+                onPress={() => void comment()}
+                disabled={!body.trim()}
+                busy={busy}
+              />
+            </View>
+          ) : undefined}
         >
           {panel === "comments" ? (
             <>
@@ -644,20 +668,6 @@ export function WatchScreen({
               ) : (
                 <Text style={styles.body}>Start the conversation.</Text>
               )}
-              <Field
-                label="Add a comment"
-                value={body}
-                onChangeText={setBody}
-                maxLength={1000}
-                multiline
-                placeholder="Share a little good energy…"
-              />
-              <Action
-                title={guest ? "Add sample comment" : "Post comment"}
-                onPress={() => void comment()}
-                disabled={!body.trim()}
-                busy={busy}
-              />
             </>
           ) : (
             <>
@@ -708,7 +718,7 @@ export function WatchScreen({
               )}
             </>
           )}
-          {!!error && <Notice text={error} error />}
+          {panel !== "comments" && !!error && <Notice text={error} error />}
         </Sheet>
       )}
     </View>
@@ -723,6 +733,52 @@ export function WatchScreen({
     </DesktopWatchLayout>
   ) : (
     viewer
+  );
+}
+
+function CreatorPostAvatar({ item }: { item: Item }) {
+  const { api, data, guest, session } = useZiipa();
+  const creatorId = creatorProfileParams(item)?.creatorId;
+  const token = session?.access_token;
+  const own = !!creatorId && creatorId === session?.user.id;
+  const identity = useMemo(() => ({}), [creatorId, token]);
+  const [remote, setRemote] = useState<{
+    identity: object;
+    path: string | null;
+  } | null>(null);
+  const [failed, setFailed] = useState<object | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      if (guest || own || !creatorId || !token) return;
+      let active = true;
+      void api<{ avatar_url: string | null }>(`/api/creator/profiles/${creatorId}/avatar`)
+        .then(({ avatar_url }) => {
+          if (active) setRemote({ identity, path: avatar_url });
+        })
+        .catch(() => {
+          if (active) setRemote({ identity, path: null });
+        });
+      return () => { active = false; };
+    }, [api, creatorId, guest, identity, own, token]),
+  );
+  const avatarPath = own
+    ? data.profile?.avatar_url
+    : remote?.identity === identity ? remote.path : null;
+  const source = useProfileImageSource(avatarPath, token);
+  const imageIdentity = useMemo(() => ({}), [identity, remote, source]);
+  const currentImage = useRef(imageIdentity);
+  currentImage.current = imageIdentity;
+  return source && imageIdentity !== failed ? (
+    <Image
+      source={source}
+      onError={() => {
+        if (currentImage.current === imageIdentity) setFailed(imageIdentity);
+      }}
+      resizeMode="cover"
+      style={{ width: 40, height: 40, borderRadius: 20 }}
+    />
+  ) : (
+    <UserRound size={24} color="white" strokeWidth={1.65} />
   );
 }
 

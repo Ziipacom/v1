@@ -181,10 +181,15 @@ def test_artwork_is_current_owned_image_and_rechecks_privacy(ctx):
     ctx.session.add(creator.CreatorPreferences(owner_id=ctx.owner.id, data={'profile': {'avatar_media_id': image.id}})); ctx.session.commit()
     value = ctx.client.get(f'/api/creator/profiles/{ctx.owner.id}').json()
     url = value['profile']['avatar_url']
+    avatar_endpoint = f'/api/creator/profiles/{ctx.owner.id}/avatar'
+    avatar = ctx.client.get(avatar_endpoint)
+    assert avatar.json() == {'avatar_url': url}
+    assert 'no-store' in avatar.headers['cache-control']
     assert ctx.client.get(url).content == b'owned-image'
     assert ctx.client.get(f'/api/creator/profile-images/{ctx.owner.id}/{unrelated.id}').status_code == 404
     ctx.session.add(AccountState(owner_id=ctx.owner.id, privacy={'profile_visibility': 'private'})); ctx.session.commit()
     assert ctx.client.get(url).status_code == 404
+    assert ctx.client.get(avatar_endpoint).status_code == 404
 
 
 def test_tag_requires_original_author_and_target_review_then_can_be_removed(ctx):

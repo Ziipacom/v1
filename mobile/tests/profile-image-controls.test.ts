@@ -46,6 +46,7 @@ function controls(
   const saved: unknown[] = [];
   const previews: string[] = [];
   const updates: { index: number; value: unknown }[] = [];
+  const cropDecision = { current: null as ((rect: { originX: number; originY: number; width: number; height: number }) => void) | null };
   let stored = { ...profile };
   let stateIndex = 0;
   const exported: Record<string, any> = {};
@@ -54,7 +55,7 @@ function controls(
       return {
         useCallback: (callback: unknown) => callback,
         useEffect() {},
-        useRef: (current: unknown) => ({ current }),
+        useRef: (current: unknown) => current === null ? cropDecision : { current },
         useState: (initial: unknown) => {
           const index = stateIndex++;
           const value =
@@ -112,12 +113,26 @@ function controls(
         },
         deleteAsync: async (path: string) => {
           calls.push("cleanup");
-          assert.equal(path, "file:///cache/chosen.jpg");
+          assert.ok(["file:///cache/chosen.jpg", "file:///cache/crop.jpg"].includes(path));
         },
       };
+    if (name === "expo-image-manipulator") {
+      const image = {
+        width: 720, height: 480,
+        release() {},
+        saveAsync: async () => ({ uri: "file:///cache/crop.jpg" }),
+      };
+      return {
+        ImageManipulator: { manipulate: () => ({
+          crop() {}, resize() {}, release() {}, renderAsync: async () => image,
+        }) },
+        SaveFormat: { JPEG: "jpeg", PNG: "png" },
+      };
+    }
     if (name === "lucide-react-native")
       return new Proxy({}, { get: (_, key) => key });
     if (name === "./ui") return { Action: "Action", Notice: "Notice" };
+    if (name === "./avatar-crop") return { AvatarCrop: "AvatarCrop" };
     if (name === "../provider")
       return {
         useZiipa: () => ({
@@ -143,9 +158,10 @@ function controls(
       };
     if (name === "../lib/api")
       return {
-        uploadMedia: async (_file: unknown, token: string) => {
+        uploadMedia: async (file: { uri: string }, token: string) => {
           calls.push("upload");
           assert.equal(token, "fixture-token");
+          assert.equal(file.uri, "file:///cache/crop.jpg");
           return { id: "owned-image" };
         },
       };
@@ -166,7 +182,7 @@ function controls(
     if (!value || typeof value !== "object" || !("props" in value)) return [];
     return [value, ...walk(value.props.children)];
   }
-  return { nodes: walk(tree), calls, saved, previews, updates };
+  return { nodes: walk(tree), calls, saved, previews, updates, cropDecision };
 }
 
 test("profile image controls disable unsupported uploads before opening any picker", async () => {
@@ -182,7 +198,7 @@ test("profile image controls disable unsupported uploads before opening any pick
   }
 });
 
-test("a verified upload opens the picker directly, saves the account image and cleans only its cache copy", async () => {
+test("avatar upload opens the picker directly and waits for crop approval before saving", async () => {
   const ui = controls();
   ui.nodes
     .find((node) => node.props.title === "Upload profile photo")!
@@ -193,13 +209,18 @@ test("a verified upload opens the picker directly, saves the account image and c
     "the first synchronous action preserves browser user activation",
   );
   await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(ui.calls, ["picker", "measure"]);
+  ui.cropDecision.current!({ originX: 90, originY: 5, width: 400, height: 400 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(ui.calls, [
     "picker",
+    "measure",
     "measure",
     "config",
     "upload",
     "save",
     "read",
+    "cleanup",
     "cleanup",
   ]);
   assert.deepEqual(ui.saved, [profile]);

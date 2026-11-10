@@ -3,10 +3,13 @@ import { AppState, Image, Platform, Pressable, Text, View } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { pickCreatorMedia } from "../lib/creator-media-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import { ImageManipulator, SaveFormat, type ImageRef } from "expo-image-manipulator";
 import { ImageUp, RefreshCw } from "lucide-react-native";
 import { Action, Notice } from "./ui";
+import { AvatarCrop } from "./avatar-crop";
 import { useZiipa } from "../provider";
-import { uploadMedia } from "../lib/api";
+import { uploadMedia, type UploadFile } from "../lib/api";
+import type { avatarCropRect } from "../lib/avatar-crop";
 import { coverSource } from "../lib/assets";
 import {
   PROFILE_IMAGE_TYPES,
@@ -43,7 +46,9 @@ export function ProfileImageControls({
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const phase = useRef<"idle" | "picking" | "uploading" | "saving">("idle");
+  const phase = useRef<"idle" | "picking" | "cropping" | "uploading" | "saving">("idle");
+  const [cropImage, setCropImage] = useState<ImageRef | null>(null);
+  const finishCrop = useRef<((rect: ReturnType<typeof avatarCropRect> | null) => void) | null>(null);
   const operation = useRef(false);
   const loadEpoch = useRef(0);
   const state = useRef({
@@ -67,16 +72,22 @@ export function ProfileImageControls({
     const listener = AppState.addEventListener("change", (next) => {
       // Android's system document picker is an expected external Activity.
       // Once a selection returns, upload/save require Ziipa in the foreground.
-      if (next !== "active" && phase.current !== "picking")
+      if (next !== "active" && phase.current !== "picking") {
         state.current.version++;
+        finishCrop.current?.(null);
+      }
     });
     return () => {
       state.current.mounted = false;
       state.current.version++;
       loadEpoch.current++;
+      finishCrop.current?.(null);
       listener.remove();
     };
   }, []);
+  useEffect(() => {
+    if (!focused) finishCrop.current?.(null);
+  }, [focused, session?.access_token]);
   const capture = (requireForeground = true) => {
     const { token, version } = state.current;
     return () =>
@@ -131,6 +142,12 @@ export function ProfileImageControls({
     }
   }
 
+  async function measure(asset: ProfileImageAsset) {
+    if (Platform.OS === "web") return (await (await fetch(asset.uri)).blob()).size;
+    const info = await FileSystem.getInfoAsync(asset.uri);
+    return info.exists && !info.isDirectory ? info.size : 0;
+  }
+
   async function choose() {
     if (!session || guest || operation.current || status !== "ready" || !config)
       return;
@@ -138,6 +155,7 @@ export function ProfileImageControls({
     const valid = capture();
     const sameScope = capture(false);
     let selectedUri: string | null = null;
+    let croppedUri: string | null = null;
     let canceled = false;
     setBusy(true);
     setProgress(0);
@@ -176,12 +194,57 @@ export function ProfileImageControls({
           if (!resumed) return null;
           return asset;
         },
-        measure: async (asset: ProfileImageAsset) => {
-          if (Platform.OS === "web")
-            return (await (await fetch(asset.uri)).blob()).size;
-          const info = await FileSystem.getInfoAsync(asset.uri);
-          return info.exists && !info.isDirectory ? info.size : 0;
-        },
+        measure,
+        prepare: kind === "avatar" ? async (file): Promise<UploadFile | null> => {
+          phase.current = "cropping";
+          const source = ImageManipulator.manipulate(file.uri);
+          try {
+            const image = await source.renderAsync();
+            try {
+              if (!valid()) return null;
+              setCropImage(image);
+              const rect = await new Promise<ReturnType<typeof avatarCropRect> | null>((resolve) => {
+                finishCrop.current = resolve;
+              });
+              finishCrop.current = null;
+              if (state.current.mounted) setCropImage(null);
+              if (!valid()) return null;
+              if (!rect) {
+                canceled = true;
+                return null;
+              }
+              const crop = ImageManipulator.manipulate(image);
+              try {
+                crop.crop(rect);
+                if (rect.width > 512) crop.resize({ width: 512, height: 512 });
+                const cropped = await crop.renderAsync();
+                try {
+                  if (!valid()) return null;
+                  const jpeg = file.mimeType === "image/jpeg";
+                  const result = await cropped.saveAsync({
+                    format: jpeg ? SaveFormat.JPEG : SaveFormat.PNG,
+                    compress: 0.9,
+                  });
+                  croppedUri = result.uri;
+                  return {
+                    uri: result.uri,
+                    name: jpeg ? "profile-photo.jpg" : "profile-photo.png",
+                    mimeType: jpeg ? "image/jpeg" : "image/png",
+                    size: await measure(result),
+                  };
+                } finally {
+                  cropped.release();
+                }
+              } finally {
+                crop.release();
+              }
+            } finally {
+              image.release();
+            }
+          } finally {
+            source.release();
+          }
+        } : undefined,
         refreshConfig: async () => {
           const value = await api("/api/creator/config");
           if (valid()) {
@@ -230,6 +293,7 @@ export function ProfileImageControls({
       if (state.current.mounted && state.current.token === session.access_token)
         setBusy(false);
       await cleanup(selectedUri);
+      await cleanup(croppedUri);
     }
   }
 
@@ -306,7 +370,13 @@ export function ProfileImageControls({
   }
   return (
     <View style={{ gap: 12 }}>
-      {!session || guest ? (
+      {cropImage ? (
+        <AvatarCrop
+          image={cropImage}
+          onCancel={() => finishCrop.current?.(null)}
+          onSave={(rect) => finishCrop.current?.(rect)}
+        />
+      ) : !session || guest ? (
         <Notice text="Sign in to upload and save your own profile images. Gallery choices in sample mode are previews only." />
       ) : (
         <>

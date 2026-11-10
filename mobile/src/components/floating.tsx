@@ -1,6 +1,8 @@
-import type { PropsWithChildren } from "react";
+import { useEffect, useState, type PropsWithChildren, type ReactNode } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -187,19 +189,41 @@ export function Sheet({
   children,
   onClose,
   maxWidth,
+  footer,
 }: PropsWithChildren<{
   title: string;
   onClose: () => void;
   maxWidth?: number;
+  footer?: ReactNode;
 }>) {
   const insets = useSafeAreaInsets();
+  const hasFooter = !!footer;
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  useEffect(() => {
+    if (!hasFooter || Platform.OS !== "web" || typeof window === "undefined") return;
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const update = () => setKeyboardInset(
+      Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop),
+    );
+    viewport.addEventListener("resize", update);
+    viewport.addEventListener("scroll", update);
+    update();
+    return () => {
+      viewport.removeEventListener("resize", update);
+      viewport.removeEventListener("scroll", update);
+    };
+  }, [hasFooter]);
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View
+      <KeyboardAvoidingView
+        enabled={hasFooter && Platform.OS === "ios"}
+        behavior={hasFooter && Platform.OS === "ios" ? "padding" : undefined}
         style={{
           flex: 1,
           justifyContent: "flex-end",
           backgroundColor: "#0007",
+          ...(hasFooter && Platform.OS === "web" ? { paddingBottom: keyboardInset } : {}),
         }}
       >
         <Pressable
@@ -214,7 +238,7 @@ export function Sheet({
             ...(maxWidth
               ? { width: "100%", maxWidth, alignSelf: "center" as const }
               : {}),
-            minHeight: 200,
+            minHeight: hasFooter ? 0 : 200,
             backgroundColor: color.bg,
             borderTopLeftRadius: 27,
             borderTopRightRadius: 27,
@@ -245,6 +269,7 @@ export function Sheet({
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            style={hasFooter ? { flexShrink: 1 } : undefined}
             contentContainerStyle={{
               paddingHorizontal: 22,
               gap: 16,
@@ -253,8 +278,20 @@ export function Sheet({
           >
             {children}
           </ScrollView>
+          {hasFooter && (
+            <View
+              style={{
+                paddingHorizontal: 22,
+                paddingTop: 10,
+                borderTopWidth: 1,
+                borderColor: color.border,
+              }}
+            >
+              {footer}
+            </View>
+          )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

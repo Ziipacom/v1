@@ -487,7 +487,7 @@ test("internal auth routes stale registration links to existing-account sign-in;
               return [
                 slots[index],
                 (value: any) => {
-                  slots[index] = value;
+                  slots[index] = typeof value === "function" ? value(slots[index]) : value;
                 },
               ];
             },
@@ -559,6 +559,15 @@ test("internal auth routes stale registration links to existing-account sign-in;
         .find((node) => node.props.label === "Password")!
         .props.onChangeText("synthetic-signin");
       nodes = render();
+      const passwordField = (tree: ReturnType<typeof render>) => tree.find((node) => node.props.label === "Password")!;
+      assert.equal(passwordField(nodes).props.secureTextEntry, true);
+      nodes.find((node) => node.props.accessibilityLabel === "Show password")!.props.onPress();
+      nodes = render();
+      assert.equal(passwordField(nodes).props.secureTextEntry, false);
+      assert.equal(passwordField(nodes).props.value, "synthetic-signin");
+      nodes.find((node) => node.props.accessibilityLabel === "Hide password")!.props.onPress();
+      nodes = render();
+      assert.equal(passwordField(nodes).props.secureTextEntry, true);
       nodes
         .find((node) => node.props.testID === "auth-submit")!
         .props.onPress();

@@ -129,6 +129,14 @@ def visitor_profile(owner_id: int, response: Response, user: User = Depends(curr
     return collection(session, user, owner)
 
 
+@router.get('/profiles/{owner_id}/avatar')
+def visitor_avatar(owner_id: int, response: Response, user: User = Depends(current_user),
+                   session: Session = Depends(db)):
+    response.headers.update(NO_STORE)
+    owner = visible_owner(session, user, owner_id)
+    return {'avatar_url': artwork_shape(session, owner)['avatar_url']}
+
+
 @router.get('/profile-images/{owner_id}/{media_id}')
 def visitor_artwork(owner_id: int, media_id: uuid.UUID, user: User = Depends(current_user), session: Session = Depends(db)):
     owner = visible_owner(session, user, owner_id)

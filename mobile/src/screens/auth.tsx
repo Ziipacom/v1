@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { ArrowUpRight, Play, Sparkles } from "lucide-react-native";
+import { ArrowUpRight, Eye, EyeOff, Play, Sparkles } from "lucide-react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStack } from "../lib/types";
 import { color, font, styles } from "../theme";
@@ -99,6 +99,7 @@ export function LoginScreen({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [adult, setAdult] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -121,6 +122,7 @@ export function LoginScreen({
       );
       return;
     }
+    setShowPassword(false);
     setBusy(true);
     setError("");
     try {
@@ -174,17 +176,31 @@ export function LoginScreen({
           maxLength={320}
           editable={!busy}
         />
-        <Field
-          label={register ? "Password · at least 12 characters" : "Password"}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          textContentType={register ? "newPassword" : "password"}
-          autoComplete={register ? "new-password" : "current-password"}
-          autoCapitalize="none"
-          maxLength={128}
-          editable={!busy}
-        />
+        <View>
+          <Field
+            label={register ? "Password · at least 12 characters" : "Password"}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+            textContentType={register ? "newPassword" : "password"}
+            autoComplete={register ? "new-password" : "current-password"}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+            maxLength={128}
+            editable={!busy}
+            style={{ minHeight: 48, paddingEnd: 52 }}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+            disabled={busy}
+            onPress={() => setShowPassword((visible) => !visible)}
+            style={{ position: "absolute", end: 2, bottom: 0, height: 48, width: 46, alignItems: "center", justifyContent: "center" }}
+          >
+            {showPassword ? <EyeOff size={20} color={color.text} /> : <Eye size={20} color={color.text} />}
+          </Pressable>
+        </View>
         {register && (
           <View style={{ gap: 15 }}>
             <View style={styles.between}>
@@ -263,6 +279,7 @@ export function LoginScreen({
           }
           onPress={() => {
             setRegister(!register);
+            setShowPassword(false);
             setError("");
           }}
           disabled={busy}

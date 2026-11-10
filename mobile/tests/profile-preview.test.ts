@@ -1549,6 +1549,16 @@ test("Profile grid is three square thumbnail columns without caption/category ov
   }
 });
 
+test("Profile Edit opens the Creations Library on mobile and desktop", () => {
+  for (const desktop of [false, true]) {
+    const ui = profileScreenHarness(desktop);
+    ui.render()
+      .find((node) => node.props.accessibilityLabel === "Edit your creations")!
+      .props.onPress();
+    assert.deepEqual(ui.navigations, [["CreatorStudio", { tab: "library" }]]);
+  }
+});
+
 test("owner and visitor grids give absolute thumbnail children measured square bounds after selection and resize", () => {
   for (const visitor of [false, true]) {
     const ui = profileScreenHarness(false, undefined, undefined, visitor);

@@ -164,6 +164,7 @@ export async function uploadProfileImage(options: {
   valid: () => boolean;
   pick: () => Promise<ProfileImageAsset | null>;
   measure: (asset: ProfileImageAsset) => Promise<number>;
+  prepare?: (file: UploadFile) => Promise<UploadFile | null>;
   refreshConfig: () => Promise<unknown>;
   upload: (file: UploadFile) => Promise<{ id: string }>;
   save: (patch: ProfileImagePatch) => Promise<ProfileImages>;
@@ -185,14 +186,16 @@ export async function uploadProfileImage(options: {
     throw new Error("Choose a non-empty image no larger than 10 MB.");
   const size = await options.measure(asset);
   if (!options.valid()) return null;
-  const file = profileImageFile(asset, size, options.config);
+  const selected = profileImageFile(asset, size, options.config);
+  const file = options.prepare ? await options.prepare(selected) : selected;
+  if (!file || !options.valid()) return null;
   const current = profileImageConfig(await options.refreshConfig());
   if (!options.valid()) return null;
   if (!current)
     throw new Error(
       "This Ziipa server needs the profile image update before it can save your image. Nothing was uploaded.",
     );
-  profileImageFile(asset, size, current);
+  profileImageFile(file, file.size, current);
   const media = await options.upload(file);
   if (!options.valid()) return null;
   return confirmProfileImageSave({

@@ -18,6 +18,7 @@ function categoryUI(limitedBeta: boolean, concepts = false) {
   const exported: Record<string, any> = {};
   new Function("exports", "require", compiled)(exported, (name: string) => {
     if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
+    if (name === "react") return {};
     if (name === "react-native") return {
       Modal: "Modal", Pressable: "Pressable", ScrollView: "ScrollView",
       Text: "Text", View: "View", StyleSheet: { absoluteFill: {} },
