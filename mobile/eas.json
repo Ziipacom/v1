@@ -87,6 +87,12 @@
         "ZIIPA_TESTFLIGHT_PUBLIC_RELEASE": "forbidden"
       }
     },
+    "store-with-ads": {
+      "extends": "production",
+      "env": {
+        "ZIIPA_ADMOB_RELEASE_ADS": "true"
+      }
+    },
     "production": {
       "distribution": "store",
       "credentialsSource": "remote",

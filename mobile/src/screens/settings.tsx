@@ -22,6 +22,7 @@ import {
 } from "lucide-react-native";
 import { Action, Field, Notice } from "../components/ui";
 import { SettingsControls } from "../components/settings-controls";
+import { AdPrivacyOptions } from "../components/sponsored-ad";
 import { PublicGallerySettingsPanel } from "../components/public-gallery-settings";
 import { useZiipa } from "../provider";
 import { color, styles } from "../theme";
@@ -243,6 +244,7 @@ function ScopedSettingsScreen({
   const privacyPanel = (
     <View style={[styles.panel, desktop && workspace.panel]}>
       <Text style={styles.heading}>Privacy controls</Text>
+      <AdPrivacyOptions />
       <Text style={styles.small}>
         Choose who can view your profile and whether Ziipa can use your activity
         for discovery.

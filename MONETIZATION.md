@@ -1,5 +1,27 @@
 # Ziipa monetization: setup and readiness
 
+## Store build preparation · 2026-11-10
+
+The `store-with-ads` EAS build profile links the issued AdMob app IDs. The
+native app checks the signed-in user's serving permission before requesting
+ads. Set `ADMOB_ANDROID_SERVING` and `ADMOB_IOS_SERVING` independently in the
+production API after each platform clears store review, publisher verification
+and device QA. Both default to false. The client drops expired permissions and
+requires the existing 18+ account attestation and Google consent before serving
+non-personalized ads. Required AdMob privacy choices are available in Settings.
+
+Google Play saved the draft **Contains ads** declaration and the developer
+website `https://ziipa.com`. Both Discover ad units now accept video only.
+Marketplace units accept images and video. The public `/app-ads.txt` returned
+HTTP 404 before deployment. The verified publisher entry is present in the
+built website bundle.
+
+Complete the Play store checklist and public release, then link the listing in
+AdMob. Use the same steps for the App Store. Set the public privacy notice URL
+in AdMob's Privacy & messaging before publishing the regional consent messages.
+Review the provider's data disclosure and update the store privacy forms before
+submitting the ads-enabled builds.
+
 ## Native ad test · 2026-11-10
 
 The optional `android-ad-test` profile builds Ziipa Ads QA alongside the normal

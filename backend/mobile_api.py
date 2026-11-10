@@ -85,6 +85,17 @@ def native_session(user, session):
     return {'access_token': token, 'token_type': 'Bearer', 'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=TOKEN_TTL)).isoformat(), 'user': {'id': user.id, 'name': user.name, 'email': user.email, 'role': role, 'account_status': 'active', 'is_admin': role in {'owner', 'admin'}, 'is_moderator': role in {'owner', 'admin', 'moderator'}}}
 
 
+@router.get('/api/mobile/ads/{platform}')
+def mobile_ads(platform: Literal['android', 'ios'], user: User = Depends(current_user),
+               session: Session = Depends(db)):
+    enabled = settings.admob_android_serving if platform == 'android' else settings.admob_ios_serving
+    if not enabled or settings.environment != 'production':
+        return {'enabled': False}
+    # This version's native registration explicitly required an 18+ attestation.
+    acceptance = session.get(PolicyAcceptance, user.id)
+    return {'enabled': bool(acceptance and acceptance.version == '2026-08-31')}
+
+
 @router.post('/api/mobile/auth/register', status_code=201, dependencies=[Depends(guard)])
 def register_native(data: NativeRegister, session: Session = Depends(db)):
     from admin_services import require_registration_open

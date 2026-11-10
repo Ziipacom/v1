@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     ziipa_proxy_secret: str = Field(default='', repr=False)
     moderator_emails: str = ''
     enable_demo_catalog: bool = True
+    admob_android_serving: bool = False
+    admob_ios_serving: bool = False
     social_bluesky_client_id: str = ''
     social_facebook_client_id: str = ''
     social_instagram_client_id: str = ''

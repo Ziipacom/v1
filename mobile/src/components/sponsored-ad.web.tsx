@@ -5,3 +5,7 @@ export function useSponsoredAd() {
 export function SponsoredAdCard() {
   return null;
 }
+
+export function AdPrivacyOptions() {
+  return null;
+}

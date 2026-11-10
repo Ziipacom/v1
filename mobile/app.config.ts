@@ -14,6 +14,12 @@ const externalTestflight =
   process.env.ZIIPA_BUILD_SCOPE === "ios-external-testflight" ||
   process.env.EXPO_PUBLIC_BUILD_SCOPE === "ios-external-testflight";
 const limitedTestflight = internalTestflight || externalTestflight;
+const admobReleaseAds =
+  production &&
+  !portal &&
+  !limitedTestflight &&
+  identifier === "com.ziipa.app" &&
+  process.env.ZIIPA_ADMOB_RELEASE_ADS === "true";
 const limitedScope = internalTestflight
   ? "ios-internal-testflight"
   : "ios-external-testflight";
@@ -125,16 +131,27 @@ const config: ExpoConfig = {
       "android.permission.WRITE_EXTERNAL_STORAGE",
       "android.permission.SYSTEM_ALERT_WINDOW",
       "com.google.android.gms.permission.AD_ID",
+      ...(admobReleaseAds
+        ? [
+            "android.permission.ACCESS_ADSERVICES_AD_ID",
+            "android.permission.ACCESS_ADSERVICES_TOPICS",
+            "android.permission.ACCESS_ADSERVICES_ATTRIBUTION",
+          ]
+        : []),
     ],
   },
   plugins: [
-    ...(admobTestAds
+    ...(admobTestAds || admobReleaseAds
       ? [
           [
             "react-native-google-mobile-ads",
             {
-              androidAppId: "ca-app-pub-3940256099942544~3347511713",
-              iosAppId: "ca-app-pub-3940256099942544~1458002511",
+              androidAppId: admobTestAds
+                ? "ca-app-pub-3940256099942544~3347511713"
+                : "ca-app-pub-4702540477449660~7843954044",
+              iosAppId: admobTestAds
+                ? "ca-app-pub-3940256099942544~1458002511"
+                : "ca-app-pub-4702540477449660~2970571742",
               delayAppMeasurementInit: true,
             },
           ] as [string, Record<string, unknown>],
@@ -224,6 +241,7 @@ const config: ExpoConfig = {
     ...(projectId ? { eas: { projectId } } : {}),
     variant: production ? "production" : "preview",
     ...(admobTestAds ? { admobTestAds: true } : {}),
+    ...(admobReleaseAds ? { admobReleaseAds: true } : {}),
     ...(internalTestflight
       ? {
           buildScope: "ios-internal-testflight",
