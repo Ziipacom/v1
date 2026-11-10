@@ -69,20 +69,18 @@ export function ProfileContentControls({
     <View
       style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}
     >
-      <Text
-        style={{
-          color: color.faint,
-          fontFamily: font.regular,
-          fontSize: 12,
-          marginRight: 3,
-        }}
-      >
-        {collection === "saved"
-          ? "Saved"
-          : collection === "tagged"
-            ? "Tagged"
-            : "Creations"}
-      </Text>
+      {collection !== "creations" && (
+        <Text
+          style={{
+            color: color.faint,
+            fontFamily: font.regular,
+            fontSize: 12,
+            marginRight: 3,
+          }}
+        >
+          {collection === "saved" ? "Saved" : "Tagged"}
+        </Text>
+      )}
       {buttons.map(({ Icon, label, selected, onPress }) => (
         <Pressable
           key={label}
