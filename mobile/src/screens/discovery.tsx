@@ -176,16 +176,18 @@ function MobileDiscoverScreen({
             minHeight: 32,
           }}
         >
-          <Text
-            style={{
-              color: color.faint,
-              fontSize: 10,
-              fontFamily: font.regular,
-            }}
-          >
-            {guest ? "SAMPLE STUDIO" : "YOUR CREATIVE WORLD"}
-            {activeWorld?.concept ? " · CONCEPT" : ""}
-          </Text>
+          {(guest || activeWorld?.concept) && (
+            <Text
+              style={{
+                color: color.faint,
+                fontSize: 10,
+                fontFamily: font.regular,
+              }}
+            >
+              {guest ? "SAMPLE STUDIO" : "CONCEPT"}
+              {guest && activeWorld?.concept ? " · CONCEPT" : ""}
+            </Text>
+          )}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Reset gallery to all creations and clear search"

@@ -184,15 +184,6 @@ export function CreatorGalleryScreen({
             minHeight: 44,
           }}
         >
-          <Text
-            style={{
-              color: color.faint,
-              fontSize: 10,
-              fontFamily: font.regular,
-            }}
-          >
-            YOUR CREATIVE WORLD
-          </Text>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Reset creator Gallery to all creations and clear search"
