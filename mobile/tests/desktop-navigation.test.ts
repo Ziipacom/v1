@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import {
+  compactStudioEntry,
   destinationFromSearch,
   destinationSearch,
   isDesktopPortal,
@@ -8,6 +9,13 @@ import {
 
 const first = "a130b762-6812-4963-9ebd-5d103a24084e";
 const second = "df8af080-7ba9-42b0-b959-26305b75ff6b";
+
+test("compact Studio opens the Publishing handoff and preserves its existing entry routes", () => {
+  assert.equal(compactStudioEntry("?view=publishing"), "Publishing");
+  assert.equal(compactStudioEntry("?view=admin"), "Administration");
+  for (const search of ["", "?view=library", "?view=live", "?view=publishing&view=admin"])
+    assert.equal(compactStudioEntry(search), "Studio");
+});
 
 test("desktop is a web-only finite breakpoint without changing compact or native routing", () => {
   assert.equal(isDesktopPortal("web", 1024), true);

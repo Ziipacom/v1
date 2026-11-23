@@ -56,6 +56,7 @@ import {
 import { DesktopShell, type DesktopRoute } from "./components/desktop-shell";
 import { CreatorStudioScreen } from "./screens/desktop-creator";
 import {
+  compactStudioEntry,
   destinationFromSearch,
   destinationSearch,
 } from "./lib/desktop-navigation";
@@ -105,6 +106,9 @@ function NavigationContent() {
     useZiipa();
   const { desktop } = useDesktopLayout();
   const navigation = useNavigationContainerRef<RootStack>();
+  const studioEntry = portalMode && typeof window !== "undefined"
+    ? compactStudioEntry(window.location.search)
+    : "Studio";
   const [activeRoute, setActiveRoute] = useState<DesktopRoute>({
     name: "Main",
   });
@@ -235,7 +239,10 @@ function NavigationContent() {
               { source: "ziipa-studio", type: "signed-out" },
               window.location.origin,
             );
-            if (window.parent === window) window.location.assign("/portal");
+            if (window.parent === window)
+              window.location.assign(
+                studioEntry === "Publishing" ? "/portal?next=publishing" : "/portal",
+              );
           }}
         />
       </SafeAreaView>
@@ -277,11 +284,7 @@ function NavigationContent() {
             desktop
               ? "Main"
               : portalMode
-                ? typeof window !== "undefined" &&
-                  new URLSearchParams(window.location.search).get("view") ===
-                    "admin"
-                  ? "Administration"
-                  : "Studio"
+                ? studioEntry
                 : undefined
           }
           screenOptions={{

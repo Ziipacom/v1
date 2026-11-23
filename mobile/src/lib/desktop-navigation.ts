@@ -225,6 +225,14 @@ export function destinationFromSearch(
   }
 }
 
+export function compactStudioEntry(search: string) {
+  if (destinationFromSearch(search)?.screen === "Publishing")
+    return "Publishing";
+  return new URLSearchParams(search).get("view") === "admin"
+    ? "Administration"
+    : "Studio";
+}
+
 export function destinationSearch(
   screen: string,
   params?: Record<string, unknown>,

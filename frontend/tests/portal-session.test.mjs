@@ -4,17 +4,20 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-function loadApi(portalMode, response={id:7,name:'Studio member',email:'test@example.test'}, status=200, standalone=false) {
+function loadApi(portalMode, response={id:7,name:'Studio member',email:'test@example.test'}, status=200, standalone=false, search='') {
   const calls=[]; const messages=[]; const redirects=[];
   const exports={};
   const source=readFileSync(new URL('../../mobile/src/lib/api.web.ts', import.meta.url), 'utf8');
   const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  const browserWindow={location:{origin:'https://ziipa.com',replace:(path)=>redirects.push(path)},parent:{postMessage:(...args)=>messages.push(args)}};
+  const browserWindow={location:{origin:'https://ziipa.com',search,replace:(path)=>redirects.push(path)},parent:{postMessage:(...args)=>messages.push(args)}};
   if(standalone) browserWindow.parent=browserWindow;
   const deadlineExports={};
   const deadlineSource=readFileSync(new URL('../../mobile/src/lib/request-deadline.ts', import.meta.url), 'utf8');
   vm.runInNewContext(ts.transpileModule(deadlineSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:deadlineExports,setTimeout,clearTimeout});
-  const context={exports,require:(name)=>{if(name==='./request-deadline')return deadlineExports;assert.equal(name,'./config');return {portalMode,validateOrigin:()=> 'https://ziipa.com',authorizationHeaders:(token)=>token&&!portalMode?{Authorization:`Bearer ${token}`}:{}};},
+  const navigationExports={};
+  const navigationSource=readFileSync(new URL('../../mobile/src/lib/desktop-navigation.ts', import.meta.url), 'utf8');
+  vm.runInNewContext(ts.transpileModule(navigationSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:navigationExports,URLSearchParams});
+  const context={exports,require:(name)=>{if(name==='./request-deadline')return deadlineExports;if(name==='./desktop-navigation')return navigationExports;assert.equal(name,'./config');return {portalMode,validateOrigin:()=> 'https://ziipa.com',authorizationHeaders:(token)=>token&&!portalMode?{Authorization:`Bearer ${token}`}:{}};},
     AbortController,setTimeout,clearTimeout,Date,window:browserWindow,
     fetch:async(url,options)=>{calls.push({url,options});return {ok:status>=200&&status<300,status,json:async()=>response};}};
   vm.runInNewContext(compiled,context);
@@ -67,6 +70,13 @@ test('top-level Studio cookie expiry redirects to portal while non-portal previe
   const preview=loadApi(false,{},200,true);
   await preview.api.clearSession();
   assert.deepEqual(preview.redirects,[]);
+});
+test('a signed-out Publishing handoff keeps its destination through portal sign-in',async()=>{
+  const portal=loadApi(true,{detail:'Sign in required'},401,true,'?view=publishing');
+  assert.equal(await portal.api.readSession(),null);
+  assert.deepEqual(portal.redirects,['/portal?next=publishing']);
+  await portal.api.clearSession();
+  assert.equal(portal.redirects.at(-1),'/portal');
 });
 test('API helper rejects arbitrary URLs before credentials can leave the API', async()=>{
   const {api,calls}=loadApi(true);

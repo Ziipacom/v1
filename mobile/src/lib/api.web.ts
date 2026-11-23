@@ -1,5 +1,6 @@
 import type { Session } from "./types";
 import { validateOrigin, portalMode, authorizationHeaders } from "./config";
+import { compactStudioEntry } from "./desktop-navigation";
 import {
   ApiRequestError,
   OperationTimeoutError,
@@ -31,7 +32,7 @@ export async function readSession() {
       };
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        await clearSession();
+        await clearSession(compactStudioEntry(window.location.search) === "Publishing");
         return null;
       }
       throw error;
@@ -42,10 +43,11 @@ export async function readSession() {
 export async function writeSession(session: Session) {
   saved = session;
 }
-export async function clearSession() {
+export async function clearSession(resumePublishing = false) {
   saved = null;
   if (portalMode) {
-    if (window.parent === window) window.location.replace("/portal");
+    if (window.parent === window)
+      window.location.replace(resumePublishing ? "/portal?next=publishing" : "/portal");
     else
       window.parent.postMessage(
         { source: "ziipa-studio", type: "signed-out" },
