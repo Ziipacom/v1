@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import * as desktopNavigation from "../src/lib/desktop-navigation.ts";
 import * as internalBetaPolicy from "../src/lib/internal-beta-policy.ts";
 
 function deferred<T = any>() {
@@ -112,6 +113,7 @@ function harness(
   const api = evaluate(
     `../src/lib/api${platform === "web" ? ".web" : ""}.ts`,
     (name) => {
+      if (name === "./desktop-navigation") return desktopNavigation;
       if (name === "./request-deadline") return deadline;
       if (name === "./internal-beta-policy") return internalBetaPolicy;
       if (name === "./config")
