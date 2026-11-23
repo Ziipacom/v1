@@ -18,6 +18,15 @@ test("desktop is a web-only finite breakpoint without changing compact or native
     assert.equal(isDesktopPortal(platform, 1600), false);
 });
 
+test("live watch links preserve the public broadcast identifier", () => {
+  const url = `?view=live&watchId=${first}`;
+  assert.deepEqual(destinationFromSearch(url), {
+    screen: "Live",
+    params: { watchId: first },
+  });
+  assert.equal(destinationSearch("Live", { watchId: first }), url);
+});
+
 test("desktop route views round-trip only their declared filters and identifiers", () => {
   const routes: [string, Record<string, unknown> | undefined][] = [
     [

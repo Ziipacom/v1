@@ -421,6 +421,11 @@ async def authorize(provider: SocialProvider, request: Request, ticket: str = Qu
               'response_type': 'code', 'scope': ' '.join(sorted(YOUTUBE_SCOPES)), 'state': state,
               'code_challenge': challenge, 'code_challenge_method': 'S256', 'access_type': 'offline', 'prompt': 'consent'}
     if provider == 'youtube':
+        from live_api import config as live_config
+        from live_network_adapters import YOUTUBE_LIVE_SCOPE
+
+        if live_config.live_youtube_enabled:
+            params['scope'] = ' '.join(sorted(YOUTUBE_SCOPES | {YOUTUBE_LIVE_SCOPE}))
         authorization = 'https://accounts.google.com/o/oauth2/v2/auth?' + urlencode(params)
     elif provider == 'tiktok':
         authorization = tiktok_adapter.authorization_url(config, callback_url(provider), state, challenge)
@@ -508,6 +513,8 @@ async def oauth_callback(provider: SocialProvider, request: Request, state: str 
                 if status != 200 or not isinstance(tokens.get('access_token'), str) or not YOUTUBE_SCOPES.issubset(scope):
                     raise ProviderFailure('YouTube did not grant the required channel and upload permissions. Reconnect and approve both permissions.')
                 targets = await channels(client, tokens['access_token'])
+                # Keep only permissions Google confirmed. Existing upload-only
+                # connections remain valid for posts but cannot open a live relay.
                 tokens = {'provider': provider, 'access_token': tokens['access_token'], 'refresh_token': tokens.get('refresh_token', ''),
                           'expires_at': time.time() + min(max(int(tokens.get('expires_in', 0)), 0), 86400), 'scope': sorted(scope)}
             elif provider == 'bluesky':
@@ -535,6 +542,9 @@ async def oauth_callback(provider: SocialProvider, request: Request, state: str 
             raise HTTPException(400, 'The Ziipa account no longer exists.')
         _enforce_actor(session, owner_id, mutation=True)
         grant = grant_for(session, owner_id, provider, lock=True)
+    if provider in ('youtube', 'facebook') and grant is not None:
+        from live_networks import detach_owner_destinations
+        await detach_owner_destinations(owner_id, (provider,), session, authorization=tokens, targets=targets)
     if grant is None:
         grant = PublishingGrant(owner_id=owner_id, provider=provider)
         session.add(grant)
@@ -571,6 +581,9 @@ async def choose_target(provider: SocialProvider, data: TargetInput, user: User 
         grant = grant_for(session, user.id, provider, lock=True)
         if not grant or grant.status != 'authorized' or data.target_id not in {target['id'] for target in grant.targets}:
             raise HTTPException(409, 'The provider connection changed before selecting its destination. Refresh and choose again.')
+    if provider in ('youtube', 'facebook') and grant.selected_target_id and grant.selected_target_id != data.target_id:
+        from live_networks import detach_owner_destinations
+        await detach_owner_destinations(user.id, (provider,), session)
     grant.selected_target_id = data.target_id
     session.commit()
     return grant_json(grant)
@@ -643,6 +656,9 @@ async def access_token(session: Session, grant: PublishingGrant, client: httpx.A
                 session.commit()
             raise HTTPException(409 if status in (400, 401) else 503, 'Provider authorization could not be refreshed. Reconnect or retry later.')
         tokens.update(access_token=refreshed['access_token'], expires_at=refreshed['expires_at'] if provider in ('tiktok', 'twitch') else time.time() + min(max(int(refreshed.get('expires_in', 0)), 0), 86400))
+        if provider == 'youtube' and isinstance(refreshed.get('scope'), str):
+            # Honor scope reductions reported by Google during token refresh.
+            tokens['scope'] = sorted(set(refreshed['scope'].split()))
         if refreshed.get('refresh_token'):
             tokens['refresh_token'] = refreshed['refresh_token']
         latest.token_cipher = encrypt_tokens(owner_id, provider, tokens)
@@ -1504,6 +1520,10 @@ async def disconnect_publishing(provider: SocialProvider, user: User = Depends(c
         if provider == 'twitch':
             from live_api import detach_twitch_destinations
             await detach_twitch_destinations(user.id, session)
+        elif provider in ('youtube', 'facebook', 'instagram', 'tiktok'):
+            from live_networks import detach_owner_destinations
+            affected = ('facebook', 'instagram') if provider in ('facebook', 'instagram') else (provider,)
+            await detach_owner_destinations(user.id, affected, session)
         revoked = await revoke_grant(grant)
         session.delete(grant)
         if provider in ('facebook', 'instagram'):

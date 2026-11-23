@@ -97,7 +97,10 @@ export async function request<T>(
           throw new ApiError(errorMessage(body), response.status);
         return body as T;
       },
-      path === "/api/web3/metadata" ? 120000 : 30000,
+      path === "/api/web3/metadata" ||
+      (data !== undefined && /^\/api\/live\/streams\/[0-9a-f-]+\/(?:start|end|destinations\/selection)$/.test(path))
+        ? 120000
+        : 30000,
       timeoutError,
       () => controller.abort(),
     );

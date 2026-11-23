@@ -400,6 +400,8 @@ from social_api import router as social_router
 app.include_router(social_router)
 from live_api import router as live_router
 app.include_router(live_router)
+from live_networks import router as live_network_router
+app.include_router(live_network_router)
 from live_recordings import router as live_recordings_router
 app.include_router(live_recordings_router)
 from live_webhooks import router as live_webhooks_router

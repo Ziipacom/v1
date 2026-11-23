@@ -46,7 +46,7 @@ type Tab = "watch" | "broadcast";
 export function LiveScreen({
   route,
 }: {
-  route?: { params?: { tab?: Tab; streamId?: string } };
+  route?: { params?: { tab?: Tab; streamId?: string; watchId?: string } };
 }) {
   const { desktop } = useDesktopLayout();
   const { api, guest, session } = useZiipa();
@@ -69,6 +69,7 @@ export function LiveScreen({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [consent, setConsent] = useState(false);
+  const [savingDestinations, setSavingDestinations] = useState(false);
   const [record, setRecord] = useState(false);
   const [busy, setBusy] = useState("");
   const [loading, setLoading] = useState(false);
@@ -199,6 +200,31 @@ export function LiveScreen({
       if (attempted.current) void stopRef.current();
     }
   }, [enabled]);
+  useEffect(() => {
+    const id = route?.params?.watchId;
+    if (!enabled || !id) return;
+    let current = true;
+    setTab("watch");
+    setWatching(null);
+    watchingRef.current = null;
+    void publicApi<PublicLiveBroadcast>(
+      `/api/live/public/${encodeURIComponent(id)}`,
+    )
+      .then((value) => {
+        if (!current) return;
+        if (!verifiedLive(value) || !checkedLivePlayback(value.playback_url))
+          throw new Error("This broadcast is no longer live.");
+        setWatching(value);
+        watchingRef.current = value;
+      })
+      .catch(() => {
+        if (current)
+          setError("This broadcast is no longer live or is unavailable.");
+      });
+    return () => {
+      current = false;
+    };
+  }, [enabled, publicApi, route?.params?.watchId]);
   useEffect(
     () => () => {
       transmitter.current?.stopLocal();
@@ -370,6 +396,7 @@ export function LiveScreen({
       !consent ||
       !enabledRef.current ||
       busyRef.current ||
+      savingDestinations ||
       startPromise.current
     )
       return Promise.reject(new Error("Confirm public broadcasting first."));
@@ -418,6 +445,7 @@ export function LiveScreen({
     ["prepared", "awaiting_media", "unknown"].includes(selected.status) &&
     consent &&
     !busy &&
+    !savingDestinations &&
     !!config?.configured;
   const watchedUrl =
     watching && verifiedLive(watching, clock)
@@ -714,16 +742,19 @@ export function LiveScreen({
                     : "Recording is off for this broadcast. Prepare a new broadcast with recording selected to create a recording; it cannot be added retroactively."}
                 </Text>
               </View>
+              {!["creating", "provisioning_unknown"].includes(selected.status) && (
+                <LiveDestinations
+                  broadcast={selected}
+                  disabled={!!busy || attempted.current || selected.status === "ended"}
+                  onConnections={() => navigation.navigate("Publishing")}
+                  onSavingChange={setSavingDestinations}
+                />
+              )}
               {selected.status !== "ended" &&
                 !["creating", "provisioning_unknown", "ending"].includes(
                   selected.status,
                 ) && (
                   <>
-                    <LiveDestinations
-                      broadcast={selected}
-                      disabled={!!busy || attempted.current}
-                      onConnections={() => navigation.navigate("Publishing")}
-                    />
                     <Pressable
                       accessibilityRole="checkbox"
                       accessibilityState={{

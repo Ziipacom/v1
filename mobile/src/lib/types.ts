@@ -218,7 +218,9 @@ export type RootStack = {
         deviceConnectRequest?: number;
       }
     | undefined;
-  Live: { tab?: "watch" | "broadcast"; streamId?: string } | undefined;
+  Live:
+    | { tab?: "watch" | "broadcast"; streamId?: string; watchId?: string }
+    | undefined;
   Recordings: { streamId?: string } | undefined;
   Notifications: { deliveryId?: string } | undefined;
   Settings: undefined;

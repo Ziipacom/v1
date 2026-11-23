@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field, SecretStr, StrictBool
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import Mapped, Session, mapped_column, object_session
 
 from app import Base, User, current_user, db, guard
 
@@ -24,6 +24,11 @@ class LiveSettings(BaseSettings):
     livepeer_api_key: SecretStr = SecretStr('')
     live_max_streams_per_owner: int = Field(default=3, ge=1, le=10)
     live_daily_create_limit: int = Field(default=10, ge=1, le=50)
+    live_max_external_destinations: int = Field(default=2, ge=1, le=5)
+    live_youtube_enabled: bool = False
+    live_facebook_enabled: bool = False
+    live_instagram_enabled: bool = False
+    live_tiktok_enabled: bool = False
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
 
@@ -274,7 +279,10 @@ async def refresh_stream(row):
             row.status, row.publish_enabled, row.ended_at = 'ended', False, now()
             return
         if row.status == 'ending':
-            if raw['suspended'] is True and raw['isActive'] is False:
+            from live_networks import rows_for
+            session = object_session(row)
+            pending = session is not None and any(dest.phase != 'ended' for dest in rows_for(session, row).values())
+            if raw['suspended'] is True and raw['isActive'] is False and not pending:
                 row.status, row.ended_at = 'ended', now()
             return
         policy = playback_policy(raw)
@@ -415,9 +423,12 @@ async def start_stream(stream_id: uuid.UUID, data: StartLive, user: User = Depen
             raise HTTPException(409, 'The Twitch channel changed. Remove this destination and authorize it again.')
     # Fresh read immediately before the explicit start. A stale prepared row or
     # calendar reminder is never proof that the provider still has this stream.
+    from live_networks import prepare_for_start, verify_attached_relays
+    row = await prepare_for_start(row, user, session)
     raw = await read_provider_stream(row)
     if raw is None or playback_policy(raw).get('type') != 'public':
         raise HTTPException(409, 'Provider broadcast configuration changed. Prepare or resolve this stream before starting.')
+    verify_attached_relays(session, row, raw)
     public_action_owner(session, owner_id)
     await provider_request('PATCH', '/stream/' + checked_uuid(row.provider_id), {'suspended': False})
     row.publish_enabled = True
@@ -542,6 +553,8 @@ async def set_twitch_destination(stream_id: uuid.UUID, data: TwitchDestinationIn
         return destination_receipt(destination)
     if destination and destination.status != 'detached':
         raise HTTPException(409, 'A Twitch destination is already pending. Reconcile it before trying another.')
+    from live_networks import require_relay_slot
+    require_relay_slot(session, row, 'twitch')
     if not destination:
         destination = TwitchDestination(stream_id=row.id, owner_id=user.id)
         session.add(destination)
@@ -567,8 +580,8 @@ async def set_twitch_destination(stream_id: uuid.UUID, data: TwitchDestinationIn
         if not raw or not raw['suspended']:
             raise HTTPException(409, 'The broadcast must remain suspended while configuring a destination.')
         targets = [target for target in multistream_targets(raw) if target['id'] != destination.target_id]
-        if len(targets) >= 100:
-            raise HTTPException(409, 'The broadcast already has too many destinations. Remove a destination before retrying.')
+        if len(targets) >= config.live_max_external_destinations:
+            raise HTTPException(409, 'The relay reached its free beta destination limit.')
         targets.append({'id': destination.target_id, 'profile': '720p', 'videoOnly': False})
         public_action_owner(session, owner_id)
         await provider_request('PATCH', '/stream/' + checked_uuid(row.provider_id),
@@ -603,6 +616,8 @@ async def ingest(stream_id: uuid.UUID, user: User = Depends(current_user), sessi
     raw = await read_provider_stream(row)
     if raw is None or raw['suspended'] or playback_policy(raw).get('type') != 'public':
         raise HTTPException(409, 'Livepeer ingest is not available for this broadcast.')
+    from live_networks import verify_attached_relays
+    verify_attached_relays(session, row, raw)
     public_action_owner(session, user.id)
     key = checked_token(raw.get('streamKey'))
     return {'stream_id': row.id, 'whip_url': WHIP_ORIGIN + '/' + key, 'rtmp_server': RTMP_SERVER, 'stream_key': key,
@@ -612,19 +627,24 @@ async def ingest(stream_id: uuid.UUID, user: User = Depends(current_user), sessi
 @router.post('/streams/{stream_id}/end', dependencies=[Depends(guard)])
 async def end_stream(stream_id: uuid.UUID, user: User = Depends(current_user), session: Session = Depends(db)):
     row = owned(session, stream_id, user)
+    from live_networks import cleanup_broadcast_destinations
     if row.status == 'ended':
+        await cleanup_broadcast_destinations(session, row)
+        session.commit()
         return serialize(row)
     if not row.provider_id:
         raise HTTPException(409, 'Provider creation is unresolved. An administrator must reconcile the request in Livepeer; no safe end operation is available yet.')
     row.publish_enabled, row.playback_url, row.status, row.checked_at = False, None, 'ending', None
     session.commit()  # Unlist immediately even if the provider is unreachable.
+    row = owned(session, stream_id, user)
     try:
         await provider_request('PATCH', '/stream/' + checked_uuid(row.provider_id), {'suspended': True})
         await provider_request('DELETE', '/stream/' + row.provider_id + '/terminate', allow_missing=True)
-        await refresh_stream(row)
+        await cleanup_broadcast_destinations(session, row)
         destination = session.get(TwitchDestination, row.id)
         if destination and destination.status != 'detached':
             await remove_twitch_destination(row, destination, session)
+        await refresh_stream(row)
     except HTTPException:
         session.commit()
         raise HTTPException(502, 'End broadcast has not been confirmed. Stop your encoder now and retry End broadcast.') from None
@@ -692,10 +712,12 @@ async def end_live_for_privacy(user_id: int, session: Session):
     Call before making a public profile private/members-only or deleting it.
     This does not commit or delete rows. It also does not remove recordings.
     """
+    from live_networks import cleanup_broadcast_destinations
     session.scalar(select(User).where(User.id == user_id).with_for_update())
     rows = session.scalars(select(LiveStream).where(LiveStream.owner_id == user_id).with_for_update()).all()
     for row in rows:
         if row.status == 'ended':
+            await cleanup_broadcast_destinations(session, row)
             continue
         if not row.provider_id:
             raise HTTPException(503, 'Broadcast provisioning must be reconciled by an administrator before changing privacy or deleting this account.')
@@ -703,6 +725,7 @@ async def end_live_for_privacy(user_id: int, session: Session):
             await provider_request('PATCH', '/stream/' + checked_uuid(row.provider_id), {'suspended': True})
             await provider_request('DELETE', '/stream/' + row.provider_id + '/terminate', allow_missing=True)
             row.publish_enabled, row.playback_url, row.status, row.checked_at = False, None, 'ending', None
+            await cleanup_broadcast_destinations(session, row)
             await refresh_stream(row)
             if row.status != 'ended':
                 raise HTTPException(503, 'Broadcast ending is not confirmed.')
@@ -715,8 +738,11 @@ async def delete_live_account(user_id: int, session: Session):
     """Call before deleting User; raises 503 rather than orphaning active ingest."""
     await end_live_for_privacy(user_id, session)
     from live_recordings import delete_provider_recordings
+    from live_networks import NetworkDestination
     await delete_provider_recordings(session, user_id)
     for destination in session.scalars(select(TwitchDestination).where(TwitchDestination.owner_id == user_id)).all():
+        session.delete(destination)
+    for destination in session.scalars(select(NetworkDestination).where(NetworkDestination.owner_id == user_id)).all():
         session.delete(destination)
     session.flush()
     rows = session.scalars(select(LiveStream).where(LiveStream.owner_id == user_id)).all()

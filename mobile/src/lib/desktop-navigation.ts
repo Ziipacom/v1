@@ -164,6 +164,7 @@ function project(
       break;
     case "live":
       id("streamId");
+      id("watchId");
       put("tab", choice(input.tab, ["watch", "broadcast"]));
       break;
     case "recordings":
