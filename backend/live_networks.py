@@ -466,7 +466,9 @@ async def destination_snapshot(session, row, *, observe=False):
 
 @router.get('/streams/{stream_id}/destinations', dependencies=[Depends(guard)])
 async def list_destinations(stream_id: uuid.UUID, user: User = Depends(current_user), session: Session = Depends(db)):
-    row = live.owned(session, stream_id, user)
+    # The owner detail poll can hold these locks while awaiting Livepeer.
+    # This read-only view must not block the event loop waiting for that poll.
+    row = live.owned(session, stream_id, user, lock=False)
     return await destination_snapshot(session, row, observe=True)
 
 

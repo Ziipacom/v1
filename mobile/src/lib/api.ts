@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import * as FileSystem from "expo-file-system/legacy";
-import { iosInternalTestflight, validateOrigin } from "./config";
+import { limitedStoreBeta, validateOrigin } from "./config";
 import { assertInternalBetaRequest } from "./internal-beta-policy";
 import type { Session } from "./types";
 import {
@@ -65,7 +65,7 @@ export async function request<T>(
 ): Promise<T> {
   if (!path.startsWith("/api/") || path.includes(".."))
     throw new Error("Invalid API path");
-  assertInternalBetaRequest(iosInternalTestflight, path, data === undefined ? "GET" : "POST");
+  assertInternalBetaRequest(limitedStoreBeta, path, data === undefined ? "GET" : "POST");
   const url = validateOrigin() + path;
   const requestBody = data === undefined ? undefined : JSON.stringify(data);
   const controller = new AbortController();

@@ -64,7 +64,7 @@ import {
   walletConnectConfigured,
 } from "../lib/wallet-connector";
 import { readPending, savePending, type Pending } from "../lib/wallet-pending";
-import { iosInternalTestflight } from "../lib/config";
+import { androidPlayInternal, limitedStoreBeta } from "../lib/config";
 import { sourceMintItem } from "../lib/editor-source";
 import { MediaRewards, RewardRuleFields } from "../components/media-rewards";
 import {
@@ -84,7 +84,7 @@ type Transfer = {
   symbol?: string;
 };
 export function WalletScreen(props: Props) {
-  return iosInternalTestflight ? <InternalWalletScreen {...props} /> : <FullWalletScreen {...props} />;
+  return limitedStoreBeta ? <InternalWalletScreen {...props} /> : <FullWalletScreen {...props} />;
 }
 
 /** Privacy cleanup remains available without initializing an external wallet. */
@@ -130,7 +130,9 @@ function InternalWalletScreen({ navigation }: Props) {
   return <SafeAreaView style={styles.screen}><ScrollView contentContainerStyle={styles.page}>
     <Action secondary title="Back" onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Studio")} />
     <Text style={styles.title}>Wallet privacy</Text>
-    <Notice text="Pairing, signatures, minting and transfers are unavailable in this private iPhone beta. You can remove an existing Ziipa wallet link without connecting or signing with a wallet." />
+    <Notice text={androidPlayInternal
+      ? "Pairing, signatures, minting and transfers are unavailable in this internal Android beta. You can remove an existing Ziipa wallet link without connecting or signing with a wallet."
+      : "Pairing, signatures, minting and transfers are unavailable in this private iPhone beta. You can remove an existing Ziipa wallet link without connecting or signing with a wallet."} />
     {(saved && saved.owner === token ? saved.links : []).map((row) => <View key={row.id} style={styles.panel}>
       <Text style={styles.body}>{shortAddress(row.address)}</Text>
       <Action secondary title="Unlink wallet from Ziipa" busy={busy === row.id} disabled={!!busy} onPress={() => void unlink(row.id)} />

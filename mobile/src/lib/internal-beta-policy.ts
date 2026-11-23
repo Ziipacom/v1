@@ -1,10 +1,13 @@
 export const internalBetaScope = "ios-internal-testflight";
 export const externalBetaScope = "ios-external-testflight";
+export const androidPlayInternalScope = "android-play-internal";
 export const externalBetaPrivacyUrl = "https://ziipa.com/privacy-beta";
 export const externalBetaNotice =
   "Limited iPhone beta · existing Ziipa accounts only (18+). Saved uploads and edits use your live account. Wallet actions, new network imports and remote push are unavailable. Video rendering is unavailable.";
 export const internalBetaNotice =
   "Private iPhone beta · existing accounts only. Your live Ziipa account stores saved uploads and edits. Wallet actions, new network imports and remote push are unavailable. Video rendering is unavailable; device acceptance is pending. External testing and public release are not approved.";
+export const androidPlayInternalNotice =
+  "Internal Android beta · existing Ziipa accounts only. Saved uploads and edits use your live account. Wallet actions, new network imports and remote push are unavailable. Video rendering and device acceptance remain pending.";
 
 export function isIosInternalBeta(platform: string, scope: string | undefined) {
   return platform === "ios" && scope === internalBetaScope;
@@ -18,6 +21,14 @@ export function isIosLimitedBeta(platform: string, scope: string | undefined) {
   return isIosInternalBeta(platform, scope) || isIosExternalBeta(platform, scope);
 }
 
+export function isAndroidPlayInternalBeta(platform: string, scope: string | undefined) {
+  return platform === "android" && scope === androidPlayInternalScope;
+}
+
+export function isLimitedStoreBeta(platform: string, scope: string | undefined) {
+  return isIosLimitedBeta(platform, scope) || isAndroidPlayInternalBeta(platform, scope);
+}
+
 export type InternalBetaAction =
   "registration" | "wallet" | "network-import" | "remote-push" | "purchase";
 export function assertInternalBetaAction(
@@ -29,13 +40,13 @@ export function assertInternalBetaAction(
     registration:
       "This private iPhone beta supports existing Ziipa accounts only. New account registration is unavailable.",
     wallet:
-      "Wallet pairing, signatures and transactions are unavailable in this private iPhone beta.",
+      "Wallet pairing, signatures and transactions are unavailable in this limited native beta.",
     "network-import":
-      "New network connections, authorization and imports are unavailable in this private iPhone beta. Existing authorizations can still be disconnected.",
+      "New network connections, authorization and imports are unavailable in this limited native beta. Existing authorizations can still be disconnected.",
     "remote-push":
-      "Remote push enrollment is unavailable in this private iPhone beta. In-app notifications and privacy preferences remain available.",
+      "Remote push enrollment is unavailable in this limited native beta. In-app notifications and privacy preferences remain available.",
     purchase:
-      "Purchases are unavailable in this limited iPhone beta. Proposed service packages can be reviewed without buying.",
+      "Purchases are unavailable in this limited native beta. Proposed service packages can be reviewed without buying.",
   }[action];
   throw new Error(message);
 }

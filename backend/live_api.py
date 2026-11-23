@@ -200,9 +200,12 @@ async def provider_request(method, path, payload=None, allow_missing=False):
     raise HTTPException(502, 'Livepeer did not return a usable response.')
 
 
-def owned(session, stream_id, user):
-    session.scalar(select(User).where(User.id == user.id).with_for_update())
-    row = session.scalar(select(LiveStream).where(LiveStream.id == str(stream_id), LiveStream.owner_id == user.id).with_for_update())
+def owned(session, stream_id, user, *, lock=True):
+    query = select(LiveStream).where(LiveStream.id == str(stream_id), LiveStream.owner_id == user.id)
+    if lock:
+        session.scalar(select(User).where(User.id == user.id).with_for_update())
+        query = query.with_for_update()
+    row = session.scalar(query)
     if row is None:
         raise HTTPException(404, 'Broadcast not found.')
     return row
@@ -507,7 +510,7 @@ async def detach_twitch_destinations(owner_id: int, session: Session):
 
 @router.get('/streams/{stream_id}/destinations/twitch')
 def twitch_destination(stream_id: uuid.UUID, user: User = Depends(current_user), session: Session = Depends(db)):
-    row = owned(session, stream_id, user)
+    row = owned(session, stream_id, user, lock=False)
     return destination_receipt(session.get(TwitchDestination, row.id))
 
 

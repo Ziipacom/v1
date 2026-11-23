@@ -28,7 +28,7 @@ import { socialProvider } from "../lib/social";
 import { readyRender, type RenderJob } from "../lib/render-types";
 import { TwitchChannel } from "../components/twitch-channel";
 import { useOperationScope } from "../lib/use-operation-scope";
-import { iosInternalTestflight } from "../lib/config";
+import { limitedStoreBeta } from "../lib/config";
 import { assertInternalBetaAction } from "../lib/internal-beta-policy";
 import {
   blankTikTok,
@@ -466,7 +466,7 @@ function ScopedPublishingScreen({
     setRequestId(Crypto.randomUUID());
   }
   async function authorize() {
-    assertInternalBetaAction(iosInternalTestflight, "network-import");
+    assertInternalBetaAction(limitedStoreBeta, "network-import");
     const current = capture();
     const result = await api<{
       auth_url?: string;
@@ -599,7 +599,7 @@ function ScopedPublishingScreen({
               title="Open secure authorization"
               onPress={() => {
                 void run(async () => {
-                  assertInternalBetaAction(iosInternalTestflight, "network-import");
+                  assertInternalBetaAction(limitedStoreBeta, "network-import");
                   await Linking.openURL(authUrl);
                 });
               }}
@@ -617,7 +617,7 @@ function ScopedPublishingScreen({
                   onPress={() => {
                     resetApproval();
                     void run(async (current) => {
-                      assertInternalBetaAction(iosInternalTestflight, "network-import");
+                      assertInternalBetaAction(limitedStoreBeta, "network-import");
                       await api(
                         `/api/publishing/connections/${provider}/target`,
                         { target_id: target.id },

@@ -23,7 +23,7 @@ const config: PushConfig = {
   notice: "",
 };
 function client(
-  platform: "ios" | "web",
+  platform: "ios" | "android" | "web",
   options: {
     granted?: boolean;
     deny?: boolean;
@@ -141,7 +141,11 @@ function client(
         };
       if (name === "expo-crypto")
         return { randomUUID: () => "5bca9ea2-5787-49b3-b01c-5067bc1d73b0" };
-      if (name === "./config") return { portalMode: platform === "web", iosInternalTestflight: platform === "ios" && !!options.internalBeta };
+      if (name === "./config") return {
+        portalMode: platform === "web",
+        androidPlayInternal: platform === "android" && !!options.internalBeta,
+        limitedStoreBeta: platform !== "web" && !!options.internalBeta,
+      };
       if (name === "./internal-beta-policy") return internalBetaPolicy;
       if (name === "./notification-types")
         return { webPushKey, webPushKeyMatches };
@@ -183,6 +187,17 @@ test("private iPhone beta never requests APNs permission or an Expo token and ke
   dispose();
   const web = client("web", { internalBeta: true });
   assert.equal((await web.api.pushCapability()).supported, true);
+});
+
+test("internal Android beta never requests FCM permission or an Expo token and keeps native listener inert", async () => {
+  const app = client("android", { internalBeta: true, granted: false });
+  const capability = await app.api.pushCapability();
+  assert.equal(capability.supported, false);
+  assert.match(capability.detail, /internal Android beta/);
+  await assert.rejects(app.api.registerPushDevice(config, "Internal beta", () => true), /Remote push enrollment is unavailable/);
+  assert.deepEqual(app.calls, { permissions: 0, token: 0, subscribe: 0 });
+  const dispose = await app.api.nativeNotificationListener(() => assert.fail("No remote notification callback expected"));
+  dispose();
 });
 test("denied permission and account changes during the permission sheet cannot acquire a token", async () => {
   const denied = client("ios", { granted: false, deny: true });

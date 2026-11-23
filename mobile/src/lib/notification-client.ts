@@ -2,7 +2,7 @@ import { Platform } from "react-native";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Crypto from "expo-crypto";
-import { iosInternalTestflight, portalMode } from "./config";
+import { androidPlayInternal, limitedStoreBeta, portalMode } from "./config";
 import { assertInternalBetaAction } from "./internal-beta-policy";
 import {
   webPushKey,
@@ -26,10 +26,12 @@ function nativeProjectId() {
   return typeof id === "string" && uuid.test(id) ? id : null;
 }
 export async function pushCapability(): Promise<PushCapability> {
-  if (iosInternalTestflight) return {
+  if (limitedStoreBeta) return {
     supported: false,
     permission: "unavailable",
-    detail: "Remote push is unavailable in this private iPhone beta. In-app notifications remain available; no APNs key or device enrollment is requested.",
+    detail: androidPlayInternal
+      ? "Remote push is unavailable in this internal Android beta. In-app notifications remain available; no Firebase or device enrollment is requested."
+      : "Remote push is unavailable in this private iPhone beta. In-app notifications remain available; no APNs key or device enrollment is requested.",
   };
   if (Platform.OS === "web") {
     const supported =
@@ -105,7 +107,7 @@ export async function registerPushDevice(
   label: string,
   current: () => boolean,
 ): Promise<PushRegistration> {
-  assertInternalBetaAction(iosInternalTestflight, "remote-push");
+  assertInternalBetaAction(limitedStoreBeta, "remote-push");
   if (!config.enabled || !config.worker_ready)
     throw new Error("Push delivery is not enabled on the server.");
   const capability = await pushCapability();
@@ -240,7 +242,7 @@ export async function nativeNotificationListener(
   open: (data: unknown) => void,
 ): Promise<() => void> {
   if (
-    iosInternalTestflight ||
+    limitedStoreBeta ||
     Platform.OS === "web" ||
     Constants.executionEnvironment === "storeClient" ||
     !nativeProjectId()

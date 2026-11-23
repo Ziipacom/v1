@@ -162,7 +162,7 @@ function harness(native = false, initialTab = "accounts", internal = false) {
           return discovery;
         if (name === "../lib/social") return social;
         if (name === "../lib/config")
-          return { canonicalApiOrigin: "https://api.ziipa.com", iosInternalTestflight: internal };
+          return { canonicalApiOrigin: "https://api.ziipa.com", limitedStoreBeta: internal };
         if (name === "../lib/internal-beta-policy") return internalBetaPolicy;
         if (name === "../lib/use-operation-scope")
           return { useOperationScope: () => () => () => true };

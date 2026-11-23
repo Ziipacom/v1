@@ -40,7 +40,7 @@ import { createAutomationChatController } from "../lib/automation-chat";
 import { useAutomationDictation } from "../lib/automation-dictation";
 import {
   authorizationHeaders,
-  iosInternalTestflight,
+  limitedStoreBeta,
   portalMode,
   validateOrigin,
 } from "../lib/config";
@@ -473,7 +473,7 @@ export function MediaOSScreen({
         path.includes("..")
       )
         throw new Error("Invalid workspace request.");
-      assertInternalBetaRequest(iosInternalTestflight, path, method);
+      assertInternalBetaRequest(limitedStoreBeta, path, method);
       const controller = new AbortController();
       requests.current.add(controller);
       const timer = setTimeout(() => controller.abort(), 30000);

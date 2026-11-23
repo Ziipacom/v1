@@ -1,10 +1,15 @@
 """Control-plane coverage for multiple relays without sending any media."""
+import asyncio
 import json
 import time
+import uuid
 
 import httpx
 import pytest
+from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from app import Base, User, engine
 
 from test_live import AUTH, OTHER, create, harness
 import live_api as live
@@ -90,6 +95,41 @@ def snapshot(h, stream):
     assert INSTAGRAM_KEY not in result.text and STAGED['ingest_url'] not in result.text
     assert result.headers['cache-control'] == 'private, no-store'
     return {row['provider']: row for row in result.json()['destinations']}
+
+
+def test_destination_reads_do_not_wait_for_inflight_broadcast_status():
+    if engine.dialect.name != 'postgresql' or engine.url.host not in {'localhost', '127.0.0.1', '::1'}:
+        pytest.skip('Destination lock acceptance requires local PostgreSQL.')
+    schema = 'ziipa_test_live_lock_' + uuid.uuid4().hex
+    with engine.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA {schema}'))
+    bound = engine.execution_options(schema_translate_map={None: schema})
+    try:
+        Base.metadata.create_all(bound, tables=[User.__table__, live.LiveStream.__table__,
+            live.TwitchDestination.__table__, publishing.PublishingGrant.__table__,
+            networks.NetworkDestination.__table__])
+        with Session(bound) as session:
+            user = User(name='Destination lock test', email='live-lock@example.test', password_hash='unused')
+            session.add(user)
+            session.flush()
+            stream = live.LiveStream(owner_id=user.id, request_id=str(uuid.uuid4()), title='Prepared session',
+                                     provider_id=str(uuid.uuid4()), status='prepared')
+            session.add(stream)
+            session.flush()
+            owner_id, stream_id = user.id, uuid.UUID(stream.id)
+            session.commit()
+
+        with Session(bound) as polling, Session(bound) as viewing:
+            # The usual owner detail poll holds these locks while awaiting Livepeer.
+            live.owned(polling, stream_id, polling.get(User, owner_id))
+            viewing.execute(text("SET LOCAL lock_timeout = '1s'"))
+            user = viewing.get(User, owner_id)
+            snapshot = asyncio.run(networks.list_destinations(stream_id, user, viewing))
+            assert snapshot['destinations'][0]['status'] == 'ready'
+            assert live.twitch_destination(stream_id, user, viewing)['status'] == 'detached'
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA {schema} CASCADE'))
 
 
 def test_selection_single_start_independent_proof_and_cleanup(multistream):

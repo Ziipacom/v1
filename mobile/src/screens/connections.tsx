@@ -58,7 +58,7 @@ import {
   type NetworkTab,
 } from "../lib/network-hub";
 import { prepareMediaShare } from "../lib/share-creation";
-import { canonicalApiOrigin, iosInternalTestflight } from "../lib/config";
+import { canonicalApiOrigin, limitedStoreBeta } from "../lib/config";
 import { assertInternalBetaAction } from "../lib/internal-beta-policy";
 import { useNetworkSnapshotExpiry } from "../lib/use-network-snapshot-expiry";
 import { useOperationScope } from "../lib/use-operation-scope";
@@ -339,7 +339,7 @@ function ScopedConnectionsScreen({
     await Linking.openURL(safe);
   }
   async function saveLink() {
-    assertInternalBetaAction(iosInternalTestflight, "network-import");
+    assertInternalBetaAction(limitedStoreBeta, "network-import");
     if (!selected) return;
     const normalized = profileLink(selected, linkValue);
     if (guest) {
@@ -375,7 +375,7 @@ function ScopedConnectionsScreen({
     setSelected(null);
   }
   async function connect() {
-    assertInternalBetaAction(iosInternalTestflight, "network-import");
+    assertInternalBetaAction(limitedStoreBeta, "network-import");
     if (!selected) return;
     if (guest) {
       setSelected(null);
@@ -450,7 +450,7 @@ function ScopedConnectionsScreen({
     }
   }
   async function selectImportTarget(targetId: string) {
-    assertInternalBetaAction(iosInternalTestflight, "network-import");
+    assertInternalBetaAction(limitedStoreBeta, "network-import");
     if (!account || !selected || guest || !focused) return;
     const current = capture();
     const input = importTargetInput(account, targetId);
@@ -482,7 +482,7 @@ function ScopedConnectionsScreen({
     }
   }
   async function sync(provider?: SocialProvider) {
-    assertInternalBetaAction(iosInternalTestflight, "network-import");
+    assertInternalBetaAction(limitedStoreBeta, "network-import");
     if (guest) {
       setSelected(null);
       navigation.navigate("Login");
@@ -1320,7 +1320,7 @@ function ScopedConnectionsScreen({
               disabled={!!busy}
               onPress={() =>
                 void run("authorize-import", async () => {
-                  assertInternalBetaAction(iosInternalTestflight, "network-import");
+                  assertInternalBetaAction(limitedStoreBeta, "network-import");
                   const current = capture();
                   if (!current()) return;
                   const url = importAuthorizationUrl(
@@ -1345,7 +1345,7 @@ function ScopedConnectionsScreen({
               disabled={!!busy}
               onPress={() =>
                 void run("open-import-portal", async () => {
-                  assertInternalBetaAction(iosInternalTestflight, "network-import");
+                  assertInternalBetaAction(limitedStoreBeta, "network-import");
                   const current = capture();
                   if (!current()) return;
                   await Linking.openURL(portalLink);

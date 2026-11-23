@@ -1,12 +1,13 @@
 import { Platform } from "react-native";
 import { browserPreviewApiOrigin } from "./preview-origin";
-import { externalBetaPrivacyUrl, isIosExternalBeta, isIosLimitedBeta } from "./internal-beta-policy";
+import { externalBetaPrivacyUrl, isIosExternalBeta, isIosLimitedBeta, isAndroidPlayInternalBeta, isLimitedStoreBeta } from "./internal-beta-policy";
 
 export const iosLimitedTestflight = isIosLimitedBeta(Platform.OS, process.env.EXPO_PUBLIC_BUILD_SCOPE);
 export const iosExternalTestflight = isIosExternalBeta(Platform.OS, process.env.EXPO_PUBLIC_BUILD_SCOPE);
-// Compatibility name used by every existing transport/action guard. Both
-// limited iOS profiles share the restrictions; ordinary web/Android do not.
+// Keep platform-specific exports for existing iOS notices and compatibility.
 export const iosInternalTestflight = iosLimitedTestflight;
+export const androidPlayInternal = isAndroidPlayInternalBeta(Platform.OS, process.env.EXPO_PUBLIC_BUILD_SCOPE);
+export const limitedStoreBeta = isLimitedStoreBeta(Platform.OS, process.env.EXPO_PUBLIC_BUILD_SCOPE);
 
 // EXPO_PUBLIC values are bundled and must never contain secrets.
 export const portalMode =

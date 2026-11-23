@@ -87,6 +87,19 @@
         "ZIIPA_TESTFLIGHT_PUBLIC_RELEASE": "forbidden"
       }
     },
+    "android-play-internal": {
+      "extends": "production",
+      "environment": "preview",
+      "autoIncrement": false,
+      "env": {
+        "EXPO_NO_DOTENV": "1",
+        "ZIIPA_BUILD_SCOPE": "android-play-internal",
+        "EXPO_PUBLIC_BUILD_SCOPE": "android-play-internal",
+        "ZIIPA_APP_ID": "com.ziipa.app",
+        "EXPO_PUBLIC_PRIVACY_URL": "https://ziipa.com/privacy-beta",
+        "EXPO_PUBLIC_SUPPORT_EMAIL": "ziipaziipa@gmail.com"
+      }
+    },
     "store-with-ads": {
       "extends": "production",
       "env": {

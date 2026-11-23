@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { useIsFocused } from "@react-navigation/native";
 import {
   Check,
   ChevronRight,
@@ -11,6 +10,7 @@ import {
 } from "lucide-react-native";
 import { Action, Field, Notice } from "./ui";
 import { ApiError } from "../lib/api";
+import { limitedStoreBeta } from "../lib/config";
 import { verifiedLive, type LiveBroadcast } from "../lib/live-types";
 import { useOperationScope } from "../lib/use-operation-scope";
 import { useZiipa } from "../provider";
@@ -69,6 +69,7 @@ type Editor = {
 };
 type Props = {
   broadcast: LiveBroadcast;
+  focused: boolean;
   disabled: boolean;
   onConnections: () => void;
   onSavingChange?: (saving: boolean) => void;
@@ -286,13 +287,13 @@ export function LiveDestinations(props: Props) {
 
 function ScopedDestinations({
   broadcast,
+  focused,
   disabled,
   onConnections,
   onSavingChange,
 }: Props) {
   useTheme();
   const { api } = useZiipa();
-  const focused = useIsFocused();
   const capture = useOperationScope(broadcast.id, focused);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -724,12 +725,39 @@ function ScopedDestinations({
         </Text>
       )}
       {canManageConnections && prepared && (
-        <Action
-          title="Manage network connections"
-          secondary
-          disabled={locked}
-          onPress={onConnections}
-        />
+        <>
+          {limitedStoreBeta && (
+            <Text style={styles.small}>
+              Sign in with the same Ziipa account on the web. Connect your
+              network and select its channel or Page, then return here.
+            </Text>
+          )}
+          <Action
+            title={
+              limitedStoreBeta
+                ? "Open connections on Ziipa web"
+                : "Manage network connections"
+            }
+            secondary
+            disabled={locked}
+            onPress={() => {
+              if (!limitedStoreBeta) {
+                onConnections();
+                return;
+              }
+              const current = capture();
+              setActionError("");
+              void Linking.openURL(
+                "https://ziipa.com/studio/?view=publishing",
+              ).catch(() => {
+                if (current())
+                  setActionError(
+                    "Open ziipa.com in your browser and go to Publishing to connect a network.",
+                  );
+              });
+            }}
+          />
+        </>
       )}
     </View>
   );

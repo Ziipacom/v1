@@ -17,7 +17,7 @@ import type { RootStack } from "../lib/types";
 import { color, font, styles } from "../theme";
 import { Action, Field, Logo, Notice } from "../components/ui";
 import { useZiipa } from "../provider";
-import { demoEnabled, iosInternalTestflight } from "../lib/config";
+import { demoEnabled, limitedStoreBeta } from "../lib/config";
 import { request } from "../lib/api";
 
 export function WelcomeScreen({
@@ -55,9 +55,9 @@ export function WelcomeScreen({
                 and your next obsession.
               </Text>
               <Action
-                title={iosInternalTestflight ? "Sign in to the private beta" : "Get started"}
+                title={limitedStoreBeta ? "Sign in to the private beta" : "Get started"}
                 icon={ArrowUpRight}
-                onPress={() => navigation.navigate("Login", { register: !iosInternalTestflight })}
+                onPress={() => navigation.navigate("Login", { register: !limitedStoreBeta })}
               />
               <Action
                 secondary
@@ -95,7 +95,7 @@ export function LoginScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStack, "Login">) {
-  const [register, setRegister] = useState(!iosInternalTestflight && (route.params?.register ?? false));
+  const [register, setRegister] = useState(!limitedStoreBeta && (route.params?.register ?? false));
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -270,7 +270,7 @@ export function LoginScreen({
             }}
           />
         )}
-        {!iosInternalTestflight && <Action
+        {!limitedStoreBeta && <Action
           secondary
           title={
             register

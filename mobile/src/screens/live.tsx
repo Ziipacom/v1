@@ -453,6 +453,8 @@ export function LiveScreen({
       : null;
   return (
     <ScrollView
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
       style={styles.screen}
       contentContainerStyle={desktop ? workspace.page : styles.page}
       showsVerticalScrollIndicator={false}
@@ -745,6 +747,7 @@ export function LiveScreen({
               {!["creating", "provisioning_unknown"].includes(selected.status) && (
                 <LiveDestinations
                   broadcast={selected}
+                  focused={enabled}
                   disabled={!!busy || attempted.current || selected.status === "ended"}
                   onConnections={() => navigation.navigate("Publishing")}
                   onSavingChange={setSavingDestinations}

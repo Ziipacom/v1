@@ -330,7 +330,7 @@ test("real native request and direct creator transport reject writes before any 
       return { ok: true, json: async () => ({ ok: true }) };
     };
     const config = {
-      iosInternalTestflight: locked,
+      limitedStoreBeta: locked,
       validateOrigin: () => "https://api.ziipa.test",
       authorizationHeaders: () => ({}),
       portalMode: false,
@@ -398,7 +398,7 @@ test("wallet exported actions block provider pairing/signing/transactions before
       (name) => {
         if (name === "buffer") return require("node:buffer");
         if (name === "react-native") return { Platform: { OS: "ios" } };
-        if (name === "./config") return { iosInternalTestflight: locked };
+        if (name === "./config") return { limitedStoreBeta: locked };
         if (name === "./internal-beta-policy") return policy;
         if (name === "./wallet-injected")
           return { injectedWallet: () => provider };
@@ -504,7 +504,7 @@ test("internal auth routes stale registration links to existing-account sign-in;
             },
           );
         if (name === "../lib/config")
-          return { demoEnabled: false, iosInternalTestflight: internal };
+          return { demoEnabled: false, limitedStoreBeta: internal };
         if (name === "../provider")
           return {
             useZiipa: () => ({

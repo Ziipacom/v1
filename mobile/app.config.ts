@@ -14,10 +14,17 @@ const externalTestflight =
   process.env.ZIIPA_BUILD_SCOPE === "ios-external-testflight" ||
   process.env.EXPO_PUBLIC_BUILD_SCOPE === "ios-external-testflight";
 const limitedTestflight = internalTestflight || externalTestflight;
+const playInternalScope = "android-play-internal";
+const playInternal =
+  process.env.ZIIPA_BUILD_SCOPE === playInternalScope ||
+  process.env.EXPO_PUBLIC_BUILD_SCOPE === playInternalScope;
+if (playInternal)
+  require("./scripts/check-android-play-internal.cjs").assertPlayInternalConfig(process.env);
 const admobReleaseAds =
   production &&
   !portal &&
   !limitedTestflight &&
+  !playInternal &&
   identifier === "com.ziipa.app" &&
   process.env.ZIIPA_ADMOB_RELEASE_ADS === "true";
 const limitedScope = internalTestflight
@@ -50,7 +57,7 @@ if (
   );
 // Owner-provided Firebase client configuration (an EAS file variable or local
 // path), never the FCM service-account private key. Web exports do not use it.
-const googleServicesFile = portal
+const googleServicesFile = portal || playInternal
   ? undefined
   : process.env.GOOGLE_SERVICES_JSON?.trim();
 // Omit unreviewed export declarations instead of assuming an exemption.
@@ -65,8 +72,10 @@ const photoLibraryPermission =
 const config: ExpoConfig = {
   name: admobTestAds ? "Ziipa Ads QA" : production ? "Ziipa" : "Ziipa Preview",
   slug: "ziipa",
-  version: "1.0.20",
-  platforms: limitedTestflight
+  version: "1.0.21",
+  platforms: playInternal
+    ? ["android"]
+    : limitedTestflight
     ? ["ios"]
     : portal
       ? ["web"]
@@ -116,7 +125,7 @@ const config: ExpoConfig = {
     allowBackup: false,
     package: production ? identifier : `${identifier}.preview`,
     ...(googleServicesFile ? { googleServicesFile } : {}),
-    versionCode: 22,
+    versionCode: 23,
     adaptiveIcon: {
       foregroundImage: "./assets/brand/ziipa-favicon.png",
       backgroundColor: "#110D1C",
@@ -242,6 +251,9 @@ const config: ExpoConfig = {
     variant: production ? "production" : "preview",
     ...(admobTestAds ? { admobTestAds: true } : {}),
     ...(admobReleaseAds ? { admobReleaseAds: true } : {}),
+    ...(playInternal
+      ? { buildScope: playInternalScope, publicReleaseAllowed: false, deviceQA: "pending" }
+      : {}),
     ...(internalTestflight
       ? {
           buildScope: "ios-internal-testflight",
