@@ -493,7 +493,7 @@ function ScopedPublishingScreen({
     }
     setMessage(
       result.detail ||
-        "Open authorization, approve your account, then return here and refresh.",
+        "Connect your account, then return here and refresh.",
     );
   }
   async function publish() {
@@ -559,13 +559,7 @@ function ScopedPublishingScreen({
           <HelpLabel
             label={ready.name}
             style={[styles.heading, desktop && dp.sectionTitle]}
-            help={[
-              ready.detail,
-              ...ready.requirements,
-              ...(ready.delivery_requirements || []),
-            ]
-              .filter(Boolean)
-              .join("\n")}
+            help="Connect an account you control, choose a channel and review each post before sharing. Available account types and media formats vary by network."
           />
           <Text style={styles.small}>
             {selected?.status === "authorized"
@@ -675,7 +669,7 @@ function ScopedPublishingScreen({
             <Text style={[styles.heading, desktop && dp.sectionTitle]}>
               1. Your source media
             </Text>
-            <Notice text="Choose a rendered MP4 to include saved editor effects. Ziipa checks that the export still matches your saved edit before sending it." />
+            <Notice text="Choose an exported video to include your saved trim, captions, overlays and soundtrack." />
             {desktop ? (
               <ScrollView
                 automaticallyAdjustKeyboardInsets
@@ -863,7 +857,7 @@ function ScopedPublishingScreen({
               )}
               {reviewError && <Notice error text={reviewError} />}
               {!sourceReview && !reviewBusy && (
-                <Notice text="Select an original video or a ready export above to review the exact outgoing file. Publishing stays disabled until server verification succeeds." />
+                <Notice text="Choose an original video or a finished export above. Ziipa will check the file before you review and publish it." />
               )}
               {creator && (
                 <>
@@ -1264,7 +1258,7 @@ function ScopedPublishingScreen({
         </View>
       ))}
       <Action
-        title="Manual sharing and network feeds"
+        title="More sharing options & feeds"
         secondary
         onPress={() => navigation.navigate("Connections", { tab: "outbox" })}
       />
@@ -1430,13 +1424,11 @@ function ScopedPublishingScreen({
               {accountControls}
               {!ready && (
                 <Text style={styles.small}>
-                  Select a network to see its authorization and publishing
-                  requirements.
+                  Select a network to connect your account and see sharing options.
                 </Text>
               )}
               <Text style={dp.footnote}>
-                A saved profile link is not publishing permission. Each outgoing
-                request requires your approval.
+                Review and approve each post before sharing.
               </Text>
             </View>
             <View

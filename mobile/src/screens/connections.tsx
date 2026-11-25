@@ -497,7 +497,7 @@ function ScopedConnectionsScreen({
     );
     if (!candidates.length) {
       setNotice(
-        "Link Bluesky or a public YouTube channel, or authorize and select an eligible Meta/TikTok import target. Server readiness and permissions are required; saving a shortcut alone grants no access.",
+        "Connect an account or link an eligible public profile to sync posts.",
       );
       return;
     }
@@ -552,7 +552,7 @@ function ScopedConnectionsScreen({
       throw new Error(
         "Clipboard access is unavailable. Select and copy the text manually, or use localhost / HTTPS.",
       );
-    setNotice("Copied. Nothing has been sent or posted.");
+    setNotice("Link copied.");
   }
   async function invite() {
     const inviteUrl = hub.invite_url.startsWith("https://")
@@ -1133,11 +1133,10 @@ function ScopedConnectionsScreen({
                 </Pressable>
               </View>
               <Action
-                title="Open direct publishing & receipts"
+                title="Open Publishing"
                 icon={Send}
                 onPress={() => navigation.navigate("Publishing")}
               />
-              <Notice text="Direct publishing uses separately authorized destination accounts. The options below share your original media manually, so you can finish posting in the destination app." />
               <NetworkGrid>
                 {ownMedia.length ? (
                   ownMedia.map((item) => (
@@ -1307,7 +1306,7 @@ function ScopedConnectionsScreen({
                 ? "Sign in to authorize account"
                 : readImportProviders.has(selected)
                   ? "Set up read-only public imports"
-                  : "Check public import readiness"
+                  : "Check available imports"
             }
             icon={ShieldCheck}
             secondary

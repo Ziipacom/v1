@@ -265,7 +265,7 @@ function ScopedMusicWorkspace({
         setError(
           cause instanceof Error
             ? cause.message
-            : "Model readiness could not load.",
+            : "Could not check the AI composer.",
         );
       }
     } finally {
@@ -363,7 +363,7 @@ function ScopedMusicWorkspace({
       setNotice(
         resultPlan.engine === "ziipa-llm-composer-v1"
           ? "AI-composed score rendered to WAV on this device. Preview it, then explicitly attach and save; nothing was published."
-          : "Offline procedural WAV is ready. No AI model was used. It stays local until you attach it and save the draft.",
+          : "Your instrumental is ready to preview.",
       );
       next = undefined;
     } catch (cause) {
@@ -727,7 +727,7 @@ function ScopedMusicWorkspace({
               }}
             />
             <Pill
-              title="Offline fallback"
+              title="Offline composer"
               active={createMode === "offline"}
               onPress={() => {
                 if (!disabled) setCreateMode("offline");
@@ -748,22 +748,18 @@ function ScopedMusicWorkspace({
             <>
               {createMode === "ai" ? (
                 <View style={{ gap: 10 }}>
-                  <Notice
-                    text={`A language model composes the actual melody, harmony, rhythm and instrument events; Ziipa renders the score to WAV locally. ${aiConfig?.provider === "cloudflare" ? "Your description and controls are sent to Cloudflare Workers AI, a third-party inference service subject to its policies." : aiConfig?.provider === "private" ? "Your description and controls are sent to Ziipa's private configured inference service." : "Refresh status to identify the configured inference provider before consenting."} No uploaded audio or library context is sent. This is instrumental score synthesis, not a vocals or studio-audio model.`}
-                  />
                   <Text style={styles.small}>
                     {!session
-                      ? "Sign in to use Ziipa's AI composer. The offline fallback remains available."
+                      ? "Sign in to use the AI composer."
                       : configLoading
-                        ? "Checking music model readiness..."
+                        ? "Checking availability…"
                         : aiConfig?.available
-                          ? `Model ready: ${aiConfig.model || "configured model"}. Up to 48 notes / 30 seconds.`
-                          : aiConfig?.detail ||
-                            "AI model availability has not been verified. Refresh status or explicitly choose the offline fallback."}
+                          ? "Instrumentals up to 30 seconds."
+                          : "AI composer is unavailable. Try the offline composer."}
                   </Text>
                   <Action
                     secondary
-                    title="Refresh model status"
+                    title="Refresh availability"
                     icon={RefreshCw}
                     busy={configLoading}
                     disabled={disabled || !session}
@@ -783,7 +779,7 @@ function ScopedMusicWorkspace({
                   />
                 </View>
               ) : (
-                <Notice text="Offline procedural composer: no AI model. Keyword rules suggest controls; mathematical synthesis creates a WAV on this device. No vocals, artist imitation, samples, paid API or external training. It is never used silently when AI is unavailable." />
+                <Text style={styles.small}>Create an instrumental on this device.</Text>
               )}
 
               <Field
@@ -926,12 +922,6 @@ function ScopedMusicWorkspace({
                   <Text style={styles.label}>
                     Generated version · {generated.plan.summary}
                   </Text>
-                  {"model" in generated.plan && (
-                    <Text style={styles.small}>
-                      AI model: {generated.plan.model}. Score{" "}
-                      {generated.plan.fingerprint.slice(0, 12)}
-                    </Text>
-                  )}
                   <Text style={styles.small}>
                     {generated.plan.engine === "ziipa-llm-composer-v1"
                       ? "AI-composed. "

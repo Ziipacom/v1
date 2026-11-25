@@ -613,7 +613,7 @@ export function MediaOSScreen({
             .join(" · ");
           failures.push(
             result.reason instanceof Error
-              ? `${source}: ${result.reason instanceof ApiError ? result.reason.message : "Could not reach this workspace tool. Check the API connection, then refresh."}`
+              ? `${source}: ${result.reason instanceof ApiError ? result.reason.message : "Could not reach this workspace tool. Check your connection and refresh."}`
               : `${source}: Could not load this workspace tool.`,
           );
           return;
@@ -1174,7 +1174,7 @@ export function MediaOSScreen({
                 title="Sign in to your workspace"
                 onPress={() => navigation.navigate("Login")}
               />
-              <Notice text="Build projects, remember your creative preferences, review assistant actions, schedule media work and keep an honest record of your earnings." />
+              <Notice text="Organize projects, save creative preferences and plan your next release." />
             </Block>
             <Block
               title={
@@ -1191,7 +1191,7 @@ export function MediaOSScreen({
                     : tab === "Workflows"
                       ? "Schedule reminders, rendered exports and supported network sync. Follow every run to a verified result."
                       : tab === "Insights"
-                        ? "See verified local activity and record income and expenses in their original currencies."
+                        ? "Review your Ziipa activity, income and expenses."
                         : tab === "Assistant"
                           ? "Ask to create a project, remember a style, plan a goal or prepare a workflow. Review the proposed change before it runs."
                           : tab === "Agent"
@@ -2296,27 +2296,16 @@ function AssistantPanel({
     <Block
       title={desktop ? "Message Ziipa" : "Ziipa Assistant"}
       subtitle={
-        workspace.assistant?.mode === "local_ai"
-          ? "Your local AI helps prepare actions. You approve changes before they run."
-          : workspace.assistant?.mode === "hosted_ai"
-            ? "A private inference gateway helps prepare actions. You approve changes before they run."
-            : "Guided assistant · Prepare supported actions and review every change."
+        workspace.assistant?.inference?.available
+          ? "Plan your creative work with AI. Review changes before they run."
+          : "Choose a guided action and review it before it runs."
       }
     >
       {!desktop ? (
-        <Text style={styles.body}>
-          Try “Create a project called Launch”, “Remember that I prefer short
-          captions” or “Create a goal called Record my first episode”.
-        </Text>
+        <Text style={styles.body}>What would you like to work on?</Text>
       ) : null}
       {workspace.assistant?.detail ? (
-        <Notice text={workspace.assistant.detail} />
-      ) : null}
-      {workspace.assistant?.inference?.available &&
-      workspace.assistant.inference.model ? (
-        <Text style={styles.small}>
-          Model: {workspace.assistant.inference.model}
-        </Text>
+        <HelpLabel label="Assistant status" help={workspace.assistant.detail} style={styles.small} />
       ) : null}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {[
@@ -2354,15 +2343,14 @@ function AssistantPanel({
         onPress={() => void chat()}
       />
       <Text style={styles.small}>
-        An assistant reply is not proof an action completed. Completed actions
-        appear in your activity history.
+        Completed actions appear in your activity history.
       </Text>
     </Block>
   );
   const permissionPanel = (
     <Block
       title="Assistant permissions"
-      subtitle="Choose tools for Assistant chat. Chat changes need review; separately enabled Agent tasks may also use these grants within their saved policy."
+      subtitle="Choose the tools Ziipa may use. Review chat actions before they run. Agent tasks also follow your saved permissions."
     >
       {availableTools.length ? (
         availableTools.map((tool) => (
@@ -2381,7 +2369,7 @@ function AssistantPanel({
         ))
       ) : (
         <Text style={styles.small}>
-          Tool permissions will appear when the assistant configuration loads.
+          Refresh to load available tools.
         </Text>
       )}
       <Action secondary title="Manage connected networks" onPress={connected} />
@@ -2661,7 +2649,7 @@ function WorkflowsPanel({
           typeof workspace.workflowConfig.can_run !== "boolean"
             ? "Checking scheduled tasks…"
             : workspace.workflowConfig.can_run === true
-              ? "Scheduled tasks are available. View run history for results."
+              ? "Scheduled tasks are available."
               : "Scheduled tasks are unavailable right now. Pending work is saved."
         }
       />

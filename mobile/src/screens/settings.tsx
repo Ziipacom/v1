@@ -188,8 +188,7 @@ function ScopedSettingsScreen({
         editable={!busy}
       />
       <Text style={styles.small}>
-        Matching posts and comments are hidden from your experience. This does
-        not replace platform moderation.
+        Hide posts and comments containing these words or phrases.
       </Text>
       <View style={styles.between}>
         <Text style={styles.body}>Show sample collections</Text>
@@ -249,8 +248,7 @@ function ScopedSettingsScreen({
       <HelpLabel label="Privacy controls" style={styles.heading} help="Profile visibility, discovery and feed personalization are separate settings. Review your choices and press Save privacy controls to apply them." />
       <AdPrivacyOptions />
       <Text style={styles.small}>
-        Choose who can view your profile and whether Ziipa can use your activity
-        for discovery.
+        Control who can find you and how Ziipa personalizes your feeds.
       </Text>
       <Action
         secondary
@@ -371,10 +369,6 @@ function ScopedSettingsScreen({
             onPress={() => void run(logout)}
             busy={busy}
           />
-          <Text style={styles.small}>
-            Return to Get Started on this device. Your account and saved media
-            stay on Ziipa.
-          </Text>
         </View>
       )}
       {!!error && <Notice error text={error} />}
@@ -383,10 +377,6 @@ function ScopedSettingsScreen({
       <View style={[styles.panel, desktop && workspace.panel]}>
         <Text accessibilityRole="header" style={styles.heading}>
           Account & connected tools
-        </Text>
-        <Text style={styles.small}>
-          Manage your profile, networks and workspace here. Opening a tool does
-          not connect an account or publish anything.
         </Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           <Action

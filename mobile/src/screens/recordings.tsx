@@ -212,7 +212,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
         setError(
           cause instanceof Error
             ? cause.message
-            : "Your private recording receipts could not be loaded.",
+            : "Your recordings could not be loaded. Refresh to try again.",
         );
     } finally {
       if (valid()) setLoading(false);
@@ -311,7 +311,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
         style={styles.screen}
         contentContainerStyle={styles.page}
       >
-        <Notice text="Sign in to view private recordings. No broadcasts, recordings or clips are created in sample mode." />
+        <Notice text="Sign in to view your private recordings." />
         <Action title="Sign in" onPress={() => navigation.navigate("Login")} />
       </ScrollView>
     );
@@ -493,8 +493,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
               }}
             >
               <Text style={styles.small}>
-                Automatic saving is unavailable. Your existing recordings are
-                still available. View status ›
+                Automatic saving is unavailable · View status ›
               </Text>
             </Pressable>
           ) : null}
@@ -622,7 +621,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
               ]}
             >
               <Text style={[styles.heading, desktop && { fontSize: 17 }]}>
-                Private excerpt automation
+                Automatic private clips
               </Text>
               <Text style={styles.body}>
                 {stream.title} · recording {stream.record ? "enabled" : "off"}
@@ -681,9 +680,8 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                 ))}
               </View>
               <Text style={styles.small}>
-                Excerpts are the first sequential portions of the recording, not
-                AI-selected highlights. Formats fit the frame with padding; they
-                do not crop people or objects.
+                Clips use the first sequential portions of the recording.
+                Formats fit the full frame with padding.
               </Text>
               {enabled && (
                 <Toggle
@@ -694,7 +692,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                 />
               )}
               <Action
-                title="Save private recording workflow"
+                title="Save recording settings"
                 icon={Clapperboard}
                 disabled={
                   busy ||
@@ -717,7 +715,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                       setPolicy(result);
                       setConsent(false);
                       setMessage(
-                        "Recording workflow saved. Outputs stay private; review a rendered clip in Campaigns before approving publication.",
+                        "Recording settings saved. New recordings and clips stay private until you publish them.",
                       );
                     }
                   })
@@ -725,7 +723,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
               />
               <Action
                 secondary
-                title="Open this broadcast's manual live controls"
+                title="Open broadcast controls"
                 disabled={busy}
                 onPress={() => {
                   setSettingsOpen(false);
@@ -838,7 +836,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                   {receipt.title}
                 </Text>
                 <Text style={styles.eyebrow}>
-                  {receipt.status.replace(/_/g, " ")}
+                  {recordingStatus(receipt)}
                 </Text>
                 <Text style={styles.body}>{receipt.detail}</Text>
                 <Text style={styles.small}>
@@ -848,8 +846,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                     : ""}
                   {receipt.size != null
                     ? ` · ${(receipt.size / 1024 / 1024).toFixed(1)} MiB`
-                    : ""}{" "}
-                  · revision {receipt.revision}
+                    : ""}
                 </Text>
                 {receipt.item_id && receipt.status === "ready" && (
                   <DesktopGroup
@@ -953,10 +950,8 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                       />
                     </DesktopGroup>
                     <Text style={styles.small}>
-                      The saved clip is an editable private trim of the source.
-                      Campaigns renders its current saved edit again and
-                      requires an explicit preview, schedule and destination
-                      approval.
+                      Your clip stays private and editable. Review its rendered
+                      version and approve sharing in Campaigns.
                     </Text>
                   </View>
                 ))}

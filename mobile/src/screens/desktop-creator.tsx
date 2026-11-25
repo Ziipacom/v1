@@ -417,7 +417,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
             ) : (
               <Text style={s.ownership}>
                 {guest
-                  ? "Sample workspace"
+                  ? "Guest Studio"
                   : entry.owned
                     ? "Your creation"
                     : "Saved from Discover"}
@@ -607,11 +607,11 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
         ))}
         <View style={{ flex: 1 }} />
         <Text style={s.snapshotLabel}>
-          {guest ? "Sample workspace" : "Your Studio snapshot"}
+          {guest ? "Guest Studio" : "Your Studio"}
         </Text>
       </View>
       {guest && (
-        <Notice text="This is a sample workspace. Sign in to create your own library, connect accounts and save to Ziipa." />
+        <Notice text="Explore with sample media. Sign in to save your creations and connect your accounts." />
       )}
       {!!error && <Notice error text={error} />}
       {tab === "overview" ? (
@@ -870,8 +870,7 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                   }
                 />
                 <Text style={s.panelFootnote}>
-                  Account authorization is separate from media, provider and
-                  delivery checks.
+                  Review each post and destination before sharing.
                 </Text>
               </View>
               <LinearGradient

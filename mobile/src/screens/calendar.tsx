@@ -439,12 +439,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
   if (!session || guest)
     return (
       <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" style={styles.screen} contentContainerStyle={styles.page}>
-        <Card title="Your release calendar">
-          <Text style={styles.body}>
-            Plan creator releases, studio work and broadcast reminders in your
-            timezone.
-          </Text>
-          <Notice text="Sign in to save schedules. Calendar reminders never start the camera, publish content or begin a live broadcast." />
+        <Card title="Calendar">
           <Action
             title="Sign in to your calendar"
             onPress={() => navigation.navigate("Login")}
@@ -478,9 +473,6 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
         >
           <View style={{ gap: 5, flex: 1, minWidth: 220 }}>
             <Text style={[styles.heading, { fontSize: 25 }]}>Calendar</Text>
-            <Text style={styles.small}>
-              Release plans, recurring studio time and broadcast reminders.
-            </Text>
           </View>
           <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
             <CalendarConnections
@@ -514,8 +506,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
         <>
           <View style={styles.between}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.eyebrow}>ZIIPA CALENDAR</Text>
-              <Text style={styles.title}>Make time to create.</Text>
+              <Text style={styles.title}>Calendar</Text>
             </View>
             <Pressable
               accessibilityRole="button"
@@ -527,30 +518,17 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
               <RefreshCw color={color.lime} size={24} />
             </Pressable>
           </View>
-          <Text style={styles.body}>
-            One place for release plans, recurring studio time and live-stream
-            preflight. Actual publishing stays in your reviewed campaign;
-            broadcasting starts only in Live controls.
-          </Text>
           <CalendarConnections
             events={events}
             onChanged={() => void load()}
             deviceConnectRequest={route.params?.deviceConnectRequest}
           />
-          <Notice text="Use Connect to authorize a calendar, choose what to sync and review exports. Saving a Ziipa reminder does not publish media, start a broadcast or enable device push." />
           <Action
             secondary
             title="Notifications & devices"
             onPress={() => navigation.navigate("Notifications")}
           />
         </>
-      )}
-      {desktop && (
-        <Text style={[styles.small, { color: "#A28CB6" }]}>
-          Schedules create private Ziipa reminders. They do not publish, start a
-          broadcast or enable device push. Use Connect for external calendar
-          sync.
-        </Text>
       )}
       {loading ? (
         <View style={styles.row}>
@@ -708,7 +686,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
         </DesktopGroup>
         <DesktopGroup style={{ flex: 1, minWidth: 0, width: "100%", gap: 18 }}>
           {selectedId && !event ? (
-            <Notice text="Loading this event's current revision…" />
+            <Notice text="Loading event…" />
           ) : (
             <>
               <Card title={event ? "Edit schedule" : "Plan an event"}>
@@ -937,7 +915,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
                         }}
                       />
                     ))}
-                    <Notice text="Calendar recurrence creates reminders only. Open the linked campaign to review its exact publishing schedule and destinations." />
+                    <Notice text="Set publishing times in the linked campaign." />
                   </>
                 ) : null}
                 {draft.kind === "stream" ? (
@@ -968,11 +946,11 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
                         navigation.navigate("Live", { tab: "broadcast" })
                       }
                     />
-                    <Notice text="A recurring stream event never creates or starts a broadcast. Link an owned broadcast for read-only preflight; open Live controls when you are ready to select your camera and explicitly Go live." />
+                    <Notice text="Start your broadcast from Live Feed." />
                   </>
                 ) : null}
                 {dirty ? (
-                  <Notice text="Unsaved schedule changes. Save to regenerate the occurrence plan; old receipts are retained or cancelled by the server." />
+                  <Notice text="Save your changes to update upcoming reminders." />
                 ) : null}
                 <Action
                   title={
@@ -1148,7 +1126,6 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
                         ) : null}
                       </View>
                     ))}
-                    <Notice text="Acknowledging a reminder marks only that receipt. It does not mark a campaign delivered or a broadcast live." />
                     {event.status !== "cancelled" ? (
                       <>
                         <Action

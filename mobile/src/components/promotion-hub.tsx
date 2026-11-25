@@ -152,7 +152,7 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
         setError(
           cause instanceof Error
             ? cause.message
-            : "Promotion readiness could not load. Nothing was activated.",
+            : "Could not load promotion options.",
         );
     } finally {
       if (valid()) setLoading(false);
@@ -494,7 +494,7 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
                   { color: readiness.ready ? color.lime : color.muted },
                 ]}
               >
-                {loading ? "Checking readiness…" : readiness.label}
+                {loading ? "Checking connection…" : readiness.label}
               </Text>
               {openNetwork === entry.id && (
                 <>
@@ -753,7 +753,7 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
     {
       id: "networks",
       title: "Network publishing",
-      detail: "Accounts and destination readiness",
+      detail: "Connected accounts",
       Icon: Link2,
       content: organicPanel,
     },
@@ -796,11 +796,10 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
               Promote
             </Text>
           </View>
-          <Text style={styles.small}>Your release, one step at a time.</Text>
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Refresh promotion readiness"
+          accessibilityLabel="Refresh promotion options"
           accessibilityState={{
             disabled: !signedIn || saving || loading,
             busy: loading,

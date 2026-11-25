@@ -106,7 +106,7 @@ export function walletMintAvailability(
       ? "Checking this test network. Your saved media is unchanged."
       : ready
         ? "Review your media and approve each step in your external wallet. Test assets have no monetary value."
-        : "Minting is not available on this test network right now. You can keep working on your creation and try again later.",
+        : "Minting is unavailable on this test network. Try again later.",
   };
 }
 
@@ -775,10 +775,8 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                             />
                           </View>
                           <Text style={s.hint}>
-                            Prepare interaction rewards with your creator token.
-                            Points are separate from tokens; a paused program
-                            can be saved after your token transaction is
-                            confirmed.
+                            Reward your community with a creator token. Points
+                            and token rewards are managed separately.
                           </Text>
                         </View>
                       )}
@@ -786,10 +784,10 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                   )}
                   {step === 1 && (
                     <>
-                      <Text style={s.label}>Select Protocol</Text>
+                      <Text style={s.label}>Select network</Text>
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel="Select Protocol"
+                        accessibilityLabel="Select network"
                         onPress={() => setSheet("protocol")}
                         style={s.select}
                       >
@@ -863,8 +861,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                           />
                           {!walletConnectConfigured && (
                             <Text style={s.hint}>
-                              Wallet connection is unavailable right now. Your
-                              saved media and existing assets are unchanged.
+                              Wallet connection is unavailable. Try again later.
                             </Text>
                           )}
                         </>
@@ -874,11 +871,11 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                   {step === 2 && !linkedConnection && (
                     <Action
                       secondary
-                      title="Preview metadata form"
+                      title="Edit metadata"
                       onPress={() => {
                         setStep(3);
                         setNotice(
-                          "Form preview only. Connect a verified wallet to store metadata and mint.",
+                          "Connect and verify your wallet before storing metadata or minting.",
                         );
                       }}
                     />
@@ -999,7 +996,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                             onChange={setRewardDraft}
                             disabled={busy}
                           />
-                          <Notice text="Save a paused reward program after the token receipt is confirmed. Enabling points, funding tokens, and publishing claims are separate reviewed actions. No extra token supply is minted." />
+                          <Notice text="After your token transaction is confirmed, you can save a paused reward program. Enable points, fund rewards and approve claims separately; no extra tokens are minted." />
                         </View>
                       )}
                       <View
@@ -1351,8 +1348,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
               {tab === "Metadata" && (
                 <>
                   <Text style={s.hint}>
-                    Content-addressed records. Stored separately from minting; a
-                    stored record does not mean an NFT exists.
+                    Public media records. Saving metadata does not mint an NFT.
                   </Text>
                   {records.map((m) => (
                     <View
@@ -1467,9 +1463,8 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 />
               )}
               <Text style={[s.hint, { paddingBottom: 10 }]}>
-                Ziipa never asks for a seed phrase or private key. No mainnet
-                payments, subscriptions, exchange, or custody are enabled in
-                this build.
+                Test networks only. Your external wallet holds your assets;
+                Ziipa never asks for your seed phrase or private key.
               </Text>
             </>
           )}
@@ -1556,7 +1551,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
           }}
           title={
             sheet === "protocol"
-              ? "Select Protocol"
+              ? "Select network"
               : sheet === "review"
                 ? "Review transaction"
                 : sheet === "pairing"
@@ -1592,7 +1587,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                       <Text style={s.label}>{c.name}</Text>
                       <Text style={s.hint}>
                         {c.id === 31337
-                          ? "Local development chain"
+                          ? "Local test network"
                           : `Test network · chain ${c.id}`}{" "}
                         · {walletMintAvailability(config, c.id, kind).label}
                       </Text>

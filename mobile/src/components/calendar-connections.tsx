@@ -207,11 +207,6 @@ function ConnectionPanel({
   }
   return (
     <Sheet title="Connect calendars" onClose={onClose} maxWidth={720}>
-      <Text style={styles.small}>
-        Choose an account and calendar. Sync imports event titles, notes and
-        times into your private Ziipa account. Calendar exports and edits
-        require your review. No guests are invited or media published.
-      </Text>
       {error ? <Notice error text={error} /> : null}
       {notice ? <Notice text={notice} /> : null}
       <View
@@ -221,7 +216,7 @@ function ConnectionPanel({
           justifyContent: "space-between",
         }}
       >
-        <HelpLabel label="Calendar accounts" style={styles.small} help="Connect a provider account, select a calendar and review the sync direction. Connecting an account does not grant Ziipa permission to publish media or invite guests." />
+        <HelpLabel label="Calendar accounts" style={styles.small} help="Ziipa imports event titles, notes, and times into your private account. You review changes before sending them to a connected calendar." />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Refresh calendar connections"
@@ -238,9 +233,10 @@ function ConnectionPanel({
       </View>
       {["google", "microsoft", "device"].map((name) => {
         const linked = state?.connections.find((row) => row.provider === name);
-        const configured = state?.providers.find(
+        const status = state?.providers.find(
           (row) => row.provider === name,
-        )?.ready;
+        );
+        const configured = status?.ready;
         return (
           <View
             key={name}
@@ -291,8 +287,8 @@ function ConnectionPanel({
                     : linked
                       ? linked.calendar_name || "Choose a calendar"
                       : configured
-                        ? "Not connected"
-                        : "Setup required"}
+                        ? status?.testing_only ? "Limited availability" : "Not connected"
+                        : "Unavailable"}
                 </Text>
               </View>
               {linked ? (
@@ -307,28 +303,8 @@ function ConnectionPanel({
                   <DeviceCalendarPanel events={events} />
                 ) : (
                   <>
-                    {name === "microsoft" && (
-                      <Text style={styles.small}>
-                        Teams meetings use the calendar belonging to your
-                        Microsoft 365 / Outlook account. Creating Teams meeting
-                        links needs separate provider setup.
-                      </Text>
-                    )}
-                    {!configured && (
-                      <Notice text="Ziipa’s operator still needs to configure this provider’s calendar OAuth app and callback. Your account has not been connected. No passwords or API keys should be entered here." />
-                    )}
-                    {configured && (
-                      <Notice
-                        text={
-                          state?.providers.find(
-                            (item) => item.provider === name,
-                          )?.testing_only
-                            ? name === "google"
-                              ? "This Google connection is in private provider testing. Only approved Google test accounts can authorize it; public availability still needs Google review."
-                              : "This Microsoft connection is in provider testing. Publisher verification or your organization’s policies may prevent authorization. Each user must authorize their own calendar."
-                            : "Authorize only the calendar access you want to use. You can disconnect later."
-                        }
-                      />
+                    {configured && status?.testing_only && (
+                      <Notice text="This provider currently limits which accounts can connect." />
                     )}
                     {configured && (
                       <Action
@@ -336,7 +312,7 @@ function ConnectionPanel({
                         title={
                           linked
                             ? "Reconnect account"
-                            : "Authorize calendar access"
+                            : "Connect calendar"
                         }
                         disabled={busy}
                         onPress={() => void run(connect)}

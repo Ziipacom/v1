@@ -981,7 +981,7 @@ export function ComposerScreen({
             )
               ? "queued"
               : "connection_required",
-            detail: "Sample delivery plan · no external post was created.",
+            detail: "Example sharing plan · not posted.",
             external_url: "",
             updated_at: new Date().toISOString(),
           })),
@@ -1027,7 +1027,7 @@ export function ComposerScreen({
         setSaved(draft);
         setCleanFingerprint(JSON.stringify({ ...formSnapshot, remixId: null }));
         setSaveNotice(
-          "Draft saved for this preview session. Nothing was published.",
+          "Draft saved on this device for this session. It has not been published.",
         );
       } else {
         let submitted: PendingSubmission | null = null;
@@ -1054,7 +1054,7 @@ export function ComposerScreen({
                 config = await api("/api/creator/config");
               } catch (error) {
                 if ((error as { status?: number }).status === 404)
-                  throw new Error(photos.length ? "Photo series saves require the updated Ziipa server." : OVERLAY_API_REQUIRED);
+                  throw new Error(photos.length ? "Photo series cannot be saved right now. Keep this edit open and try again later." : OVERLAY_API_REQUIRED);
                 throw new Error(
                   "Could not verify save support. Your changes are still here. Try again shortly.",
                 );
@@ -1064,7 +1064,7 @@ export function ComposerScreen({
               if (hasAdvancedOverlays(overlays) && !overlayLayoutSupported(config))
                 throw new Error(OVERLAY_API_REQUIRED);
               if (photos.length && (config as { photo_series?: boolean } | null)?.photo_series !== true)
-                throw new Error("Photo series saves require the updated Ziipa server.");
+                throw new Error("Photo series cannot be saved right now. Keep this edit open and try again later.");
             }
             let selectedId = mediaId;
             const sourceCount = photos.length + 1;
@@ -1645,8 +1645,8 @@ export function ComposerScreen({
           {guest && (
             <>
               <Text style={styles.small}>
-                Start with a sample or choose media from this device. Sample
-                files stay inside this preview.
+                Try an example or choose media from this device. Sign in to
+                save your own creations to your account.
               </Text>
               <ScrollView
                 showsVerticalScrollIndicator={false}
@@ -1755,9 +1755,8 @@ export function ComposerScreen({
               </View>
             </View>
             <Text style={styles.small}>
-              Create instrumental music or voice narration, then preview and
-              choose the audio before saving. Video generation and voice cloning
-              are not connected.
+              Create instrumental music or narration, listen to it, then choose
+              what to add to your creation.
             </Text>
             <Pressable
               accessibilityRole="button"
@@ -1815,7 +1814,7 @@ export function ComposerScreen({
           {duration > 90 && (
             <Text style={[styles.small, { fontSize: 11 }]}>
               Your source is {formatTimelineTime(duration)}. Trim the edited
-              sequence to 90 seconds or less for the current export worker.
+              sequence to 90 seconds or less to export it.
             </Text>
           )}
         </View>
@@ -2159,7 +2158,7 @@ export function ComposerScreen({
                           ? connection.handle || provider.formats
                           : connection?.status === "linked"
                             ? "Profile linked · posting not authorized"
-                            : "Select destination · setup required"}
+                            : "Connect an account to share here"}
                     </Text>
                   </View>
                   <View
@@ -2186,8 +2185,7 @@ export function ComposerScreen({
       )}
       {category === "live" && (
         <Text style={styles.small}>
-          Save the broadcast setup as a draft, then connect a live provider in
-          Connected networks.
+          Open Live to connect your channel and prepare a broadcast.
         </Text>
       )}
       {!!error && <Notice text={error} error />}
@@ -2200,14 +2198,14 @@ export function ComposerScreen({
       {pendingSubmission ? (
         <View style={{ gap: 10 }}>
           <Action
-            title="Check saved status (read only)"
+            title="Check saved status"
             icon={RefreshCw}
             secondary
             busy={rechecking}
             disabled={busy}
             onPress={() => void recheckSavedStatus()}
           />
-          <Notice text="A missing match does not prove the earlier request failed. Review your creations before intentionally starting a different draft. Opening your library keeps this editor and its changes in the navigation stack; this unconfirmed save will not be replayed." />
+          <Notice text="Your save is unconfirmed. Check your creations before saving again to avoid a duplicate. Your unsaved edits stay here while you review the library." />
           <Action
             title="Review my creations"
             secondary
@@ -2258,7 +2256,7 @@ export function ComposerScreen({
                 ? `${saved.label === "Local draft" ? "Local" : "Sample"} draft saved for this session. Restarting clears it; nothing is uploaded or published.`
                 : saved.visibility === "draft"
                   ? "Private draft saved to your account."
-                  : "Creation published to this Ziipa server."
+                  : "Creation published on Ziipa."
             }
           />
           <Action
@@ -2273,7 +2271,7 @@ export function ComposerScreen({
             }
           />
           <Action
-            title="Share media & manage destinations"
+            title="Share & manage destinations"
             icon={Share2}
             secondary
             onPress={() =>
@@ -2282,7 +2280,7 @@ export function ComposerScreen({
           />
           {!guest && saved.media_id && !saved.photo_ids?.length && (
             <Action
-              title="Render & export saved edit"
+              title="Export saved edit"
               icon={Share2}
               onPress={() =>
                 navigation.navigate("Exports", { itemId: saved.id })
@@ -2293,7 +2291,7 @@ export function ComposerScreen({
             saved.media_id &&
             saved.content_type?.startsWith("video/") && (
               <Action
-                title="Prepare a reviewed release campaign"
+                title="Plan a campaign"
                 icon={Share2}
                 secondary
                 onPress={() =>
@@ -2303,7 +2301,7 @@ export function ComposerScreen({
             )}
           {!guest && saved.visibility === "published" && saved.media_id && !saved.photo_ids?.length && (
             <Action
-              title="Publish directly to authorized networks"
+              title="Publish to connected networks"
               icon={Share2}
               onPress={() =>
                 navigation.navigate("Publishing", { itemId: saved.id })

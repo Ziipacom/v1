@@ -499,7 +499,7 @@ function ScopedStoreScreen({
     setDraft(editListing(value));
     setMessage(
       status === "published"
-        ? "Listing published to Ziipa Store. Live payments are off; eligible merchandise can use test checkout when available."
+        ? "Listing published. Live payments are unavailable; eligible products may offer test checkout."
         : "Listing saved to your account.",
     );
     await loadAccount();
@@ -1159,8 +1159,7 @@ function ScopedStoreScreen({
             <View style={{ gap: 5 }}>
               <Text style={[styles.heading, { fontSize: 23 }]}>Services</Text>
               <Text style={styles.small}>
-                One account across iPhone, Android and web. Prices below are
-                proposals.
+                Manage your plan and storage across iPhone, Android and web.
               </Text>
             </View>
             <View style={{ gap: 10 }}>
@@ -1180,8 +1179,7 @@ function ScopedStoreScreen({
                 }
               >
                 <Text style={styles.body}>
-                  Your current account allowance applies on every device. Paid
-                  access is verified by the server.
+                  Your plan and storage allowance apply on every device.
                 </Text>
                 <Notice
                   text={
@@ -1200,7 +1198,7 @@ function ScopedStoreScreen({
                 {
                   id: "storage",
                   title: "Storage add-ons",
-                  detail: "10 / 50 GiB proposals",
+                  detail: "10 / 50 GiB planned options",
                   storageOnly: true,
                 },
               ].map(({ id, title, detail, storageOnly }) => (
@@ -1249,7 +1247,7 @@ function ScopedStoreScreen({
                           {plan.storage_gib} GiB storage ·{" "}
                           {plan.id === "free"
                             ? "Current free allowance"
-                            : "Draft proposal · not yet on sale"}
+                            : "Planned price · not yet on sale"}
                         </Text>
                         {services.grants.some(
                           (grant) => grant.plan === plan.id,
@@ -1275,7 +1273,7 @@ function ScopedStoreScreen({
                                     ),
                                   );
                                   setMessage(
-                                    "Purchase checked with the server. Your verified account access is shown above.",
+                                    "Purchase checked. Your account access is updated above.",
                                   );
                                 })
                               }
@@ -1287,7 +1285,7 @@ function ScopedStoreScreen({
               ))}
               <Disclosure
                 title="Feature limits"
-                detail={`${services?.catalog.features.length || 0} feature groups · free and proposed upgrades`}
+                detail={`${services?.catalog.features.length || 0} feature groups · free and planned upgrades`}
                 icon={SlidersHorizontal}
                 expanded={openServicePanel === "features"}
                 onToggle={() =>
@@ -1389,7 +1387,7 @@ function ScopedStoreScreen({
                 )}
 
                 {(!services?.billing_enabled || limitedStoreBeta) && (
-                  <Notice text="Purchases are not activated in this build. You can review the proposed packages without being charged." />
+                  <Notice text="Purchases are unavailable. Planned packages are shown for reference; you will not be charged." />
                 )}
               </Disclosure>
             </View>
@@ -1509,8 +1507,7 @@ function ScopedStoreScreen({
                       {item.title}
                     </Text>
                     <Text style={styles.small}>
-                      {money(item.price_cents)} · {item.status} · revision{" "}
-                      {item.revision}
+                      {money(item.price_cents)} · {item.status}
                     </Text>
                   </Pressable>
                 ))}

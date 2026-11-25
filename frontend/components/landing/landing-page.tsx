@@ -1,7 +1,6 @@
 'use client';
 import { useState } from 'react';
 import {
-  ArrowRight,
   ArrowUpRight,
   Captions,
   Clapperboard,
@@ -28,7 +27,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { HeroAppPreview, InteractiveWalkthrough } from './app-preview';
+import { HeroAppPreview } from './app-preview';
 import './landing.css';
 
 const worlds = [
@@ -73,7 +72,6 @@ export default function LandingPage() {
           <BrandLogo />
           <nav aria-label="Main navigation">
             <a href="#features">The possibilities</a>
-            <a href="#in-action">See it in action</a>
             <a href="#creators">For creators</a>
           </nav>
           <div className="zl-nav-actions">
@@ -95,9 +93,6 @@ export default function LandingPage() {
           <nav className="zl-mobile-nav" aria-label="Mobile navigation">
             <a href="#features" onClick={() => setMobileMenu(false)}>
               The possibilities
-            </a>
-            <a href="#in-action" onClick={() => setMobileMenu(false)}>
-              See it in action
             </a>
             <a href="#creators" onClick={() => setMobileMenu(false)}>
               For creators
@@ -125,12 +120,12 @@ export default function LandingPage() {
             <Link className="zl-button" href="/portal?mode=register">
               Create an account <ArrowUpRight size={19} />
             </Link>
-            <a className="zl-watch-link" href="#in-action">
+            <Link className="zl-watch-link" href="/portal">
               <span>
                 <Play size={14} fill="currentColor" />
               </span>
-              See how it works
-            </a>
+              Open Studio
+            </Link>
           </div>
         </div>
         <HeroAppPreview />
@@ -299,26 +294,6 @@ export default function LandingPage() {
           </article>
         </div>
       </section>
-      <section className="zl-demo-section" id="in-action">
-        <div className="zl-container">
-          <div className="zl-section-heading centered">
-            <span className="zl-eyebrow">LESS EXPLAINING. MORE EXPLORING.</span>
-            <h2>
-              From “what if” to <em>watch this.</em>
-            </h2>
-            <p>
-              See how Studio helps you go from an upload to a published post.
-            </p>
-          </div>
-          <InteractiveWalkthrough />
-          <div className="zl-demo-cta">
-            <span>Ready to make it real?</span>
-            <Link href="/portal">
-              Open Ziipa <ArrowRight size={17} />
-            </Link>
-          </div>
-        </div>
-      </section>
       <section className="zl-section zl-container" id="creators">
         <div className="zl-section-heading">
           <div>
@@ -459,7 +434,6 @@ export default function LandingPage() {
             <div>
               <h3>Explore Ziipa</h3>
               <a href="#features">The possibilities</a>
-              <a href="#in-action">See it in action</a>
               <a href="#creators">For creators</a>
               <Link href="/portal">Creator web app</Link>
             </div>

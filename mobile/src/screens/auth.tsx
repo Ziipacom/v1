@@ -284,9 +284,6 @@ export function LoginScreen({
           }}
           disabled={busy}
         />}
-        {__DEV__ && (
-          <Notice text="Development build. Connect to your local Ziipa API or a configured staging server. No accounts are created on the live ziipa.com website." />
-        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );

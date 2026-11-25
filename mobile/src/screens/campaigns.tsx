@@ -715,10 +715,10 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
       <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" style={styles.screen} contentContainerStyle={styles.page}>
         <Block title="Create once. Review every destination.">
           <Text style={styles.body}>
-            Bring your saved video through preparation, a real export preview
-            and a delivery plan you control.
+            Prepare your video, preview each format and choose when and where
+            to share it.
           </Text>
-          <Notice text="Sign in to prepare and schedule your own media. Campaigns do not create sample deliveries." />
+          <Notice text="Sign in to prepare and schedule your own media." />
           <Action
             title="Sign in to Campaigns"
             onPress={() => navigation.navigate("Login")}
@@ -832,10 +832,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
       ) : null}
       {config?.enabled === false || config?.worker_ready === false ? (
         <Notice
-          text={
-            config.detail ||
-            "Campaign processing is unavailable in this environment. Your saved plans remain available for review."
-          }
+          text="Campaign processing is unavailable right now. You can review your saved plans and try again later."
         />
       ) : null}
       <DesktopGroup
@@ -1149,7 +1146,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                   />
                   {draft.transcribe ? (
                     <Consent
-                      label="Allow the configured private transcription worker to process this source."
+                      label="Allow Ziipa to process this video for a private transcript."
                       value={draft.transcriptionConsent}
                       disabled={!editable}
                       onChange={(value) =>
@@ -1158,7 +1155,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                     />
                   ) : null}
                   <Consent
-                    label="Suggest title and description copy with the private model"
+                    label="Suggest a title and description with AI"
                     value={draft.generateCopy}
                     disabled={!editable}
                     onChange={(value) => change("generateCopy", value)}
@@ -1354,9 +1351,9 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                         <Text key={format} style={styles.small}>
                           {campaignLabel(format)}:{" "}
                           {campaignArtifact(campaign, format)
-                            ? "Rendered artifact ready"
+                            ? "Export ready to preview"
                             : campaign.render_jobs?.[format]
-                              ? "Render submitted; follow preparation progress"
+                              ? "Export requested; check preparation progress"
                               : "Not prepared"}
                         </Text>
                       ))
@@ -1366,7 +1363,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
 
               <DesktopStep index={3} active={desktopStep}>
                 <Block step="04 / DESTINATIONS" title="Choose where it goes">
-                  <Notice text="Ziipa is included when you approve delivery. Other networks need a connected account, platform permissions and an approved target. A connected account alone does not publish anything." />
+                  <Notice text="Your campaign includes Ziipa. Connect and select an account for each additional network, then review the full plan before approving." />
                   {providers.map((provider) => {
                     const connection = connections.find(
                       (value) => value.provider === provider.provider,
@@ -1410,14 +1407,15 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                           <Notice
                             text={
                               provider.provider === "twitch"
-                                ? "Twitch requires the live broadcast workflow. A finished MP4 cannot be uploaded through its API."
-                                : "TikTok requires its current creator options and an individual publishing review. This campaign provides a handoff."
+                                ? "Use Live to broadcast on Twitch. Finished videos cannot be uploaded there from a campaign."
+                                : "Finish your TikTok review in Publishing before sending this post."
                             }
                           />
                         ) : null}
                         {readiness.length ? (
                           <Text style={styles.small}>
-                            {readiness.join("\n")}
+                            Sharing to this network is unavailable right now.
+                            Review its connection in Publishing.
                           </Text>
                         ) : null}
                         <Action
@@ -1537,7 +1535,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                     );
                   })}
                   {!providers.length ? (
-                    <Notice text="Provider capabilities could not load. You can keep this campaign for Ziipa and refresh before choosing other destinations." />
+                    <Notice text="Network options could not load. Keep this campaign for Ziipa or refresh to choose another destination." />
                   ) : null}
                   <Action
                     secondary
@@ -1586,10 +1584,9 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                       title="Watch the finished edit"
                     >
                       <Text style={styles.small}>
-                        Each preview is the actual rendered MP4 with your saved
-                        trim, captions, overlays and soundtrack. Watch every
-                        selected format. Changing a format or destination
-                        requires saving, preparing and approving the new plan.
+                        Watch each finished format before approving. If you
+                        change the edit, format or destination, save and prepare
+                        the plan again.
                       </Text>
                       <Action
                         title="Prepare video and requested transcript"
@@ -1610,7 +1607,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                       <Text style={styles.small}>
                         Export:{" "}
                         {campaign.artifact
-                          ? "Artifact available"
+                          ? "Ready to preview"
                           : campaign.render_job_id
                             ? "Follow preparation status above"
                             : "Not prepared"}
@@ -1731,7 +1728,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                             );
                           })}
                           {config?.background_publishing_ready === false ? (
-                            <Notice text="This worker has no configured external publishing providers. A Ziipa-only campaign can still run. External destinations remain blocked or require a separate handoff until their setup is complete." />
+                            <Notice text="Automatic posting to other networks is unavailable. You can still schedule this campaign on Ziipa; other destinations may need a separate publishing review." />
                           ) : null}
                           <Action
                             title="Approve this exact delivery plan"
@@ -1747,7 +1744,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                       ) : null}
                       {campaign.approved_at ? (
                         <Notice
-                          text={`This revision was approved ${new Date(campaign.approved_at).toLocaleString()}. Delivery receipts below are the source of truth.`}
+                          text={`Plan approved ${new Date(campaign.approved_at).toLocaleString()}. Check delivery status below.`}
                         />
                       ) : null}
                     </Block>
@@ -1779,7 +1776,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                         <Text style={styles.small}>
                           {campaign.ziipa_published_at
                             ? `Published ${new Date(campaign.ziipa_published_at).toLocaleString()}`
-                            : "Approval authorizes a separate post of the reviewed MP4 at the saved time. Your original Studio item is preserved. This receipt changes only after the worker confirms the new post."}
+                            : "Approval schedules a new post of your reviewed video. Your original Studio creation stays unchanged. Check here for confirmation after the scheduled time."}
                         </Text>
                         {campaign.published_item_id ? (
                           <Action
@@ -1872,7 +1869,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                             {delivery.status === "uncertain" ? (
                               <Notice
                                 error
-                                text="Delivery is unconfirmed. Check this provider and its Publishing receipt before making another attempt. Ziipa will not assume a timeout means nothing was posted."
+                                text="Delivery is unconfirmed. Check the destination account and Publishing status before trying again to avoid a duplicate post."
                               />
                             ) : null}
                             {delivery.status === "needs_handoff" ||
@@ -1884,7 +1881,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                                 title={
                                   delivery.provider === "twitch"
                                     ? "Open live broadcast controls"
-                                    : "Review provider setup and publishing receipts"
+                                    : "Review connection and publishing status"
                                 }
                                 icon={Send}
                                 onPress={() =>
@@ -1914,7 +1911,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                                 title={
                                   delivery.status === "delivered"
                                     ? "Open verified external post"
-                                    : "Open provider receipt link"
+                                    : "View network status"
                                 }
                                 onPress={() =>
                                   void run(async () => {
@@ -1936,8 +1933,8 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                         ))
                       ) : (
                         <Text style={styles.small}>
-                          No external delivery has been attempted. Ziipa and
-                          provider progress appears here after approval.
+                          No posts have been sent to other networks. Delivery
+                          status appears here after you approve the plan.
                         </Text>
                       )}
                       {!["completed", "cancelled"].includes(campaign.status) ? (
@@ -1962,10 +1959,9 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
                             }
                           />
                           <Text style={styles.small}>
-                            Pausing prevents future work when the worker next
-                            checks the plan. A request already sent to a
-                            provider may still complete. Cancelling does not
-                            remove posts already delivered.
+                            Pausing stops upcoming work once the change is
+                            received. Posts already being sent may still go
+                            through. Cancelling does not remove published posts.
                           </Text>
                           <Action
                             danger

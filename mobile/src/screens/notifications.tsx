@@ -156,7 +156,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
         } catch {
           if (valid())
             setMessage(
-              "The tapped receipt is unavailable for this account. Your notification settings are still available below.",
+              "This update is unavailable. You can still manage your notifications below.",
             );
         }
         if (!valid()) return;
@@ -284,7 +284,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
   const blockedReason = !capability
     ? "Checking notification support…"
     : !capability.supported
-      ? "Notifications are unavailable in this browser or app build."
+      ? "Notifications are unavailable on this device."
       : capability.permission === "denied"
         ? "Allow notifications in your device or browser settings before enabling them here."
         : !preferences?.enabled
@@ -353,8 +353,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
         />
       ))}
       <Text style={styles.small}>
-        Notifications use generic categories, not private media, creation titles
-        or calendar notes.
+        Notifications keep your media, creation titles and calendar notes private.
       </Text>
       {enabled && (
         <Consent
@@ -516,7 +515,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
             {delivery.provider === "web" ? "Browser" : "Ziipa app"} ·{" "}
             {new Date(delivery.created_at).toLocaleString()}
             {delivery.provider_accepted_at
-              ? ` · sent to notification service ${new Date(delivery.provider_accepted_at).toLocaleString()}`
+              ? ` · sent ${new Date(delivery.provider_accepted_at).toLocaleString()}`
               : ""}
             {delivery.opened_at
               ? ` · opened ${new Date(delivery.opened_at).toLocaleString()}`
@@ -528,7 +527,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
           {!delivery.opened_at && (
             <Action
               secondary
-              title="Review this receipt"
+              title="Open update"
               disabled={busy}
               onPress={() =>
                 void mutate(async (valid) => {
@@ -588,7 +587,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
         }}
       >
         <Text style={styles.small}>
-          Account push:{" "}
+          Notifications:{" "}
           {preferences ? (preferences.enabled ? "On" : "Off") : "Checking…"}
         </Text>
         <Text style={styles.small}>This device: {permission}</Text>
@@ -632,7 +631,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
             <HelpLabel
               label="App information"
               style={styles.heading}
-              help="Version and build come from this installed app or web bundle. Registered-device information is limited to what Ziipa already stores for notification delivery."
+              help="Your installed Ziipa version and platform. Manage the devices that receive notifications in Devices."
             />
             <Text style={styles.body}>
               Ziipa{appVersion ? ` ${appVersion}` : ""}

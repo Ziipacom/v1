@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 export default function CommunityPage() {
   return (
     <PolicyPage title="Ziipa Community Rules">
+      <p>Ziipa is operated by Niche Labs LLC.</p>
       <section>
         <h2>Respect other people</h2>
         <p>

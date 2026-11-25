@@ -389,7 +389,6 @@ export function PostScreen({
               onPress={() => void submitReport()}
               busy={busy}
             />
-            <Notice text="In development, reports stay in this installation’s database. A configured moderator must review them; no external team is notified automatically." />
           </ScrollView>
         </SafeAreaView>
       </Modal>

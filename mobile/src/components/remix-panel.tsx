@@ -74,7 +74,7 @@ const statusNames: Record<RemixReceipt["status"], string> = {
 };
 const unavailable = (error: unknown) =>
   (error as { status?: number })?.status === 404
-    ? "Remixing is not available on this Ziipa server yet. Check your library for any response upload already saved."
+    ? "Remixing is unavailable right now. Check your library for any response video you already uploaded."
     : error instanceof Error
       ? error.message
       : "Could not reach Ziipa. Check your connection and refresh.";
@@ -568,10 +568,10 @@ function ScopedRemixPanel({
               <Notice
                 text={
                   !snapshot.allowed_modes.length
-                    ? "This creation does not currently allow a remix for your account."
+                    ? "Remixing is not available for this creation."
                     : snapshot.available
                       ? "Choose a permitted mode and your own response video. The result stays private until you review and publish it."
-                      : "Remix processing is unavailable right now. Permitted modes are shown below; refresh to check again."
+                      : "Remix processing is unavailable right now. Refresh to try again later."
                 }
               />
               <Text style={styles.small}>
@@ -613,12 +613,12 @@ function ScopedRemixPanel({
                   <Text style={styles.small}>{modeHelp[mode]}</Text>
                   {!recording && <MediaPlayer item={item} />}
                   <Text style={styles.small}>
-                    Source preview only. The combined remix is created after you
-                    submit; no unrendered effects are simulated.
+                    Preview the source, then add your response video to create
+                    the remix.
                   </Text>
                   <HelpLabel
                     label="Source clip range"
-                    help="Times start at the beginning of the published clip. Ziipa checks the selected end against the permitted source range; cut or hidden portions are not included."
+                    help="Choose a section of the published clip. Times start at its beginning; trimmed-out sections are not available."
                   />
                   <Field
                     label="Source start (seconds)"
@@ -813,8 +813,7 @@ function ScopedRemixPanel({
               />
               {pending(receipt.status) && !pollBudget && (
                 <Text style={styles.small}>
-                  Processing continues on Ziipa. Refresh to check again; no new
-                  remix request will be sent.
+                  Your remix is still processing. Refresh to check its progress.
                 </Text>
               )}
               {["ready", "applied"].includes(receipt.status) && !draft && (
@@ -1204,8 +1203,7 @@ function ScopedProjectStatus({
       />
       {pending(receipt?.status) && (
         <Text style={styles.small}>
-          Processing continues when you close the editor. No new remix request
-          is sent here.
+          Your remix keeps processing when you close the editor.
         </Text>
       )}
       {receipt && ["ready", "applied"].includes(receipt.status) && (

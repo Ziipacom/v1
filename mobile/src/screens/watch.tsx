@@ -927,14 +927,6 @@ function DesktopWatchLayout({
                 </View>
               )}
             </View>
-            <View style={desktopWatch.help}>
-              <Text style={desktopWatch.helpTitle}>Stay in the flow</Text>
-              <Text style={styles.small}>
-                Scroll inside the player or use its arrow controls to move
-                between creations. Like, save and join the conversation without
-                leaving the video.
-              </Text>
-            </View>
             <Action
               title="Back to Explore"
               secondary
@@ -1019,14 +1011,6 @@ const desktopWatch = themedStyles(() => ({
     borderColor: color.border,
     paddingVertical: 7,
     paddingHorizontal: 12,
-  },
-  help: {
-    borderRadius: 17,
-    backgroundColor: color.panel,
-    borderWidth: 1,
-    borderColor: color.border,
-    padding: 18,
-    gap: 8,
   },
   helpTitle: { color: color.text, fontFamily: font.semibold, fontSize: 16 },
   related: { flexDirection: "row", alignItems: "center", gap: 12 },

@@ -144,8 +144,8 @@ export function StudioScreen({
           networkNotice={
             discovery.networkError ||
             (discovery.networkCount
-              ? "Ziipa + connected-network public snapshots"
-              : "Ziipa member creations · Connect and sync supported public imports in Networks.")
+              ? "Ziipa & imported public posts"
+              : "Discover creations from the Ziipa community")
           }
           onOpen={(item) =>
             navigation.navigate("Watch", {

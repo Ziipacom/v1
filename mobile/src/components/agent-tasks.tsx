@@ -398,18 +398,6 @@ export function AgentTasks({
       ))}
     </View>
   );
-  const agentInference = config?.inference.model ? (
-    <Text style={styles.small}>
-      {config.inference.mode === "hosted_ai"
-        ? "Private AI service"
-        : "Local AI service"}{" "}
-      · {config.inference.model}
-    </Text>
-  ) : null;
-  const agentDetail = config?.detail ? <Notice text={config.detail} /> : null;
-  const agentSafety = (
-    <Notice text="Agent access is limited to your enabled Ziipa tools. It cannot run shell commands, publish publicly, send invitations, spend wallet funds or delete your account. Enable only the private actions you want it to complete without reviewing each step." />
-  );
   const agentError = error ? <Notice error text={error} /> : null;
   const agentNotice = notice ? <Notice text={notice} /> : null;
   const refreshAgent = (
@@ -911,20 +899,7 @@ export function AgentTasks({
       </View>
       {section === "Tasks" ? taskComposer : null}
       {section === "Activity" ? taskActivity : null}
-      {section === "Settings" ? (
-        <>
-          {agentSafety}
-          {policyEditor}
-          <LibrarySection title="About task availability" initiallyOpen={false}>
-            {agentInference}
-            {agentDetail}
-            <Text style={styles.small}>
-              Service status does not change your saved permissions or enable
-              the agent.
-            </Text>
-          </LibrarySection>
-        </>
-      ) : null}
+      {section === "Settings" ? policyEditor : null}
       {selected ? (
         <Sheet
           title="Task progress"

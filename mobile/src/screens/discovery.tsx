@@ -184,7 +184,7 @@ function MobileDiscoverScreen({
                 fontFamily: font.regular,
               }}
             >
-              Sample Studio
+              Exploring as a guest
             </Text>
           )}
           <Pressable
