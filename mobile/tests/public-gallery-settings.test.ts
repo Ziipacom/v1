@@ -317,7 +317,7 @@ test("a legacy 404 deployment never fabricates or offers a public URL", async ()
   try {
     pending.reject({ status: 404 });
     await h.flush();
-    assert.ok(h.notices().some((text) => /deployment is not ready/.test(text)));
+    assert.ok(h.notices().some((text) => /Public gallery links are currently unavailable/.test(text)));
     assert.equal(h.field().editable, false);
     assert.equal(h.save().disabled, true);
     assert.equal(
