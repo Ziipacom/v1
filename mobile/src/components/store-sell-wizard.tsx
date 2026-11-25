@@ -513,10 +513,6 @@ export function StoreSellWizard(props: Props) {
             disabled={!!busy}
             onPress={props.onEnableStore}
           />
-          <Text style={styles.small}>
-            Live payments are off. Eligible merchandise supports test checkout
-            only.
-          </Text>
           <Action
             title="Save privately"
             secondary

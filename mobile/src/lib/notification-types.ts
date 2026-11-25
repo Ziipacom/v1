@@ -21,17 +21,9 @@ export function notificationProviderReadiness(
   config: PushConfig,
   provider: "web" | "expo",
 ) {
-  const ready = config[`${provider}_ready`];
-  const configured = config[`${provider}_configured`];
-  if (ready)
-    return config.readiness_protocol === 2
-      ? "ready"
-      : "configured (worker unverified)";
-  return configured === true
-    ? "configured; worker not ready"
-    : configured === false
-      ? "needs setup"
-      : "not ready";
+  return config.readiness_protocol === 2 && config[`${provider}_ready`]
+    ? "Available"
+    : "Unavailable";
 }
 export type PushPreferences = {
   enabled: boolean;

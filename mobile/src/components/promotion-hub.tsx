@@ -25,6 +25,7 @@ import {
   Sparkles,
 } from "lucide-react-native";
 import { Action, Cover, Field, Notice, Pill } from "./ui";
+import { InfoTip } from "./info-tip";
 import { useDesktopLayout } from "./desktop-layout";
 import { workspace } from "./desktop-workspace";
 import { useZiipa } from "../provider";
@@ -109,7 +110,6 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [area, setArea] = useState<"plan" | "networks" | "activity">("plan");
   const [openNetwork, setOpenNetwork] = useState<string | null>(null);
-  const [openTool, setOpenTool] = useState<string | null>(null);
   const [brief, setBrief] = useState<PromotionBrief>({
     name: initialItem?.title.slice(0, 120) || "",
     objective: "Release a creation",
@@ -530,11 +530,15 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
   );
 
   const paidPanel = (
-    <Block
-      title="Email & paid promotion setup"
-      detail="Not integrated in this build. Add a setup checklist to your brief or review official documentation. These actions do not connect an account, send a campaign, start an ad or change any free plan."
-    >
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+    <Block title="Email & ads">
+      <View style={styles.row}>
+        <Text style={styles.label}>Add to brief</Text>
+        <InfoTip
+          title="Email and ads"
+          content="Plan providers in your brief. Send email and run ads from the provider’s own tools."
+        />
+      </View>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {marketingTools.map((tool) => {
           const selected = brief.tools.includes(tool.id);
           return (
@@ -544,38 +548,17 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
                 flexBasis: desktop ? 420 : "100%",
                 flexGrow: 1,
                 minWidth: 0,
-                padding: 16,
-                gap: 10,
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 10,
                 borderWidth: 1,
                 borderColor: selected ? color.purple : color.border,
                 borderRadius: 10,
               }}
             >
               <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${openTool === tool.id ? "Collapse" : "Expand"} ${tool.name} setup`}
-                accessibilityState={{ expanded: openTool === tool.id }}
-                onPress={() =>
-                  setOpenTool(openTool === tool.id ? null : tool.id)
-                }
-                style={[styles.between, { minHeight: 32 }]}
-              >
-                <Text style={styles.label}>{tool.name}</Text>
-                {openTool === tool.id ? (
-                  <Minus size={18} color={color.lime} />
-                ) : (
-                  <Plus size={18} color={color.muted} />
-                )}
-              </Pressable>
-              <Text style={[styles.eyebrow, { color: color.muted }]}>
-                NOT INTEGRATED · {tool.kind}
-              </Text>
-              {openTool === tool.id && (
-                <Text style={styles.small}>{tool.requirements}</Text>
-              )}
-              <Pressable
                 accessibilityRole="checkbox"
-                accessibilityLabel={`Include ${tool.name} setup in promotion brief`}
+                accessibilityLabel={`Include ${tool.name} in promotion brief`}
                 accessibilityState={{ checked: selected, disabled: saving }}
                 aria-checked={selected}
                 disabled={saving}
@@ -586,7 +569,7 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
                       : [...brief.tools, tool.id],
                   })
                 }
-                style={[styles.row, { paddingVertical: 8 }]}
+                style={[styles.row, { flex: 1, minHeight: 48 }]}
               >
                 <View
                   style={{
@@ -602,30 +585,34 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
                 >
                   {selected && <Check size={16} color="white" />}
                 </View>
-                <Text style={[styles.small, { flex: 1, color: color.text }]}>
-                  Include setup checklist in my brief
-                </Text>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={styles.label}>{tool.name}</Text>
+                  <Text style={styles.small}>{tool.kind}</Text>
+                </View>
               </Pressable>
-              {openTool === tool.id && (
-                <Action
-                  title="Official setup documentation"
-                  icon={ExternalLink}
-                  secondary
-                  disabled={saving}
-                  onPress={() => {
-                    void Linking.openURL(tool.docs).catch(() =>
-                      setError(
-                        "The official documentation could not open. Check your device browser.",
-                      ),
-                    );
-                  }}
-                />
-              )}
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={`Open ${tool.name} documentation`}
+                accessibilityState={{ disabled: saving }}
+                disabled={saving}
+                onPress={() => {
+                  void Linking.openURL(tool.docs).catch(() =>
+                    setError("Couldn’t open the provider’s documentation."),
+                  );
+                }}
+                style={{
+                  width: 44,
+                  height: 44,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <ExternalLink size={16} color={color.muted} />
+              </Pressable>
             </View>
           );
         })}
       </View>
-      <Notice text="Organic publishing can use existing reviewed workflows. Paid advertising and email delivery require separate backend adapters, provider access and explicit audience/budget approval. Social login does not grant those permissions, and no ad spend is enabled here." />
     </Block>
   );
 
@@ -760,7 +747,7 @@ function ScopedPromotionHub({ navigation, initialItem }: Props) {
     {
       id: "setup",
       title: "Email & ads",
-      detail: `${brief.tools.length} setup checklists selected`,
+      detail: `${brief.tools.length} selected`,
       Icon: Megaphone,
       content: paidPanel,
     },

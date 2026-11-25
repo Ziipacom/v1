@@ -167,7 +167,7 @@ test("capability checks never request permission; native provider errors cannot 
     (error: Error) => {
       assert.match(
         error.message,
-        /Native push registration could not complete/,
+        /Couldn’t enable notifications/,
       );
       assert.doesNotMatch(error.message, /synthetic credential|do-not-display/);
       return true;
@@ -180,8 +180,8 @@ test("private iPhone beta never requests APNs permission or an Expo token and ke
   const app = client("ios", { internalBeta: true, granted: false });
   const capability = await app.api.pushCapability();
   assert.equal(capability.supported, false);
-  assert.match(capability.detail, /In-app notifications remain available/);
-  await assert.rejects(app.api.registerPushDevice(config, "Private beta", () => true), /Remote push enrollment is unavailable/);
+  assert.match(capability.detail, /In-app notifications are available/);
+  await assert.rejects(app.api.registerPushDevice(config, "Private beta", () => true), /Push notification setup is unavailable/);
   assert.deepEqual(app.calls, { permissions: 0, token: 0, subscribe: 0 });
   const dispose = await app.api.nativeNotificationListener(() => assert.fail("No remote notification callback expected"));
   dispose();
@@ -193,8 +193,8 @@ test("internal Android beta never requests FCM permission or an Expo token and k
   const app = client("android", { internalBeta: true, granted: false });
   const capability = await app.api.pushCapability();
   assert.equal(capability.supported, false);
-  assert.match(capability.detail, /internal Android beta/);
-  await assert.rejects(app.api.registerPushDevice(config, "Internal beta", () => true), /Remote push enrollment is unavailable/);
+  assert.match(capability.detail, /In-app notifications are available/);
+  await assert.rejects(app.api.registerPushDevice(config, "Internal beta", () => true), /Push notification setup is unavailable/);
   assert.deepEqual(app.calls, { permissions: 0, token: 0, subscribe: 0 });
   const dispose = await app.api.nativeNotificationListener(() => assert.fail("No remote notification callback expected"));
   dispose();
@@ -224,7 +224,7 @@ test("web registration rejects an existing subscription for a different VAPID ke
   const app = client("web", { oldWebKey: true });
   await assert.rejects(
     app.api.registerPushDevice(config, "Browser", () => true),
-    /different push key/,
+    /notification permission in your browser/,
   );
   assert.equal(app.calls.subscribe, 0);
   const matching = client("web");

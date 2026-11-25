@@ -5,6 +5,7 @@ import { useZiipa } from "../provider";
 import { money, type Listing } from "../lib/commerce";
 import { Action, Notice, Pill } from "./ui";
 import { Disclosure } from "./disclosure";
+import { InfoTip } from "./info-tip";
 import { styles } from "../theme";
 
 type Setup = {
@@ -38,16 +39,41 @@ export function marketplaceCheckoutReady(
   );
 }
 
-export function marketplaceCheckoutStatus(
-  setup: Setup | null,
-  provider: "stripe" | "paypal",
-  failed = false,
-) {
-  if (marketplaceCheckoutReady(setup, provider))
-    return "Test checkout · no real charge";
-  if (!setup && !failed) return "Checking checkout availability…";
-  return "Checkout is unavailable right now. No payment can be started here.";
+function paymentFeedback(cause: unknown) {
+  const message = cause instanceof Error ? cause.message : "";
+  switch (message) {
+    case "The seller must finish sandbox payment setup before checkout.":
+      return "This seller hasn’t connected payments yet.";
+    case "Approve this order on PayPal before confirming the test purchase.":
+      return "Approve this order on PayPal first.";
+    case "The provider receipt does not match this test order.":
+    case "Seller settlement could not be verified for this test order.":
+      return "We couldn’t verify this order. Check your order history.";
+    case "This beta checkout supports physical merchandise only. Digital purchases require a separate platform-billing and delivery setup.":
+      return "Checkout is available for merchandise only.";
+    default:
+      return message &&
+        !/\b(?:sandbox|test mode|test order|test account)\b/i.test(message)
+        ? message
+        : "Payments are unavailable right now. Try again later.";
+  }
 }
+
+function orderStatusLabel(status: string) {
+  switch (status) {
+    case "pending":
+      return "Pending";
+    case "approved":
+      return "Approved";
+    case "paid":
+      return "Complete";
+    case "expired":
+      return "Expired";
+    default:
+      return "Status unavailable";
+  }
+}
+
 export function sandboxProviderLink(
   value: unknown,
   onboarding = false,
@@ -78,6 +104,7 @@ export function MarketplaceCheckout({ listing }: { listing: Listing }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [provider, setProvider] = useState<"stripe" | "paypal">("stripe");
+  const ready = marketplaceCheckoutReady(setup, provider);
   const request = useRef(Crypto.randomUUID());
   const lock = useRef(false);
   const owner = useRef(session?.access_token);
@@ -118,8 +145,7 @@ export function MarketplaceCheckout({ listing }: { listing: Listing }) {
         }
       })
       .catch(() => {
-        if (active)
-          setError("Payment services are unavailable. Try again later.");
+        if (active) setError("Couldn’t load payment options. Try again later.");
       });
     return () => {
       active = false;
@@ -131,8 +157,8 @@ export function MarketplaceCheckout({ listing }: { listing: Listing }) {
       setError("Sign in to review checkout and orders.");
       return;
     }
-    if (!refresh && !marketplaceCheckoutReady(setup, provider)) {
-      setError("Checkout is unavailable right now. No payment was started.");
+    if (!refresh && !ready) {
+      setError("Checkout is unavailable right now.");
       return;
     }
     lock.current = true;
@@ -156,7 +182,7 @@ export function MarketplaceCheckout({ listing }: { listing: Listing }) {
         );
         if (receipt.mode !== "sandbox")
           throw new Error(
-            "This order could not be verified as a test order. Check your order history before continuing.",
+            "We couldn’t verify this order. Check your order history.",
           );
         if (current()) setOrder(receipt);
       } else {
@@ -173,7 +199,7 @@ export function MarketplaceCheckout({ listing }: { listing: Listing }) {
         if (!current()) return;
         if (result.order.mode !== "sandbox")
           throw new Error(
-            "This checkout could not be verified as a test order. No payment page was opened.",
+            "We couldn’t open checkout securely. Try again later.",
           );
         setOrder(result.order);
         if (result.url)
@@ -182,7 +208,7 @@ export function MarketplaceCheckout({ listing }: { listing: Listing }) {
           );
       }
     } catch (cause) {
-      if (current()) setError((cause as Error).message);
+      if (current()) setError(paymentFeedback(cause));
     } finally {
       if (current()) {
         lock.current = false;
@@ -191,54 +217,47 @@ export function MarketplaceCheckout({ listing }: { listing: Listing }) {
     }
   }
   if (listing.seller_id === session?.user.id)
-    return (
-      <Notice text="This is your listing. Manage it from Sell; checkout is for buyers." />
-    );
+    return <Notice text="Manage this listing in Sell." />;
   if (listing.kind !== "merchandise")
-    return (
-      <Notice text="Digital purchases are unavailable. You can view this product’s public preview." />
-    );
+    return <Notice text="Digital purchases are unavailable." />;
+  const methods = (["stripe", "paypal"] as const).filter((method) =>
+    marketplaceCheckoutReady(setup, method),
+  );
   return (
     <View style={{ gap: 10 }}>
-      {(["stripe", "paypal"] as const).some((value) =>
-        marketplaceCheckoutReady(setup, value),
-      ) && (
+      {methods.length > 0 && (
         <>
           <Text style={styles.label}>Payment method</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {(["stripe", "paypal"] as const)
-              .filter((value) => marketplaceCheckoutReady(setup, value))
-              .map((value) => (
-                <Pill
-                  key={value}
-                  title={value === "stripe" ? "Card" : "PayPal"}
-                  active={provider === value}
-                  onPress={() => {
-                    if (!busy && !order) {
-                      setProvider(value);
-                      request.current = Crypto.randomUUID();
-                    }
-                  }}
-                />
-              ))}
+            {methods.map((value) => (
+              <Pill
+                key={value}
+                title={value === "stripe" ? "Card" : "PayPal"}
+                active={provider === value}
+                onPress={() => {
+                  if (!busy && !order) {
+                    setProvider(value);
+                    request.current = Crypto.randomUUID();
+                  }
+                }}
+              />
+            ))}
           </View>
         </>
       )}
-      <Notice text={marketplaceCheckoutStatus(setup, provider, !!error)} />
-      <Text style={styles.small}>
-        Test mode · no real charge. Delivery, shipping and returns follow the
-        seller’s description. A test order does not require real shipment.
-      </Text>
+      {ready && <Text style={styles.small}>No charge or shipment</Text>}
       <Action
         title={
           order?.status === "paid"
-            ? "Test order paid"
-            : marketplaceCheckoutReady(setup, provider)
-              ? `Test checkout · ${money(listing.price_cents)}`
-              : "Checkout unavailable"
+            ? "Order complete"
+            : ready
+              ? `Checkout · ${money(listing.price_cents)}`
+              : !setup && !error
+                ? "Checking availability…"
+                : "Checkout unavailable"
         }
         disabled={
-          !marketplaceCheckoutReady(setup, provider) ||
+          !ready ||
           listing.status !== "published" ||
           (!!order && order.status !== "pending") ||
           !!busy
@@ -249,8 +268,7 @@ export function MarketplaceCheckout({ listing }: { listing: Listing }) {
       {order && (
         <>
           <Text style={styles.small}>
-            Order {order.id.slice(0, 8)} · {order.status}. After returning from
-            checkout, refresh to verify the provider receipt.
+            Order {order.id.slice(0, 8)} · {orderStatusLabel(order.status)}
           </Text>
           <Action
             secondary
@@ -262,7 +280,7 @@ export function MarketplaceCheckout({ listing }: { listing: Listing }) {
       )}
       {order?.provider === "paypal" && order.status === "approved" && (
         <Action
-          title="Confirm test purchase"
+          title="Confirm order"
           disabled={busy}
           onPress={() => void run(true, true)}
         />
@@ -340,7 +358,7 @@ export function MarketplacePaymentSettings({
         );
         if (result.mode !== "sandbox")
           throw new Error(
-            "This connection could not be verified as a test account. No account page was opened.",
+            "We couldn’t open the payment account securely. Try again later.",
           );
         if (current())
           await Linking.openURL(
@@ -382,13 +400,11 @@ export function MarketplacePaymentSettings({
           if (results[2].status === "fulfilled")
             setOrders(results[2].value.orders);
           if (results.some((result) => result.status === "rejected"))
-            setError(
-              "Some payment status is unavailable. Refresh before checkout.",
-            );
+            setError("Couldn’t refresh all payment details. Try again.");
         }
       }
     } catch (cause) {
-      if (current()) setError((cause as Error).message);
+      if (current()) setError(paymentFeedback(cause));
     } finally {
       if (current()) {
         scope.current.locked = false;
@@ -400,11 +416,7 @@ export function MarketplacePaymentSettings({
     <Disclosure
       title={sellerTools ? "Seller payments & orders" : "Your orders"}
       detail={
-        !sellerTools
-          ? "Review purchases and payment status"
-          : seller?.ready
-            ? "Test seller connected"
-            : "Test payments only · no real charges"
+        !open && sellerTools && seller?.ready ? "Ready for orders" : undefined
       }
       expanded={open}
       onToggle={() => {
@@ -412,73 +424,70 @@ export function MarketplacePaymentSettings({
         if (!open) void run();
       }}
     >
-      <Text style={styles.small}>
-        Test orders only. No real charges or payouts are available.
-      </Text>
       {sellerTools && (
         <>
-          <Text style={styles.label}>Card payments</Text>
-          {seller && (
-            <Text style={styles.body}>
-              {seller.ready
-                ? "Ready for test orders"
-                : seller.connected
-                  ? "Finish connecting your test account"
-                  : seller.configured
-                    ? "Connect your test seller account"
-                    : "Card payments are unavailable right now."}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Text style={styles.label}>Card payments</Text>
+            <InfoTip
+              title="Payment accounts"
+              content="Orders don’t charge buyers or send payouts. Use sample details when connecting a payment account."
+            />
+          </View>
+          {seller?.configured ? (
+            <>
+              {seller.ready && (
+                <Text style={styles.small}>Ready for orders</Text>
+              )}
+              <Action
+                secondary
+                title={
+                  seller.ready
+                    ? "Manage Stripe"
+                    : seller.connected
+                      ? "Finish connecting Stripe"
+                      : "Connect Stripe"
+                }
+                disabled={busy}
+                onPress={() => void run(true)}
+              />
+            </>
+          ) : (
+            <Text style={styles.small}>
+              {busy && !seller ? "Checking…" : "Unavailable"}
             </Text>
           )}
-          <Action
-            title={
-              !seller?.configured
-                ? "Card connection unavailable"
-                : seller.connected
-                  ? "Manage test seller account"
-                  : "Connect test seller"
-            }
-            disabled={!seller?.configured || busy}
-            busy={busy}
-            onPress={() => void run(true)}
-          />
-          <Text style={styles.label}>PayPal</Text>
-          <Text style={styles.small}>
-            {paypal?.ready
-              ? "Ready for PayPal test orders"
-              : paypal?.configured
-                ? "Complete PayPal seller setup"
-                : "PayPal payments are unavailable right now."}
-          </Text>
-          {paypal?.configured && (
-            <View
-              style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
-            >
-              <Switch
-                accessibilityLabel="Approve sharing my PayPal seller connection with Ziipa"
-                value={paypalConsent}
-                onValueChange={setPaypalConsent}
-                disabled={busy}
+          {paypal?.configured ? (
+            <>
+              <Text style={styles.label}>PayPal</Text>
+              {paypal.ready && (
+                <Text style={styles.small}>Ready for orders</Text>
+              )}
+              <View
+                style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
+              >
+                <Switch
+                  accessibilityLabel="Approve sharing my PayPal seller connection with Ziipa"
+                  value={paypalConsent}
+                  onValueChange={setPaypalConsent}
+                  disabled={busy}
+                />
+                <Text style={[styles.small, { flex: 1 }]}>
+                  Allow PayPal to share my seller connection and payment
+                  permissions with Ziipa.
+                </Text>
+              </View>
+              <Action
+                secondary
+                title={paypal.connected ? "Manage PayPal" : "Connect PayPal"}
+                disabled={!paypalConsent || busy}
+                onPress={() => void run(true, undefined, "paypal")}
               />
-              <Text style={[styles.small, { flex: 1 }]}>
-                Allow PayPal to share my test seller connection and payment
-                permissions with Ziipa.
-              </Text>
-            </View>
+            </>
+          ) : (
+            <Text style={styles.small}>
+              PayPal · {busy && !paypal ? "Checking…" : "Unavailable"}
+            </Text>
           )}
-          <Action
-            secondary
-            title={
-              paypal?.configured
-                ? "Connect PayPal test seller"
-                : "PayPal connection unavailable"
-            }
-            disabled={!paypal?.configured || !paypalConsent || busy}
-            onPress={() => void run(true, undefined, "paypal")}
-          />
-          <Text style={styles.small}>
-            Connections open a secure test-account page. Use test details only;
-            no bank account or real payout is connected here.
-          </Text>
         </>
       )}
       <Action
@@ -487,17 +496,15 @@ export function MarketplacePaymentSettings({
         disabled={busy}
         onPress={() => void run()}
       />
-      {orders.length === 0 && (
-        <Text style={styles.small}>No test orders yet.</Text>
-      )}
+      {orders.length === 0 && <Text style={styles.small}>No orders yet.</Text>}
       {orders.map((order) => (
         <View key={order.id} style={{ gap: 5, paddingVertical: 8 }}>
           <Text style={styles.body}>
             {order.title} · {money(order.price_cents)}
           </Text>
           <Text style={styles.small}>
-            {order.provider} · {order.status} · test order{" "}
-            {order.id.slice(0, 8)}
+            {order.provider === "stripe" ? "Card" : "PayPal"} ·{" "}
+            {orderStatusLabel(order.status)} · Order {order.id.slice(0, 8)}
           </Text>
           <Action
             secondary
@@ -507,7 +514,7 @@ export function MarketplacePaymentSettings({
           />
           {order.provider === "paypal" && order.status === "approved" && (
             <Action
-              title="Confirm test purchase"
+              title="Confirm order"
               disabled={busy}
               onPress={() => void run(false, order, "paypal", true)}
             />

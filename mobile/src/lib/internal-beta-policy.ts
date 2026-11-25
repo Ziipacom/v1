@@ -5,11 +5,10 @@ export const androidPlayInternalScope = "android-play-internal";
 export const playInternalBetaScope = androidPlayInternalScope;
 export const externalBetaPrivacyUrl = "https://ziipa.com/privacy-beta";
 export const externalBetaNotice =
-  "Limited iPhone beta · existing Ziipa accounts only (18+). Saved uploads and edits use your live account. Token Wallet supports test networks only, subject to service setup. New network imports and remote push are unavailable. Video rendering is unavailable.";
-export const internalBetaNotice =
-  "Private iPhone beta · existing accounts only. Your live Ziipa account stores saved uploads and edits. Token Wallet supports test networks only, subject to service setup. New network imports and remote push are unavailable. Video rendering is unavailable; device acceptance is pending. External testing and public release are not approved.";
+  "Use an existing Ziipa account (18+). Uploads and edits save to your account. Network imports, push notification setup and video rendering are unavailable in this version.";
+export const internalBetaNotice = externalBetaNotice;
 export const androidPlayInternalNotice =
-  "Private Google Play beta · existing Ziipa accounts only (18+). Saved uploads and edits use your live account. Token Wallet supports test networks only, subject to service setup. New network imports, remote push and live purchases are unavailable. Merchandise test checkout requires sandbox setup.";
+  "Use an existing Ziipa account (18+). Uploads and edits save to your account. Network imports, push notification setup and paid orders are unavailable in this version.";
 export const playInternalBetaNotice = androidPlayInternalNotice;
 
 export function isIosInternalBeta(platform: string, scope: string | undefined) {
@@ -46,16 +45,10 @@ export function assertInternalBetaAction(
   // backend independently enforce test networks and external approval.
   if (!locked || action === "wallet" || action === "network-publish") return;
   const message = {
-    registration:
-      "This private beta supports existing Ziipa accounts only.",
-    wallet:
-      "Wallet pairing, signatures and transactions are unavailable in this limited native beta.",
-    "network-import":
-      "New network connections, authorization and imports are unavailable in this limited native beta. Existing authorizations can still be disconnected.",
-    "remote-push":
-      "Remote push enrollment is unavailable in this limited native beta. In-app notifications and privacy preferences remain available.",
-    purchase:
-      "Purchases are unavailable in this limited native beta. Proposed service packages can be reviewed without buying.",
+    registration: "Sign in with an existing Ziipa account.",
+    "network-import": "New connections and imports are unavailable in this version.",
+    "remote-push": "Push notification setup is unavailable in this version.",
+    purchase: "Purchases are unavailable in this version.",
   }[action];
   throw new Error(message);
 }
@@ -71,7 +64,7 @@ export function assertInternalBetaRequest(
   // Known API routes need no escaped path bytes. Reject ambiguous spellings
   // instead of allowing URL/server normalization to bypass a restricted route.
   if (/%|\\|\/\/|[\x00-\x20]/.test(route) || /\/\.{1,2}(?:\/|$)/.test(route))
-    throw new Error("This private beta cannot use an ambiguous API route.");
+    throw new Error("This request could not be completed.");
   const canonical = route.replace(/\/$/, "").toLowerCase();
   if (method.toUpperCase() !== "GET" && canonical === "/api/services/purchase-context")
     assertInternalBetaAction(true, "purchase");

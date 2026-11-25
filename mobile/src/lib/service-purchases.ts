@@ -4,7 +4,7 @@ import type { PurchaseContext, PurchaseOption } from "./commerce";
 
 async function identify(context: PurchaseContext) {
   if (limitedStoreBeta)
-    throw new Error("Purchases are unavailable in this limited beta.");
+    throw new Error("Purchases are unavailable right now.");
   if (!(await Purchases.isConfigured()))
     Purchases.configure({ apiKey: context.public_key, appUserID: context.app_user_id });
   else if ((await Purchases.getAppUserID()) !== context.app_user_id)

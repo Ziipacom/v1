@@ -1,4 +1,5 @@
 import { HelpLabel } from "../components/help-label";
+import { InfoTip } from "../components/info-tip";
 import {
   useCallback,
   useEffect,
@@ -252,7 +253,6 @@ function ScopedConnectionsScreen({
   const [prepared, setPrepared] = useState<PreparedMedia | null>(null);
   const preparedRef = useRef<PreparedMedia | null>(null);
   const mounted = useRef(true);
-  const [requirements, setRequirements] = useState<string[]>([]);
   const [authorizationLink, setAuthorizationLink] = useState("");
   const [portalLink, setPortalLink] = useState("");
   useEffect(() => {
@@ -324,7 +324,6 @@ function ScopedConnectionsScreen({
   function editAccount(value: NetworkAccount) {
     setError("");
     setNotice("");
-    setRequirements([]);
     setAuthorizationLink("");
     setPortalLink("");
     setConfirmDisconnect(false);
@@ -362,16 +361,12 @@ function ScopedConnectionsScreen({
       };
       savePreviewNetworks(next);
       setHub(next);
-      setNotice(
-        "Public profile saved for this preview session. Sign in to store it and sync supported content.",
-      );
+      setNotice("Profile added for this session. Sign in to keep it.");
     } else {
       await api<NetworkAccount>(`/api/social/${selected}/link`, normalized);
       setHub(await api<NetworkHub>("/api/social/hub"));
       await refresh();
-      setNotice(
-        "Public profile saved. This is a shortcut, not ownership verification or permission to publish.",
-      );
+      setNotice("Public profile saved.");
     }
     setSelected(null);
   }
@@ -394,14 +389,15 @@ function ScopedConnectionsScreen({
     } catch (cause) {
       if (!current()) return;
       if ((cause as { status?: number }).status === 404)
-        throw new Error(
-          "Public imports require the updated Ziipa server. This deployment is not ready yet.",
-        );
+        throw new Error("Public imports are currently unavailable.");
       throw cause;
     }
     if (!current()) return;
-    setRequirements(result.requirements || []);
-    setNotice(result.detail);
+    setNotice(
+      result.status === "setup_required"
+        ? "Public imports are currently unavailable."
+        : "",
+    );
     if (result.status === "browser_sign_in_required") {
       if (!result.connect_via_portal)
         throw new Error(
@@ -445,7 +441,7 @@ function ScopedConnectionsScreen({
         url.pathname === "/oauth2/authorize"
       ))
         throw new Error(
-          "Authorization for this provider is not enabled in this build.",
+          "This network’s authorization is unavailable here.",
         );
       await Linking.openURL(result.auth_url);
     }
@@ -471,7 +467,7 @@ function ScopedConnectionsScreen({
       const status = (cause as { status?: number }).status;
       if (status === 404)
         throw new Error(
-          "Public import targets require the updated Ziipa server. Refresh after deployment.",
+          "Couldn’t load import targets. Refresh and try again.",
         );
       if (status === 409)
         throw new Error(
@@ -1272,18 +1268,23 @@ function ScopedConnectionsScreen({
               <Text style={styles.small}>
                 {account.status === "connected"
                   ? readImportProviders.has(selected)
-                    ? "Read consent saved · check import status"
-                    : "Provider authorization active"
-                  : "Public profile shortcut"}
+                    ? "Read access granted"
+                    : "Connected"
+                  : account.status === "linked"
+                    ? "Public profile linked"
+                    : "Disconnected"}
               </Text>
             </View>
+            <InfoTip
+              title={account.name}
+              content={[
+                account.connection_notice || networkInfo[selected].sync,
+                account.import_detail,
+              ]
+                .filter(Boolean)
+                .join("\n\n")}
+            />
           </View>
-          <Text style={styles.body}>
-            {account.connection_notice || networkInfo[selected].sync}
-          </Text>
-          {!!account.import_detail && (
-            <Text style={styles.small}>{account.import_detail}</Text>
-          )}
           <Field
             label="Profile URL or handle"
             value={linkValue}
@@ -1305,7 +1306,7 @@ function ScopedConnectionsScreen({
               guest
                 ? "Sign in to authorize account"
                 : readImportProviders.has(selected)
-                  ? "Set up read-only public imports"
+                  ? "Connect public imports"
                   : "Check available imports"
             }
             icon={ShieldCheck}
@@ -1332,7 +1333,7 @@ function ScopedConnectionsScreen({
                   await Linking.openURL(url);
                   if (current())
                     setNotice(
-                      "Complete read-only consent in the browser, then return and refresh import status. No sync or publishing was started.",
+                      "Authorize in your browser, then refresh here.",
                     );
                 })
               }
@@ -1409,15 +1410,6 @@ function ScopedConnectionsScreen({
               ))}
             </View>
           )}
-          {!!account.import_requirements?.length && (
-            <View style={{ gap: 5 }}>
-              {account.import_requirements.map((detail) => (
-                <Text key={detail} style={styles.small}>
-                  {detail}
-                </Text>
-              ))}
-            </View>
-          )}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <SmallAction
               title="Open platform"
@@ -1440,16 +1432,6 @@ function ScopedConnectionsScreen({
           </View>
           {!!notice && <Notice text={notice} />}
           {!!error && <Notice text={error} error />}
-          {requirements.length > 0 && (
-            <View style={n.account}>
-              <Text style={styles.label}>Integration setup required</Text>
-              {requirements.map((text, index) => (
-                <Text key={text} style={styles.small}>
-                  {index + 1}. {text}
-                </Text>
-              ))}
-            </View>
-          )}
           {account.status !== "disconnected" &&
             (confirmDisconnect ? (
               <>
@@ -1491,7 +1473,7 @@ function ScopedConnectionsScreen({
             into this original file.
           </Text>
           {sharingItem.demo ? (
-            <Notice text="Sample artwork is for preview only. Record or upload your own media and sign in to save it before exporting." />
+            <Notice text="Add your own media to export it." />
           ) : (
             <Action
               title={

@@ -102,12 +102,12 @@ test("saved promotion plan is only a private Media OS project, never a send/spen
     item,
   );
   assert.deepEqual(project.asset_ids, [item.id]);
+  assert.ok(project.description.startsWith("Private promotion brief"));
   assert.ok(
     project.description.includes(
-      "not a publishing, send or spend authorization",
+      `Providers · ${marketingTools.map((tool) => tool.name).join(", ")}`,
     ),
   );
-  assert.equal((project.description.match(/NOT INTEGRATED/g) || []).length, 4);
   assert.equal(project.description.length <= 3000, true);
   assert.deepEqual(Object.keys(project).sort(), [
     "asset_ids",

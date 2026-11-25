@@ -128,6 +128,7 @@ function ui(fetcher: (path: string, body?: unknown) => Promise<any>) {
       if (name === "./ui")
         return { Action: "Action", Notice: "Notice", Pill: "Pill" };
       if (name === "./disclosure") return { Disclosure: "Disclosure" };
+      if (name === "./info-tip") return { InfoTip: "InfoTip" };
       if (name === "../theme") return { styles: {} };
       throw new Error(name);
     },
@@ -162,7 +163,7 @@ test("checkout fails closed for unavailable services, inconsistent enabled flags
     await flush();
     assert.equal(h.calls.length, 1);
     const text = JSON.stringify(nodes);
-    assert.match(text, /Checkout is unavailable/);
+    assert.match(text, /Checkout unavailable/);
     assert.doesNotMatch(
       text,
       /provider setup|sandbox setup|developer|credentials/i,
@@ -187,10 +188,13 @@ test("available payment method is selected without a purchase; explicit repeated
     nodes.find((node) => node.type === "Pill")?.props.title,
     "PayPal",
   );
-  const button = nodes.find(
-    (node) =>
-      node.type === "Action" && node.props.title.startsWith("Test checkout"),
-  )!;
+  const button = action(nodes, "Checkout · $12.00");
+  assert.equal(
+    nodes.filter((node) => node.props.children === "No charge or shipment")
+      .length,
+    1,
+  );
+  assert.doesNotMatch(JSON.stringify(nodes), /test checkout|test mode/i);
   assert.equal(button.props.disabled, false);
   button.props.onPress();
   button.props.onPress();
@@ -201,9 +205,34 @@ test("available payment method is selected without a purchase; explicit repeated
   assert.equal(h.links.length, 1);
   const after = h.render("MarketplaceCheckout", { listing });
   assert.equal(
-    after.some((node) => node.props.title === "Test order paid"),
+    after.some((node) => node.props.title === "Order complete"),
     false,
   );
+});
+
+test("buyer sees a short, actionable message when the seller hasn't connected payments", async () => {
+  const h = ui(async (path) => {
+    if (path.endsWith("/config")) return available;
+    throw new Error(
+      "The seller must finish sandbox payment setup before checkout.",
+    );
+  });
+  h.render("MarketplaceCheckout", { listing });
+  await flush();
+  action(
+    h.render("MarketplaceCheckout", { listing }),
+    "Checkout · $12.00",
+  ).props.onPress();
+  await flush();
+  const after = h.render("MarketplaceCheckout", { listing });
+  assert.ok(
+    after.some(
+      (node) =>
+        node.props.text === "This seller hasn’t connected payments yet.",
+    ),
+  );
+  assert.doesNotMatch(JSON.stringify(after), /sandbox payment setup/i);
+  assert.deepEqual(h.links, []);
 });
 
 test("unverified live-mode checkout response cannot open a payment page or claim a paid test order", async () => {
@@ -217,22 +246,20 @@ test("unverified live-mode checkout response cannot open a payment page or claim
   );
   h.render("MarketplaceCheckout", { listing });
   await flush();
-  h.render("MarketplaceCheckout", { listing })
-    .find(
-      (node) =>
-        node.type === "Action" && node.props.title.startsWith("Test checkout"),
-    )!
-    .props.onPress();
+  action(
+    h.render("MarketplaceCheckout", { listing }),
+    "Checkout · $12.00",
+  ).props.onPress();
   await flush();
   assert.deepEqual(h.links, []);
   const after = h.render("MarketplaceCheckout", { listing });
   assert.equal(
-    after.some((node) => node.props.title === "Test order paid"),
+    after.some((node) => node.props.title === "Order complete"),
     false,
   );
   assert.ok(
     after.some((node) =>
-      /could not be verified as a test order/.test(node.props.text || ""),
+      /couldn’t open checkout securely/.test(node.props.text || ""),
     ),
   );
 });
@@ -245,12 +272,10 @@ test("late checkout response after a listing change cannot open the previous pay
   const h = ui(async (path) => (path.endsWith("/config") ? available : held));
   h.render("MarketplaceCheckout", { listing });
   await flush();
-  h.render("MarketplaceCheckout", { listing })
-    .find(
-      (node) =>
-        node.type === "Action" && node.props.title.startsWith("Test checkout"),
-    )!
-    .props.onPress();
+  action(
+    h.render("MarketplaceCheckout", { listing }),
+    "Checkout · $12.00",
+  ).props.onPress();
   h.render("MarketplaceCheckout", {
     listing: { ...listing, id: "listing-two" },
   });
@@ -272,12 +297,10 @@ test("late checkout acknowledgement from a previous account cannot open a paymen
   const h = ui(async (path) => (path.endsWith("/config") ? available : held));
   h.render("MarketplaceCheckout", { listing });
   await flush();
-  h.render("MarketplaceCheckout", { listing })
-    .find(
-      (node) =>
-        node.type === "Action" && node.props.title.startsWith("Test checkout"),
-    )!
-    .props.onPress();
+  action(
+    h.render("MarketplaceCheckout", { listing }),
+    "Checkout · $12.00",
+  ).props.onPress();
   h.context.session = { access_token: "owner-two", user: { id: 9 } };
   h.render("MarketplaceCheckout", { listing });
   await flush();
@@ -343,7 +366,7 @@ test("seller PayPal connection requires separate consent and opens a verified te
     .props.onToggle();
   await flush();
   let nodes = h.render("MarketplacePaymentSettings");
-  const blocked = action(nodes, "Connect PayPal test seller");
+  const blocked = action(nodes, "Connect PayPal");
   assert.equal(blocked.props.disabled, true);
   blocked.props.onPress();
   await flush();
@@ -353,11 +376,8 @@ test("seller PayPal connection requires separate consent and opens a verified te
   );
   nodes.find((node) => node.type === "Switch")!.props.onValueChange(true);
   nodes = h.render("MarketplacePaymentSettings");
-  assert.equal(
-    action(nodes, "Connect PayPal test seller").props.disabled,
-    false,
-  );
-  action(nodes, "Connect PayPal test seller").props.onPress();
+  assert.equal(action(nodes, "Connect PayPal").props.disabled, false);
+  action(nodes, "Connect PayPal").props.onPress();
   await flush();
   assert.equal(
     h.calls.find((call) => call.path.endsWith("/connect"))!.body

@@ -37,19 +37,19 @@ test("mint readiness reflects actual per-kind contracts and all supported public
   assert.equal(mintSetupIssue(config, 84532, "mint_nft"), "");
   assert.match(
     mintSetupIssue(config, 84532, "create_token"),
-    /setup is pending/,
+    /Minting is unavailable on this network/,
   );
   assert.match(
     mintSetupIssue(config, 11155111, "mint_nft"),
-    /setup is pending/,
+    /Minting is unavailable on this network/,
   );
   assert.match(
     mintSetupIssue({ ...config, storage: "local_ipfs" }, 84532, "mint_nft"),
-    /Public media storage/,
+    /public media storage/,
   );
   assert.match(
     mintSetupIssue({ ...config, testnet_only: false }, 84532, "mint_nft"),
-    /requires a test-network/,
+    /Minting is unavailable/,
   );
   assert.match(mintSetupIssue(null, 84532, "mint_nft"), /Checking/);
 });

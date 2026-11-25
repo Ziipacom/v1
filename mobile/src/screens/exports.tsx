@@ -199,14 +199,8 @@ function ScopedExportsScreen({
       ) : (
         <>
           {message ? <Notice text={message} /> : null}
-          {!config?.can_render && (
-            <Notice
-              text={
-                config?.detail ||
-                config?.requirements?.join(" · ") ||
-                "The export worker is not ready. You can keep editing; rendering starts once the worker is available."
-              }
-            />
+          {config && !config.can_render && (
+            <Notice text="Export is currently unavailable." />
           )}
           {config?.max_duration_seconds && (
             <Text style={styles.small}>

@@ -12,7 +12,7 @@ import {
 } from "../src/lib/notification-types.ts";
 
 const deliveryId = "a2f9fbb5-d803-4ebd-a795-f98cc025d2e4";
-test("provider labels distinguish matching worker readiness, configuration and legacy API uncertainty", () => {
+test("provider labels only report availability for confirmed delivery", () => {
   const config: PushConfig = {
     enabled: true,
     worker_ready: true,
@@ -25,25 +25,25 @@ test("provider labels distinguish matching worker readiness, configuration and l
     categories: [],
     notice: "",
   };
-  assert.equal(notificationProviderReadiness(config, "web"), "ready");
-  assert.equal(notificationProviderReadiness(config, "expo"), "needs setup");
+  assert.equal(notificationProviderReadiness(config, "web"), "Available");
+  assert.equal(notificationProviderReadiness(config, "expo"), "Unavailable");
   assert.equal(
     notificationProviderReadiness({ ...config, web_ready: false }, "web"),
-    "configured; worker not ready",
+    "Unavailable",
   );
   assert.equal(
     notificationProviderReadiness(
       { ...config, readiness_protocol: undefined },
       "web",
     ),
-    "configured (worker unverified)",
+    "Unavailable",
   );
   assert.equal(
     notificationProviderReadiness(
       { ...config, expo_configured: undefined },
       "expo",
     ),
-    "not ready",
+    "Unavailable",
   );
 });
 test("notification opt-in binds selected supported categories and a current preference revision", () => {

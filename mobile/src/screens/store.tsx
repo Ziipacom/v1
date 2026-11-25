@@ -17,6 +17,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Crypto from "expo-crypto";
 import {
   Check,
+  ChevronRight,
+  Flag,
   Package,
   Pencil,
   RefreshCw,
@@ -499,7 +501,7 @@ function ScopedStoreScreen({
     setDraft(editListing(value));
     setMessage(
       status === "published"
-        ? "Listing published. Live payments are unavailable; eligible products may offer test checkout."
+        ? "Listing published."
         : "Listing saved to your account.",
     );
     await loadAccount();
@@ -1599,55 +1601,97 @@ function ScopedStoreScreen({
         </Sheet>
       )}
       {selected && (
-        <Sheet title={selected.title} onClose={() => setSelected(null)}>
-          {canEditProduct(selected, session?.user.id, guest) && (
-            <Action
-              secondary
-              title="Edit product"
-              icon={Pencil}
-              disabled={!!busy}
-              onPress={() => openProductEditor(selected)}
-            />
-          )}
-          <StoreProductGallery key={selected.id} listing={selected} />
-          <Text style={[styles.heading, { fontSize: 27 }]}>
-            {money(selected.price_cents)}
-          </Text>
-          <Text style={styles.body}>{selected.description}</Text>
-          <Text style={styles.small}>
-            {selected.kind === "digital"
-              ? "Digital media"
-              : `Merchandise · ${selected.condition.replaceAll("_", " ")}`}
-          </Text>
-          <Text style={styles.body}>{selected.delivery}</Text>
-          <Action
-            title={`View ${selected.store_name}`}
-            secondary
-            onPress={() => {
-              navigation.setParams({
-                sellerId: selected.seller_id,
-                tab: "browse",
-              });
-              setSelected(null);
-              setTab("browse");
+        <Sheet
+          title={selected.title}
+          maxWidth={920}
+          onClose={() => setSelected(null)}
+        >
+          <View
+            testID="marketplace-listing-detail"
+            style={{
+              flexDirection: desktop ? "row" : "column",
+              alignItems: desktop ? "flex-start" : "stretch",
+              gap: desktop ? 24 : 16,
             }}
-          />
-          <MarketplaceCheckout key={selected.id} listing={selected} />
-          <Action
-            title="Report this listing"
-            secondary
-            disabled={!!busy}
-            onPress={() =>
-              void run("Reporting listing", async () => {
-                await api(`/api/store/listings/${selected.id}/report`, {
-                  reason:
-                    "Please review this listing for rights, accuracy or marketplace safety.",
-                });
-                setSelected(null);
-                setMessage("Report saved for moderation.");
-              })
-            }
-          />
+          >
+            <View style={desktop ? { flex: 1.25, minWidth: 0 } : undefined}>
+              <StoreProductGallery key={selected.id} listing={selected} />
+            </View>
+            <View style={{ gap: 12, ...(desktop ? { flex: 1, minWidth: 0 } : {}) }}>
+              <View style={styles.between}>
+                <View style={{ flexShrink: 1, gap: 3 }}>
+                  <Text style={[styles.heading, { fontSize: 27 }]}>
+                    {money(selected.price_cents)}
+                  </Text>
+                  <Text style={styles.small}>
+                    {selected.kind === "digital"
+                      ? "Digital media"
+                      : `Merchandise · ${selected.condition.replaceAll("_", " ")}`}
+                  </Text>
+                </View>
+                {canEditProduct(selected, session?.user.id, guest) && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit product"
+                    disabled={!!busy}
+                    onPress={() => openProductEditor(selected)}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Pencil size={19} color={color.text} />
+                  </Pressable>
+                )}
+              </View>
+              <Text style={styles.body}>{selected.description}</Text>
+              <Text style={styles.small}>{selected.delivery}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`View ${selected.store_name}`}
+                onPress={() => {
+                  navigation.setParams({
+                    sellerId: selected.seller_id,
+                    tab: "browse",
+                  });
+                  setSelected(null);
+                  setTab("browse");
+                }}
+                style={[
+                  styles.row,
+                  { alignSelf: "flex-start", minHeight: 44, gap: 8 },
+                ]}
+              >
+                <Store size={17} color={color.muted} />
+                <Text style={[styles.label, { flexShrink: 1 }]}>{selected.store_name}</Text>
+                <ChevronRight size={16} color={color.muted} />
+              </Pressable>
+              <MarketplaceCheckout key={selected.id} listing={selected} />
+              <Pressable
+                accessibilityRole="button"
+                disabled={!!busy}
+                style={[
+                  styles.row,
+                  { alignSelf: "flex-start", minHeight: 44, gap: 8 },
+                ]}
+                onPress={() =>
+                  void run("Reporting listing", async () => {
+                    await api(`/api/store/listings/${selected.id}/report`, {
+                      reason:
+                        "Please review this listing for rights, accuracy or marketplace safety.",
+                    });
+                    setSelected(null);
+                    setMessage("Report saved for moderation.");
+                  })
+                }
+              >
+                <Flag size={15} color={color.muted} />
+                <Text style={styles.small}>Report listing</Text>
+              </Pressable>
+            </View>
+          </View>
         </Sheet>
       )}
     </View>

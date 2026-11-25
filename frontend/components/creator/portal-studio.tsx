@@ -49,7 +49,7 @@ export function PortalStudio({member,onLogout,logoutBusy,onSessionEnded}:{member
     <section className={`portal-studio-stage ${compact?'is-compact':''}`} aria-label="Ziipa shared creator app">
       {!ready&&<div role="status" aria-live="polite" className={`portal-studio-loading ${slow?'is-slow':''}`}>
         <span>{slow?'Studio is taking longer than expected.':'Opening your Studio…'}</span>
-        {slow&&<><p>Your account and saved media are safe. Open the same Studio directly, or retry this frame.</p><div className="portal-studio-recovery"><a href="/studio/index.html" target="_blank" rel="noopener">Open Studio in its own tab</a><Button variant="ghost" onClick={()=>setAttempt(value=>value+1)}>Retry Studio</Button></div></>}
+        {slow&&<div className="portal-studio-recovery"><a href="/studio/index.html" target="_blank" rel="noopener">Open Studio in a new tab</a><Button variant="ghost" onClick={()=>setAttempt(value=>value+1)}>Retry</Button></div>}
       </div>}
       <iframe key={attempt} ref={frame} title="Ziipa Studio — Discover, create and connect" allow="camera; microphone; autoplay; fullscreen; clipboard-write" allowFullScreen onLoad={studioLoaded} onError={()=>setSlow(true)}/>
     </section>

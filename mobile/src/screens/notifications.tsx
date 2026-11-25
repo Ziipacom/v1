@@ -891,12 +891,6 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
                 </Text>
               </View>
               <View style={styles.between}>
-                <Text style={styles.small}>Processing</Text>
-                <Text style={styles.small}>
-                  {config.worker_ready ? "Available" : "Unavailable"}
-                </Text>
-              </View>
-              <View style={styles.between}>
                 <Text style={styles.small}>App delivery</Text>
                 <Text style={styles.small}>
                   {notificationProviderReadiness(config, "expo")}

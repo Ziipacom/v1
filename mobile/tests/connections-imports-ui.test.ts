@@ -228,7 +228,7 @@ test("Connections separates readiness from explicit read-only authorization and 
   ui.render();
   await tick();
   ui.press("Manage Facebook account");
-  ui.press("Set up read-only public imports");
+  ui.press("Connect public imports");
   await tick();
   assert.deepEqual(ui.opened, []);
   assert.equal(
@@ -259,7 +259,7 @@ test("private iOS beta rejects explicit connect and target actions before OAuth,
   ui.render();
   await tick();
   ui.press("Manage Facebook account");
-  ui.press("Set up read-only public imports");
+  ui.press("Connect public imports");
   await tick();
   assert.deepEqual(ui.opened, []);
   assert.equal(ui.requests.some((row) => row.body !== undefined), false);
@@ -297,19 +297,21 @@ test("native setup offers only explicit Ziipa portal handoff and an old deployme
   ui.render();
   await tick();
   ui.press("Manage Facebook account");
-  ui.press("Set up read-only public imports");
+  ui.press("Connect public imports");
   await tick();
   assert.deepEqual(ui.opened, []);
   ui.press("Continue in Ziipa portal");
   await tick();
   assert.deepEqual(ui.opened, ["https://ziipa.com/portal"]);
   ui.setConnect(Object.assign(new Error("not found"), { status: 404 }));
-  ui.press("Set up read-only public imports");
+  ui.press("Connect public imports");
   await tick();
   assert.equal(
     ui
       .render()
-      .some((row) => /updated Ziipa server/.test(row.props.text || "")),
+      .some(
+        (row) => row.props.text === "Public imports are currently unavailable.",
+      ),
     true,
   );
   assert.equal(

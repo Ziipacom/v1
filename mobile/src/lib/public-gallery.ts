@@ -222,8 +222,7 @@ export function publicGalleryFailure(error: unknown, write = false) {
   if (value?.status === 404)
     return {
       kind: "deployment",
-      message:
-        "Public gallery links require the updated Ziipa server and website. This deployment is not ready yet.",
+      message: "Public gallery links are currently unavailable.",
     } as const;
   if (value?.status === 409) {
     if (

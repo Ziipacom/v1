@@ -2,17 +2,6 @@ import { useEffect, useState } from "react";
 import { AppState, Text, View } from "react-native";
 import { request } from "../lib/api";
 import { color, font, useTheme } from "../theme";
-import {
-  androidPlayInternal,
-  iosExternalTestflight,
-  iosLimitedTestflight,
-} from "../lib/config";
-import {
-  androidPlayInternalNotice,
-  externalBetaNotice,
-  internalBetaNotice,
-} from "../lib/internal-beta-policy";
-import { InfoTip } from "./info-tip";
 
 type PlatformStatus = {
   maintenance_mode: boolean;
@@ -53,18 +42,11 @@ export function PlatformNotice() {
   const operatorMessage =
     status?.banner ||
     (status?.maintenance_mode
-      ? "Ziipa maintenance: creator changes are temporarily paused."
+      ? "Ziipa is undergoing maintenance. Creator changes are temporarily paused."
       : status?.signup_paused
         ? "New Ziipa registrations are temporarily paused."
         : "");
-  const betaDetails = androidPlayInternal
-    ? androidPlayInternalNotice
-    : iosLimitedTestflight
-      ? iosExternalTestflight
-        ? externalBetaNotice
-        : internalBetaNotice
-      : "";
-  if (!betaDetails && !operatorMessage) return null;
+  if (!operatorMessage) return null;
   return (
     <View
       style={{
@@ -75,44 +57,17 @@ export function PlatformNotice() {
         borderBottomColor: color.border,
       }}
     >
-      {!!betaDetails && (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-          <View
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: color.lime,
-            }}
-          />
-          <Text
-            style={{
-              color: color.text,
-              fontFamily: font.semibold,
-              fontSize: 12,
-            }}
-          >
-            Beta
-          </Text>
-          <Text style={{ color: color.muted, fontSize: 12, flexShrink: 1 }}>
-            Changes use your live account
-          </Text>
-          <InfoTip title="beta access" content={betaDetails} />
-        </View>
-      )}
-      {!!operatorMessage && (
-        <Text
-          accessibilityRole="alert"
-          style={{
-            color: color.text,
-            fontFamily: font.medium,
-            fontSize: 13,
-            paddingVertical: 5,
-          }}
-        >
-          {operatorMessage}
-        </Text>
-      )}
+      <Text
+        accessibilityRole="alert"
+        style={{
+          color: color.text,
+          fontFamily: font.medium,
+          fontSize: 13,
+          paddingVertical: 5,
+        }}
+      >
+        {operatorMessage}
+      </Text>
     </View>
   );
 }

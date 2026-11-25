@@ -356,9 +356,7 @@ export function LiveScreen({
           record,
         };
       } catch {
-        setError(
-          "Open a trusted HTTPS or localhost preview to prepare a broadcast securely.",
-        );
+        setError("Couldn’t prepare the broadcast. Reopen Ziipa over HTTPS.");
         return;
       }
     }

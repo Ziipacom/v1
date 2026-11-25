@@ -2,7 +2,7 @@ import { Platform } from "react-native";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Crypto from "expo-crypto";
-import { androidPlayInternal, limitedStoreBeta, portalMode } from "./config";
+import { limitedStoreBeta, portalMode } from "./config";
 import { assertInternalBetaAction } from "./internal-beta-policy";
 import {
   webPushKey,
@@ -26,13 +26,12 @@ function nativeProjectId() {
   return typeof id === "string" && uuid.test(id) ? id : null;
 }
 export async function pushCapability(): Promise<PushCapability> {
-  if (limitedStoreBeta) return {
-    supported: false,
-    permission: "unavailable",
-    detail: androidPlayInternal
-      ? "Remote push is unavailable in this internal Android beta. In-app notifications remain available; no Firebase or device enrollment is requested."
-      : "Remote push is unavailable in this private iPhone beta. In-app notifications remain available; no APNs key or device enrollment is requested.",
-  };
+  if (limitedStoreBeta)
+    return {
+      supported: false,
+      permission: "unavailable",
+      detail: "In-app notifications are available in this version.",
+    };
   if (Platform.OS === "web") {
     const supported =
       typeof window !== "undefined" &&
@@ -44,8 +43,8 @@ export async function pushCapability(): Promise<PushCapability> {
       supported,
       permission: supported ? Notification.permission : "unavailable",
       detail: supported
-        ? "Browser permission and a registered device are separate from your account preferences."
-        : "Browser push needs HTTPS (or localhost), Service Workers and a browser with Push API support. LAN HTTP previews cannot receive browser push.",
+        ? "Manage browser notification permission in your site settings."
+        : "Open ziipa.com in a browser that supports notifications.",
     };
   }
   if (Constants.executionEnvironment === "storeClient" || !nativeProjectId())
@@ -53,7 +52,7 @@ export async function pushCapability(): Promise<PushCapability> {
       supported: false,
       permission: "unavailable",
       detail:
-        "Native push requires a new Ziipa development/release build, a configured EAS project and APNs/FCM credentials. Expo Go is not supported.",
+        "Push notifications are unavailable in this version of Ziipa.",
     };
   try {
     const notifications = await import("expo-notifications");
@@ -62,14 +61,14 @@ export async function pushCapability(): Promise<PushCapability> {
       supported: true,
       permission: permission.status,
       detail:
-        "This build can request notification permission. Delivery still depends on configured APNs/FCM and the backend worker.",
+        "Manage notification permission in your device settings.",
     };
   } catch {
     return {
       supported: false,
       permission: "unavailable",
       detail:
-        "This binary does not have the native notifications module. Install the new Ziipa build; refreshing JavaScript cannot add native capabilities.",
+        "Push notifications are unavailable in this version of Ziipa.",
     };
   }
 }
@@ -90,7 +89,7 @@ async function boundedPush<T>(promise: Promise<T>): Promise<T> {
           () =>
             reject(
               new Error(
-                "Device push setup timed out. Check your connection and retry the explicit enable action.",
+                "Notification setup timed out. Check your connection and try again.",
               ),
             ),
           25000,
@@ -109,7 +108,7 @@ export async function registerPushDevice(
 ): Promise<PushRegistration> {
   assertInternalBetaAction(limitedStoreBeta, "remote-push");
   if (!config.enabled || !config.worker_ready)
-    throw new Error("Push delivery is not enabled on the server.");
+    throw new Error("Notifications are temporarily unavailable. Try again later.");
   const capability = await pushCapability();
   if (!current())
     throw new Error(
@@ -122,7 +121,7 @@ export async function registerPushDevice(
     throw new Error("Use a device name of at most 60 characters.");
   if (Platform.OS === "web") {
     if (!config.web_ready)
-      throw new Error("Browser push keys are not configured on the server.");
+      throw new Error("Browser notifications are temporarily unavailable.");
     const applicationServerKey = webPushKey(config.vapid_public_key);
     // Request permission before asynchronous service-worker setup can exhaust
     // the browser's user activation. This function is only called by a button.
@@ -154,7 +153,7 @@ export async function registerPushDevice(
       )
     )
       throw new Error(
-        "This browser has a subscription for a different push key. Revoke its Ziipa device entry, reset this site's notification subscription in browser settings, then explicitly enable it again.",
+        "Reset this site’s notification permission in your browser, remove this device from Ziipa, then enable notifications again.",
       );
     const subscription =
       existing ||
@@ -165,7 +164,7 @@ export async function registerPushDevice(
     const value = subscription.toJSON();
     if (!value.endpoint || !value.keys?.p256dh || !value.keys?.auth)
       throw new Error(
-        "The browser did not return a complete push subscription.",
+        "The browser couldn’t enable notifications. Check your site settings.",
       );
     return {
       installation_id: await installationId(),
@@ -180,9 +179,10 @@ export async function registerPushDevice(
     };
   }
   if (!config.expo_ready)
-    throw new Error("Native push delivery is not configured on the server.");
+    throw new Error("Device notifications are temporarily unavailable.");
   const projectId = nativeProjectId();
-  if (!projectId) throw new Error("This Ziipa build has no EAS project ID.");
+  if (!projectId)
+    throw new Error("Push notifications are unavailable in this version of Ziipa.");
   const notifications = await import("expo-notifications");
   if (Platform.OS === "android")
     await notifications.setNotificationChannelAsync("ziipa-private-updates", {
@@ -220,14 +220,14 @@ export async function registerPushDevice(
     // Expo errors can include raw provider response bodies. Never echo those
     // bodies (which may contain device tokens) into the app or diagnostic logs.
     throw new Error(
-      "Native push registration could not complete. Check connectivity and this build's EAS/APNs/FCM configuration, then explicitly retry. Provider details were not displayed.",
+      "Couldn’t enable notifications. Check your connection and try again.",
     );
   }
   if (
     !/^(ExpoPushToken|ExponentPushToken)\[[A-Za-z0-9_-]{8,200}\]$/.test(token)
   )
     throw new Error(
-      "The native push provider did not return a valid device token.",
+      "This device couldn’t enable notifications. Try again.",
     );
   return {
     installation_id: await installationId(),

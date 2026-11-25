@@ -90,6 +90,8 @@ type Transfer = {
   token_id?: string;
   symbol?: string;
 };
+const networkHelp = "This wallet uses test assets with no monetary value.";
+
 export function WalletScreen(props: Props) {
   return <FullWalletScreen {...props} />;
 }
@@ -112,6 +114,9 @@ export function walletErrorMessage(error: unknown) {
     "Verify your previous transaction before signing another.",
     "Reconnect this wallet before sending.",
     "Curator split must be between 0 and 50%.",
+    "Wallet app pairing is unavailable.",
+    "No browser wallet found. Choose Wallet app or open a browser with a wallet.",
+    "Refresh the network before connecting your wallet.",
   ];
   if (localMessages.includes(message)) return message;
   if (value?.status === 401)
@@ -119,18 +124,18 @@ export function walletErrorMessage(error: unknown) {
   if (value?.code === 4001 || /user rejected|user denied/i.test(message))
     return "Wallet approval was declined. Check Activity before trying again.";
   if (/insufficient funds/i.test(message))
-    return "Your wallet needs more test funds for this transaction and its network fee.";
+    return "Add test funds to cover the amount and network fee.";
   if (
-    /network.*match|wrong network|select base sepolia|test-network configuration/i.test(
+    /network.*match|wrong network|select base sepolia|switch your wallet/i.test(
       message,
     )
   )
-    return "Select the matching test network in Ziipa and your wallet.";
+    return "Select the same network in Ziipa and your wallet.";
   if (
     /minting is unavailable|public media storage|minting setup/i.test(message)
   )
-    return "Minting is unavailable right now. Your creation is still here.";
-  return "This wallet request could not be completed. Check your connection and Activity before trying again.";
+    return "Minting is unavailable. Check your network and try again.";
+  return "Check your wallet connection and Activity before trying again.";
 }
 
 export function walletMintAvailability(
@@ -138,19 +143,15 @@ export function walletMintAvailability(
   chainId: number,
   kind: "mint_nft" | "create_token",
 ) {
-  const ready = !mintSetupIssue(config, chainId, kind);
+  const issue = mintSetupIssue(config, chainId, kind);
   return {
-    ready,
+    ready: !issue,
     label: !config
       ? "Checking minting…"
-      : ready
-        ? "Test minting available"
-        : "Minting unavailable",
-    detail: !config
-      ? "Checking this test network. Your saved media is unchanged."
-      : ready
-        ? "Review your media and approve each step in your external wallet. Test assets have no monetary value."
-        : "Minting is unavailable on this test network. Try again later.",
+      : issue
+        ? "Minting unavailable"
+        : "Minting available",
+    detail: issue || networkHelp,
   };
 }
 
@@ -228,7 +229,8 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
   const [curator, setCurator] = useState("");
   const [split, setSplit] = useState("0");
   const chain = config?.chains.find((c) => c.id === chainId);
-  const mintIssue = mintSetupIssue(config, chainId, kind);
+  const intentChain = config?.chains.find((c) => c.id === intent?.chain_id);
+  const localMediaStorage = chainId === 31337 && config?.storage === "local_ipfs";
   const mintAvailability = walletMintAvailability(config, chainId, kind);
   const activeLink = link?.chain_id === chainId ? link : null;
   const balance =
@@ -247,7 +249,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
     (!mediaId && !imageUri.trim()) ||
     !consent ||
     !linkedConnection ||
-    !!mintIssue;
+    !mintAvailability.ready;
   const [metadataId, setMetadataId] = useState("");
   const [metadataRequest, setMetadataRequest] = useState(() =>
     Crypto.randomUUID(),
@@ -358,9 +360,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
     const token = session.access_token;
     assertWalletNetwork(chainId, __DEV__, Platform.OS);
     if (!config || config.testnet_only !== true)
-      throw new Error(
-        "Check the test-network connection before connecting a wallet.",
-      );
+      throw new Error("Refresh the network before connecting your wallet.");
     const wallet = await connectWallet(chainId, method, (uri) => {
       if (owner.current !== token) return;
       setPairUri(uri);
@@ -389,7 +389,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
     setLink(verified);
     setLinks((prev) => [verified, ...prev.filter((l) => l.id !== verified.id)]);
     setSheet(null);
-    setNotice("Ownership verified. Signing stays in your wallet.");
+    setNotice("Wallet linked.");
   }
   async function sync(wallet = activeLink) {
     if (!wallet) throw new Error("Connect and verify a wallet first.");
@@ -444,7 +444,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
         "Reconnect your verified wallet before preparing a mint.",
       );
     assertWalletNetwork(chainId, __DEV__, Platform.OS);
-    if (mintIssue) throw new Error(mintAvailability.detail);
+    if (!mintAvailability.ready) throw new Error(mintAvailability.detail);
     if (!name.trim() || (!mediaId && !imageUri.trim()))
       throw new Error(
         "Name your token and choose your saved media before minting.",
@@ -522,8 +522,8 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
       );
       setNotice(
         updated.status === "confirmed"
-          ? "Transaction confirmed on the test network."
-          : "Transaction reverted. No asset or payment was credited.",
+          ? "Transaction confirmed."
+          : "The network rejected the transaction.",
       );
     } else
       setNotice(
@@ -746,37 +746,17 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
         >
           {view === "wizard" ? (
             <>
-              <View style={{ gap: 8, marginBottom: 14 }}>
-                <View style={styles.between}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 4,
-                    }}
-                  >
-                    <Text style={s.chip}>TEST NETWORK</Text>
-                    <InfoTip
-                      title="Test assets only"
-                      content="Minting uses test networks only. Test assets have no monetary value. Mainnet is disabled, and every transaction requires approval in your external wallet."
-                    />
-                  </View>
-                  <HelpLabel
-                    label={mintAvailability.label}
-                    style={s.micro}
-                    help={mintAvailability.detail}
-                  />
-                </View>
-                {!!mediaName && (
-                  <Text style={s.hint}>Selected creation: {mediaName}</Text>
-                )}
-              </View>
+              {!!mediaName && step < 3 && (
+                <Text style={[s.hint, { marginBottom: 14 }]} numberOfLines={1}>
+                  {mediaName}
+                </Text>
+              )}
               <View style={s.card}>
                 <Text style={s.cardTitle}>
                   {
                     [
                       "Your creation",
-                      "Test network",
+                      "Network",
                       "Connect wallet",
                       "Review & mint",
                     ][step]
@@ -862,7 +842,11 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                   )}
                   {step === 1 && (
                     <>
-                      <Text style={s.label}>Select network</Text>
+                      <HelpLabel
+                        label="Select network"
+                        style={s.label}
+                        help={networkHelp}
+                      />
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel="Select network"
@@ -874,11 +858,13 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                         </Text>
                         <ChevronDown color={color.text} size={19} />
                       </Pressable>
-                      <Text style={s.hint}>
-                        {chain
-                          ? `${chain.currency} · EVM · Test network`
-                          : "Loading available networks…"}
-                      </Text>
+                      {!mintAvailability.ready && (
+                        <HelpLabel
+                          label={mintAvailability.label}
+                          style={s.micro}
+                          help={mintAvailability.detail}
+                        />
+                      )}
                     </>
                   )}
                   {step === 2 && (
@@ -890,7 +876,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                         <Text style={s.label}>
                           {activeLink
                             ? shortAddress(activeLink.address)
-                            : "Your keys. Your creations."}
+                            : "Wallet ownership"}
                         </Text>
                         <HelpLabel
                           label={
@@ -899,7 +885,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                               : "Connect & verify ownership"
                           }
                           style={s.hint}
-                          help="Connect an external wallet and sign a message to prove ownership. This signature does not authorize spending. Ziipa never asks for your seed phrase or private key."
+                          help="This signature verifies ownership only. Keep your recovery phrase and private keys to yourself."
                         />
                       </View>
                       {session && !linkedConnection && (
@@ -981,7 +967,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                       <View style={styles.between}>
                         <Text style={s.label}>{name}</Text>
                         <Text style={s.chip}>
-                          {kind === "mint_nft" ? "ERC-721" : "ERC-20"}
+                          {kind === "mint_nft" ? "Collectible" : "Creator token"}
                         </Text>
                       </View>
                       <Input
@@ -1096,7 +1082,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                             maxLength={10}
                           />
                           <Input
-                            label="Fixed supply · 18 decimals"
+                            label="Token supply"
                             value={supply}
                             onChangeText={setSupply}
                             keyboardType="number-pad"
@@ -1138,33 +1124,36 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                         }}
                       >
                         <Switch
-                          accessibilityLabel="I approve permanent public metadata storage"
+                          accessibilityLabel={
+                            localMediaStorage
+                              ? "I approve local media storage"
+                              : "I approve permanent public metadata storage"
+                          }
                           value={consent}
                           onValueChange={setConsent}
                           trackColor={{ true: color.purple }}
                         />
                         <Text style={[s.hint, { flex: 1 }]}>
-                          I own or have rights to this media. I approve storing
-                          the media and metadata publicly on IPFS. Other copies
-                          and blockchain records cannot be erased.
+                          {localMediaStorage
+                            ? "I have rights to this media and approve local storage."
+                            : "I have rights to this media and approve permanent public storage."}
                         </Text>
+                        <InfoTip
+                          title={localMediaStorage ? "local storage" : "public storage"}
+                          content={
+                            localMediaStorage
+                              ? "Your media stays in local storage."
+                              : "Your media and its details are published to IPFS. Copies and blockchain records may remain permanently."
+                          }
+                        />
                       </View>
-                      <HelpLabel
-                        label={
-                          config?.storage === "local_ipfs"
-                            ? "Local storage only"
-                            : config?.storage === "public_ipfs" ||
-                                config?.storage === "pinata_ipfs"
-                              ? "Public IPFS storage"
-                              : "Storage unavailable"
-                        }
-                        style={s.micro}
-                        help={
-                          config?.storage === "local_ipfs"
-                            ? "Media is stored locally and is not publicly retrievable."
-                            : "Approved media and metadata are stored publicly on IPFS. Other copies and blockchain records cannot be erased."
-                        }
-                      />
+                      {!mintAvailability.ready && (
+                        <HelpLabel
+                          label={mintAvailability.label}
+                          style={s.micro}
+                          help={mintAvailability.detail}
+                        />
+                      )}
                     </>
                   )}
                 </View>
@@ -1173,10 +1162,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
             </>
           ) : (
             <>
-              <View style={styles.between}>
-                <Text style={s.kicker}>YOUR WALLET</Text>
-                <Text style={s.chip}>TEST NETWORK</Text>
-              </View>
+              <Text style={s.kicker}>YOUR WALLET</Text>
               <View style={[s.card, { padding: 23, gap: 18 }]}>
                 <View style={styles.between}>
                   <Text style={s.label}>
@@ -1200,26 +1186,20 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                     ETH
                   </Text>
                 </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setSheet("protocol")}
-                  style={[styles.row, { gap: 7 }]}
-                >
-                  <View style={s.dot} />
-                  <Text style={s.hint}>
-                    {chain?.name || "Select a network"}
-                  </Text>
-                  <ChevronDown size={15} color="#AE9ABB" />
-                </Pressable>
-                <HelpLabel
-                  label={balance ? "Synced balance" : "Sync to view balance"}
-                  style={s.micro}
-                  help={
-                    balance
-                      ? `Read from block ${balance.block_number}. Test assets have no monetary value.`
-                      : "Sync to read your balance from the selected network. Ziipa does not estimate a fiat value for test assets."
-                  }
-                />
+                <View style={styles.row}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setSheet("protocol")}
+                    style={[styles.row, { gap: 7 }]}
+                  >
+                    <View style={s.dot} />
+                    <Text style={s.hint}>
+                      {chain?.name || "Select a network"}
+                    </Text>
+                    <ChevronDown size={15} color="#AE9ABB" />
+                  </Pressable>
+                  <InfoTip title="network" content={networkHelp} />
+                </View>
                 <View
                   style={{
                     flexDirection: "row",
@@ -1313,7 +1293,9 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                       ]}
                     >
                       <Text style={s.micro}>
-                        {shortAddress(w.address)} · {w.chain_id}
+                        {shortAddress(w.address)} ·{" "}
+                        {config?.chains.find((network) => network.id === w.chain_id)
+                          ?.name ?? w.chain_id}
                       </Text>
                     </Pressable>
                   ))}
@@ -1470,18 +1452,20 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                         : "Your assets appear here after you connect and sync a wallet."}
                     </Text>
                   )}
-                  {balance && (
+                  {balance && balance.collectibles.length >= 20 && (
                     <Text style={s.hint}>
-                      {balance.scope} Showing up to 20 collectibles.
+                      Showing up to 20 collectibles.
                     </Text>
                   )}
                 </>
               )}
               {tab === "Metadata" && (
                 <>
-                  <Text style={s.hint}>
-                    Public media records. Saving metadata does not mint an NFT.
-                  </Text>
+                  <HelpLabel
+                    label="Public media records"
+                    style={s.label}
+                    help="Your records are saved separately from your collectibles."
+                  />
                   {records.map((m) => (
                     <View
                       style={[s.asset, { alignItems: "flex-start" }]}
@@ -1512,10 +1496,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                     </View>
                   ))}
                   {!records.length && (
-                    <Text style={s.hint}>
-                      Your IPFS metadata will appear here after storage
-                      succeeds.
-                    </Text>
+                    <Text style={s.hint}>No records yet.</Text>
                   )}
                 </>
               )}
@@ -1562,10 +1543,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                     </Pressable>
                   ))}
                   {!history.length && (
-                    <Text style={s.hint}>
-                      No transactions yet. Wallet signatures are not
-                      transactions.
-                    </Text>
+                    <Text style={s.hint}>No transactions yet.</Text>
                   )}
                 </>
               )}
@@ -1594,11 +1572,6 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                   }
                 />
               )}
-              <HelpLabel
-                label="Your keys stay in your wallet"
-                style={s.micro}
-                help="Test networks only. Your external wallet holds your assets. Ziipa never asks for your seed phrase or private key."
-              />
             </>
           )}
         </ScrollView>
@@ -1725,18 +1698,13 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                     <View style={{ flex: 1, gap: 7 }}>
                       <Text style={s.label}>{c.name}</Text>
                       <Text style={s.hint}>
-                        {c.id === 31337
-                          ? "Local test network"
-                          : `Test network · chain ${c.id}`}{" "}
-                        · {walletMintAvailability(config, c.id, kind).label}
+                        {c.currency} ·{" "}
+                        {walletMintAvailability(config, c.id, kind).label}
                       </Text>
                     </View>
                     {c.id === chainId && <Check size={20} color="#A6E21B" />}
                   </Pressable>
                 ))}
-              <Text style={s.hint}>
-                Use test assets only. Mainnet transactions are disabled.
-              </Text>
               {!config && (
                 <Action
                   title="Refresh wallet availability"
@@ -1753,10 +1721,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
           )}
           {sheet === "pairing" && (
             <>
-              <Text style={s.hint}>
-                Scan with a WalletConnect wallet, or open your wallet on this
-                device. Approve only the test network shown in Ziipa.
-              </Text>
+              <Text style={s.hint}>Open your wallet or scan the code.</Text>
               {pairUri && (
                 <View
                   style={{
@@ -1775,7 +1740,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 onPress={() =>
                   void Linking.openURL(metaMaskPairingLink(pairUri)).catch(() =>
                     setError(
-                      "Install MetaMask or scan the QR from another device. Never enter your recovery phrase into Ziipa.",
+                      "Install MetaMask or scan the code with another wallet.",
                     ),
                   )
                 }
@@ -1785,28 +1750,25 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 onPress={() =>
                   void Linking.openURL(pairUri).catch(() =>
                     setError(
-                      "No wallet handles this link. Copy the connection URI into your wallet or scan the QR.",
+                      "Open a compatible wallet or scan the code.",
                     ),
                   )
                 }
               />
               <Action
                 secondary
-                title="Copy connection URI"
+                title="Copy connection link"
                 onPress={() => void Clipboard.setStringAsync(pairUri)}
               />
               <Text style={s.hint}>
-                Waiting for wallet approval. Keep the wallet open for the
-                following signature request. Closing this sheet cancels pairing.
+                Approve the connection in your wallet.
               </Text>
             </>
           )}
           {sheet === "ownership" && (
             <>
               <Text style={s.hint}>
-                Approve the Ziipa ownership message in MetaMask, then return
-                here. This links your address; it does not mint or spend test
-                gas.
+                Sign the ownership message in your wallet to link your address.
               </Text>
               <Action
                 title="Open MetaMask"
@@ -1829,14 +1791,17 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 </Text>
                 <Text style={s.hint}>{intent.status}</Text>
               </View>
+              {intentChain && <Text style={s.hint}>{intentChain.name}</Text>}
               {Object.entries(intent.summary).map(([key, value]) => (
                 <View key={key} style={{ gap: 4 }}>
                   <Text style={s.micro}>
-                    {key.replaceAll("_", " ").toUpperCase()}
+                    {key === "estimated_fee_wei"
+                      ? "Estimated network fee"
+                      : key.replaceAll("_", " ").toUpperCase()}
                   </Text>
                   <Text selectable style={s.label}>
                     {key === "estimated_fee_wei"
-                      ? `${units(String(value), 18, 10)} test ETH (estimate)`
+                      ? `${units(String(value), 18, 10)} ETH`
                       : String(value)}
                   </Text>
                 </View>
@@ -1863,14 +1828,10 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                   Creator token: {intent.result.token_address}
                 </Text>
               )}
-              <Text style={s.hint}>
-                Test transaction · wallet approval required. Transactions cannot
-                be undone.
-              </Text>
               <HelpLabel
-                label="Network fee & signing"
+                label="Transactions are final"
                 style={s.micro}
-                help="Your external wallet displays the final network fee before you approve. Ziipa does not receive your private keys."
+                help={`${networkHelp} Review the final network fee in your wallet before approving.`}
               />
               {busy && (
                 <Action
@@ -1910,19 +1871,17 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                   }
                 />
               ) : null}
-              {intent.tx_hash &&
-                config?.chains.find((c) => c.id === intent.chain_id)
-                  ?.explorer && (
-                  <Action
-                    secondary
-                    title="View in block explorer"
-                    onPress={() =>
-                      void Linking.openURL(
-                        `${config.chains.find((c) => c.id === intent.chain_id)!.explorer}/tx/${intent.tx_hash}`,
-                      )
-                    }
-                  />
-                )}
+              {intent.tx_hash && intentChain?.explorer && (
+                <Action
+                  secondary
+                  title="View in block explorer"
+                  onPress={() =>
+                    void Linking.openURL(
+                      `${intentChain.explorer}/tx/${intent.tx_hash}`,
+                    )
+                  }
+                />
+              )}
             </>
           )}
           {sheet === "transfer" && (
@@ -1985,9 +1944,10 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
               {activeLink ? (
                 <>
                   <Text style={s.hint}>
-                    Receive only on {chain?.name}. Use test assets; never send
-                    real funds to a local development wallet.
+                    Use {chain?.name || "the selected network"} to send to this
+                    address.
                   </Text>
+                  <InfoTip title="receiving assets" content={networkHelp} />
                   <View
                     style={{
                       alignSelf: "center",

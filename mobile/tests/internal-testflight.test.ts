@@ -261,7 +261,7 @@ test("runtime restriction applies only to the explicit iOS binary and blocks nor
   for (const path of blocked) {
     assert.throws(
       () => policy.assertInternalBetaRequest(true, path, "POST"),
-      /private|beta/,
+      /existing Ziipa account|imports are unavailable|setup is unavailable|request could not be completed/,
     );
     assert.doesNotThrow(() =>
       policy.assertInternalBetaRequest(false, path, "POST"),
@@ -350,7 +350,7 @@ test("Wallet route renders the full guarded wallet without starting a connection
 test("deployed and preview Android beta names share one scope, wallet notice and platform guard", () => {
   assert.equal(policy.playInternalBetaScope, policy.androidPlayInternalScope);
   assert.equal(policy.playInternalBetaNotice, policy.androidPlayInternalNotice);
-  assert.match(policy.androidPlayInternalNotice, /Token Wallet supports test networks only/);
+  assert.match(policy.androidPlayInternalNotice, /Use an existing Ziipa account/);
   for (const platform of ["ios", "android", "web"])
     for (const buildScope of [policy.androidPlayInternalScope, policy.externalBetaScope, undefined]) {
       assert.equal(policy.isPlayInternalBeta(platform, buildScope), policy.isAndroidPlayInternalBeta(platform, buildScope));
@@ -391,7 +391,7 @@ test("real native request and direct creator transport reject writes before any 
     if (locked) {
       await assert.rejects(
         native.request("/api/mobile/auth/register", undefined, {}),
-        /existing Ziipa accounts/,
+        /existing Ziipa account/,
       );
       await assert.rejects(
         direct.creatorRequest(
@@ -452,8 +452,8 @@ test("beta and web connector permit explicit testnet wallet actions and reject m
       transaction: { from: "0x" + "1".repeat(40), chainId: "0x14a34" },
     };
     assert.equal(wallet.walletConnectConfigured, true);
-    await assert.rejects(wallet.connectWallet(1, "injected", () => {}), /Mainnet is disabled/);
-    await assert.rejects(wallet.connectWallet(31337, "injected", () => {}), /desktop development/);
+    await assert.rejects(wallet.connectWallet(1, "injected", () => {}), /Select Base Sepolia or Ethereum Sepolia/);
+    await assert.rejects(wallet.connectWallet(31337, "injected", () => {}), /Select Base Sepolia or Ethereum Sepolia/);
     assert.equal(calls.length, 0);
     await wallet.connectWallet(84532, "injected", () => {});
     assert.equal(await wallet.signWalletProof("fixture", intent.transaction.from, 84532), "synthetic-signature");
@@ -539,7 +539,7 @@ test("internal auth routes stale registration links to existing-account sign-in;
       .find(
         (node) =>
           node.props.title ===
-          (internal ? "Sign in to the private beta" : "Get started"),
+          (internal ? "Sign in" : "Get started"),
       )!
       .props.onPress();
     assert.equal(navigated[0][1].register, !internal);

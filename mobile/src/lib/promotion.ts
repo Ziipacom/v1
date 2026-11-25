@@ -7,32 +7,24 @@ export const marketingTools = [
     id: "mailchimp",
     name: "Mailchimp email",
     kind: "Email marketing",
-    requirements:
-      "A dedicated Marketing API connector, account authorization, a consented audience, unsubscribe/suppression handling and a reviewed send are required.",
     docs: "https://mailchimp.com/developer/marketing/guides/access-user-data-oauth-2/",
   },
   {
     id: "meta_ads",
     name: "Meta Ads",
     kind: "Paid Facebook / Instagram",
-    requirements:
-      "A separate Marketing API connector, eligible ad-account authorization, creative review and explicit budget/spend approval are required. A connected Page does not authorize advertising.",
     docs: "https://developers.facebook.com/docs/marketing-apis/",
   },
   {
     id: "google_ads",
     name: "Google Ads / YouTube",
     kind: "Paid video promotion",
-    requirements:
-      "A Google Ads connector, developer token, Ads authorization and customer selection, plus reviewed creative and an explicit budget, are required. YouTube upload access does not authorize ads.",
     docs: "https://developers.google.com/google-ads/api/docs/oauth/overview",
   },
   {
     id: "tiktok_ads",
     name: "TikTok Ads",
     kind: "Paid TikTok promotion",
-    requirements:
-      "A dedicated API for Business connector, advertiser authorization and approved creative/budget are required. Organic TikTok publishing does not authorize paid or Spark Ads.",
     docs: "https://business-api.tiktok.com/portal/docs",
   },
 ] as const;
@@ -57,13 +49,10 @@ export function organicPromotionStatus(
   provider?: CampaignProvider,
   connection?: CampaignConnection,
 ) {
-  if (!provider) return { ready: false, label: "Readiness unavailable" };
-  if (!provider.publish_implemented)
-    return { ready: false, label: "Publishing adapter unavailable" };
-  if (!provider.configured || provider.publish_ready !== true)
-    return { ready: false, label: "Provider setup required" };
+  if (!provider?.publish_implemented || !provider.configured || provider.publish_ready !== true)
+    return { ready: false, label: "Publishing unavailable" };
   if (!connection || connection.status !== "authorized")
-    return { ready: false, label: "Account authorization needed" };
+    return { ready: false, label: "Connect your account" };
   if (
     !connection.selected_target_id ||
     connection.can_publish !== true ||
@@ -102,25 +91,27 @@ export function promotionProject(brief: PromotionBrief, source?: Item) {
     );
   const selected = [...new Set(brief.tools)];
   if (selected.some((id) => !marketingTools.some((tool) => tool.id === id)))
-    throw new Error("Choose a supported setup checklist.");
+    throw new Error("Choose a supported provider.");
   if (
     source &&
     (!uuid.test(source.id) || source.demo || source.visibility === "hidden")
   )
     throw new Error("Choose an available owned creation.");
+  const providers = selected
+    .map((id) => marketingTools.find((tool) => tool.id === id)!.name)
+    .join(", ");
+  const audience = brief.audience.trim();
+  const message = brief.message.trim();
   const description = [
-    "PROMOTION BRIEF · private planning project; not a publishing, send or spend authorization.",
-    `Objective: ${brief.objective}`,
-    `Audience: ${brief.audience.trim() || "To be reviewed"}`,
-    `Message: ${brief.message.trim() || "To be reviewed"}`,
-    `Creation: ${source?.title || "Choose a creation in the campaign workspace"}`,
-    "Organic workflow: connect accounts → prepare versions → review actual exports and destinations → approve and schedule in Campaigns → check receipts.",
-    ...selected.map((id) => {
-      const tool = marketingTools.find((entry) => entry.id === id)!;
-      return `${tool.name} — NOT INTEGRATED: ${tool.requirements}`;
-    }),
-    "No email is sent, no ad is activated and no budget is authorized by this brief. Paid providers may charge independently; no plan or billing changes are made here.",
-  ].join("\n\n");
+    "Private promotion brief",
+    `Objective · ${brief.objective}`,
+    audience && `Audience · ${audience}`,
+    message && `Message · ${message}`,
+    source && `Creation · ${source.title}`,
+    providers && `Providers · ${providers}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   if (description.length > 3000)
     throw new Error("Shorten the brief before saving.");
   return {

@@ -55,7 +55,7 @@ export function WelcomeScreen({
                 and your next obsession.
               </Text>
               <Action
-                title={limitedStoreBeta ? "Sign in to the private beta" : "Get started"}
+                title={limitedStoreBeta ? "Sign in" : "Get started"}
                 icon={ArrowUpRight}
                 onPress={() => navigation.navigate("Login", { register: !limitedStoreBeta })}
               />
@@ -205,7 +205,7 @@ export function LoginScreen({
           <View style={{ gap: 15 }}>
             <View style={styles.between}>
               <Text style={[styles.small, { flex: 1 }]}>
-                I am 18 or older. This first release is for adults.
+                I am 18 or older.
               </Text>
               <Switch
                 accessibilityLabel="I am 18 or older"

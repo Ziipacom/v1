@@ -96,7 +96,7 @@ const scenes = [
     name: 'Gaming',
     title: 'Find your next crew.',
     creator: 'Ziipa Arcade',
-    tag: 'CHANNEL PREVIEW',
+    tag: 'GAMING',
     image: '/media/gaming.jpg',
     icon: Gamepad2,
   },
@@ -112,7 +112,7 @@ const scenes = [
     name: 'Live feeds',
     title: 'Closer to the moment.',
     creator: 'Ziipa Studio',
-    tag: 'LIVE CONCEPT · PLANNED',
+    tag: 'LIVE FEEDS',
     image: '/media/studio.jpg',
     icon: Radio,
   },
@@ -257,7 +257,7 @@ export function HeroAppPreview() {
         >
           {sequence.playing ? <Pause size={12} /> : <Play size={12} />}
         </Button>
-        <span>App concept preview</span>
+        <span>App preview</span>
       </div>
     </div>
   );

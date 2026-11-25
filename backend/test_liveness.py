@@ -73,14 +73,17 @@ def healthy_services(monkeypatch):
     return connect, ping
 
 
-@pytest.mark.parametrize('heartbeat', ['matching', 'different_bucket', 'different_quota', 'missing'])
+@pytest.mark.parametrize('heartbeat', ['matching', 'ordinary', 'different_bucket', 'different_quota', 'missing'])
 def test_health_only_reports_worker_for_the_apis_coordination_scope(monkeypatch, healthy_services, heartbeat):
     # Use the real coordination function: a live worker pointed at a different
     # bucket or quota must not make this API claim that rendering is available.
     monkeypatch.setattr(rendering.settings, 'media_storage_backend', 'r2')
     monkeypatch.setattr(rendering.settings, 'r2_bucket_name', 'health-check-owned-bucket')
-    key = 'ziipa:render:worker:v3:' + rendering.coordination_scope()
+    scope = rendering.coordination_scope()
+    key = 'ziipa:render:worker:v4:' + scope
+    ordinary_key = 'ziipa:render:worker:v3:' + scope
     monkeypatch.setattr(rendering, 'HEARTBEAT_KEY', key)
+    monkeypatch.setattr(rendering, 'ORDINARY_V3_HEARTBEAT_KEY', ordinary_key)
     legacy_keys = ('ziipa:render:worker:' + rendering.coordination_scope(),
                    'ziipa:render:worker:v2:' + rendering.coordination_scope())
     monkeypatch.setattr(rendering, 'LEGACY_HEARTBEAT_KEYS', legacy_keys)
@@ -90,21 +93,25 @@ def test_health_only_reports_worker_for_the_apis_coordination_scope(monkeypatch,
             worker_settings.setattr(rendering.settings, 'r2_bucket_name', 'another-worker-bucket')
         elif heartbeat == 'different_quota':
             worker_settings.setattr(rendering.quota_config, 'project_max_bytes', rendering.quota_config.project_max_bytes + 1)
-        worker_key = 'ziipa:render:worker:v3:' + rendering.coordination_scope()
+        worker_key = 'ziipa:render:worker:v4:' + rendering.coordination_scope()
     if heartbeat.startswith('different_'):
         assert worker_key != key
+    if heartbeat == 'ordinary':
+        worker_key = ordinary_key
     values = {} if heartbeat == 'missing' else {worker_key: 'private-worker-heartbeat'}
     get = Mock(side_effect=values.get)
     monkeypatch.setattr(rendering, 'cache', SimpleNamespace(get=get))
 
     response = request('/api/health')
     assert response.status_code == 200
+    worker_ready = heartbeat in ('matching', 'ordinary')
     assert response.json()['renderer'] == {
-        'enabled': True, 'worker_ready': heartbeat == 'matching', 'can_render': heartbeat == 'matching',
+        'enabled': True, 'worker_ready': worker_ready, 'can_render': worker_ready,
+        'can_remix': heartbeat == 'matching',
     }
     assert response.headers['cache-control'] == 'private, no-store'
-    assert [call.args[0] for call in get.call_args_list] == [*legacy_keys, key]
-    for sensitive in (key, worker_key, 'private-worker-heartbeat', 'health-check-owned-bucket', 'requirements'):
+    assert [call.args[0] for call in get.call_args_list] == [*legacy_keys, key, ordinary_key]
+    for sensitive in (key, ordinary_key, worker_key, 'private-worker-heartbeat', 'health-check-owned-bucket', 'requirements'):
         assert sensitive not in response.text
     for call in healthy_services:
         call.assert_called_once_with()
@@ -127,6 +134,7 @@ def test_optional_renderer_never_makes_healthy_api_unhealthy(monkeypatch, health
         'enabled': unavailable != 'disabled',
         'worker_ready': unavailable in ('disabled', 'missing_runtime'),
         'can_render': False,
+        'can_remix': False,
     }
     assert 'private runtime' not in response.text
     assert 'private redis' not in response.text

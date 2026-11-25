@@ -42,8 +42,13 @@ import {
   iosExternalTestflight,
   legalOperatorName,
   legalUrls,
+  limitedStoreBeta,
   supportEmail,
 } from "../lib/config";
+import {
+  androidPlayInternalNotice,
+  internalBetaNotice,
+} from "../lib/internal-beta-policy";
 import type { Item, RootStack } from "../lib/types";
 import {
   adminRoot,
@@ -541,7 +546,18 @@ function ScopedSettingsScreen({
           {policyPanel}
         </>
       )}
-      {tab === "Device" && <SettingsControls navigation={navigation} />}
+      {tab === "Device" && (
+        <>
+          <SettingsControls navigation={navigation} />
+          {limitedStoreBeta && (
+            <HelpLabel
+              label="App access"
+              style={styles.small}
+              help={androidPlayInternal ? androidPlayInternalNotice : internalBetaNotice}
+            />
+          )}
+        </>
+      )}
       {tab === "Privacy" &&
         (session ? (
           <>

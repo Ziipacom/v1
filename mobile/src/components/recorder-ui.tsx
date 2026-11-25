@@ -259,13 +259,8 @@ export function RecorderLayout({
                 <View style={r.liveNotice}>
                   <View style={styles.row}>
                     <Radio size={18} color="#FF8797" />
-                    <Text style={r.title}>Broadcast setup required</Text>
+                    <Text style={r.title}>Private camera preview</Text>
                   </View>
-                  <Text style={r.small}>
-                    This is a private camera preview, not a public stream.
-                    Connect a supported live network and configure streaming
-                    delivery before broadcasting. You can record a clip now.
-                  </Text>
                   {!recording && (
                     <Action
                       title="Connect live networks"

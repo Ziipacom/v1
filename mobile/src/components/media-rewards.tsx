@@ -22,6 +22,7 @@ import {
 } from "lucide-react-native";
 import * as Crypto from "expo-crypto";
 import { Action, Notice } from "./ui";
+import { InfoTip } from "./info-tip";
 import { color, font, styles, themedStyles, themeValue } from "../theme";
 import { useZiipa } from "../provider";
 import { ApiError } from "../lib/api";
@@ -522,18 +523,18 @@ export function MediaRewards({
         style={[s.card, { backgroundColor: themeValue("#21112F", color.accentSoft), borderColor: themeValue("#5D337E", color.border) }]}
       >
         <View style={styles.between}>
-          <Text style={s.kicker}>MEDIA REWARDS</Text>
+          <View style={styles.row}>
+            <Text style={s.kicker}>MEDIA REWARDS</Text>
+            <InfoTip
+              title="Media Rewards"
+              content="Earn points for eligible likes, saves and comments. Points have no cash value."
+            />
+          </View>
           <Gift size={24} color={color.lime} />
         </View>
         <Text style={s.balance}>
           {wallet ? rewardPoints(wallet.balance) : "—"}
           <Text style={{ fontSize: 17, color: themeValue("#CDB7E5", color.muted) }}> pts</Text>
-        </Text>
-        <Text style={s.label}>Your attention has a place in Ziipa.</Text>
-        <Text style={s.hint}>
-          Earn points for eligible likes, saves and meaningful comments on
-          Ziipa. Points are an account record, not cash or cryptocurrency, and
-          have no promised exchange value.
         </Text>
         {wallet && (
           <View style={s.ruleRow}>
@@ -558,9 +559,15 @@ export function MediaRewards({
       {loading && !wallet ? <ActivityIndicator color={color.lime} /> : null}
       {config && (
         <View style={s.card}>
-          <Text style={s.label}>How you earn</Text>
+          <View style={styles.row}>
+            <Text style={s.label}>How you earn</Text>
+            <InfoTip
+              title="How you earn"
+              content={config.earning_rules.join("\n\n")}
+            />
+          </View>
           {!config.enabled && (
-            <Notice text="Rewards are currently disabled by this Ziipa environment. Existing records remain available; new interactions will not earn points." />
+            <Text style={s.status}>Earning paused</Text>
           )}
           <View style={s.ruleRow}>
             <Metric title="Like" value={config.platform_rates.like} />
@@ -568,29 +575,23 @@ export function MediaRewards({
             <Metric title="Comment" value={config.platform_rates.comment} />
           </View>
           <Text style={s.hint}>
-            Platform daily cap: {config.per_user_daily_cap} points per member.
-            Creator programs have their own finite budgets and daily limits.
+            Daily limit · {config.per_user_daily_cap} points per member
           </Text>
-          {config.earning_rules.map((rule) => (
-            <Text style={s.hint} key={rule}>
-              {rule}
-            </Text>
-          ))}
         </View>
       )}
       <View style={s.card}>
         <View style={styles.row}>
           <ShieldCheck color={color.lime} size={21} />
           <Text style={s.label}>Wallet connection</Text>
+          <InfoTip
+            title="Reward wallets"
+            content="Points stay in Ziipa. Creator-funded rewards use a separate test network. Each token transaction requires your wallet approval."
+          />
         </View>
         <Text style={s.hint}>
           {activeWallet
-            ? `Ownership verified for ${shortAddress(activeWallet.address)} · chain ${activeWallet.chain_id}. ${connected ? "Wallet connected for reviewed transactions." : "Reconnect to approve any transaction."}`
-            : "Points stay in your Ziipa account. Connect and prove ownership of an external wallet before any on-chain redemption."}
-        </Text>
-        <Text style={s.hint}>
-          {wallet?.redemption.reason ||
-            "No automatic conversion or spending. Any funded test-network reward requires a separate reviewed wallet transaction."}
+            ? `${shortAddress(activeWallet.address)} · chain ${activeWallet.chain_id} · ${connected ? "Connected" : "Reconnect required"}`
+            : "No wallet connected"}
         </Text>
         <Action
           secondary
@@ -600,12 +601,13 @@ export function MediaRewards({
       </View>
       {!!claims.length && (
         <View style={s.card}>
-          <Text style={s.label}>Funded test-network rewards</Text>
-          <Text style={s.hint}>
-            These are published creator allocations, separate from your point
-            balance. Claims go only to the verified recipient wallet and require
-            its signature and test-network gas.
-          </Text>
+          <View style={styles.row}>
+            <Text style={s.label}>Reward claims</Text>
+            <InfoTip
+              title="Reward claims"
+              content="Claims use test-network tokens. Sign with your verified recipient wallet and use test-network gas to claim them."
+            />
+          </View>
           {claims.map((claim) => (
             <View key={claim.id} style={s.program}>
               <View style={styles.between}>
@@ -659,14 +661,15 @@ export function MediaRewards({
       )}
       <View style={s.card}>
         <View style={styles.between}>
-          <Text style={s.label}>Creator reward programs</Text>
+          <View style={styles.row}>
+            <Text style={s.label}>Creator reward programs</Text>
+            <InfoTip
+              title="Creator reward programs"
+              content="Set a budget and daily limit for points earned on your public media. Linking a token requires a completed creator-token transaction."
+            />
+          </View>
           <Sparkles size={19} color={themeValue("#C2A0F0", color.purple)} />
         </View>
-        <Text style={s.hint}>
-          Reward people who interact with your public media. Set a finite point
-          budget and a member daily cap. Token-linked programs require your
-          completed creator-token transaction.
-        </Text>
         {session && !showForm && (
           <Action
             title="Create a reward program"
@@ -725,7 +728,7 @@ export function MediaRewards({
             {program.token && (
               <Action
                 secondary
-                title="Fund / allocate test tokens"
+                title="Manage token pool"
                 disabled={busy}
                 onPress={() => {
                   setFundProgram(program);
@@ -740,10 +743,7 @@ export function MediaRewards({
           </View>
         ))}
         {session && !programs.length && !loading && (
-          <Text style={s.hint}>
-            No reward programs yet. Creating points does not mint additional
-            tokens or grant Ziipa permission to spend your wallet balance.
-          </Text>
+          <Text style={s.hint}>No reward programs yet</Text>
         )}
       </View>
       {showForm && session && (
@@ -753,7 +753,13 @@ export function MediaRewards({
           </Text>
           {!editing && (
             <>
-              <Text style={s.micro}>TOKEN CONNECTION</Text>
+              <View style={styles.row}>
+                <Text style={s.micro}>TOKEN CONNECTION</Text>
+                <InfoTip
+                  title="Token connection"
+                  content="Linking a token associates it with the program. Funding and claiming are separate, signed wallet transactions."
+                />
+              </View>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -773,18 +779,10 @@ export function MediaRewards({
                   />
                 ))}
               </ScrollView>
-              {tokenId && (
-                <Text style={s.hint}>
-                  This connects the confirmed creator token to your point
-                  program. Funding and reviewed test-network claims are separate
-                  transactions; no tokens leave your wallet when this program is
-                  saved.
-                </Text>
-              )}
             </>
           )}
           <RewardRuleFields value={draft} onChange={setDraft} disabled={busy} />
-          {editing ? (
+          {!!editing && (
             <View style={styles.row}>
               <Switch
                 accessibilityLabel="Enable reward program"
@@ -793,13 +791,8 @@ export function MediaRewards({
                 onValueChange={(enabled) => setDraft({ ...draft, enabled })}
                 trackColor={{ true: color.purple }}
               />
-              <Text style={[s.hint, { flex: 1 }]}>
-                Enable for future eligible interactions after saving these
-                reviewed rules.
-              </Text>
+              <Text style={[s.hint, { flex: 1 }]}>Enable reward program</Text>
             </View>
-          ) : (
-            <Notice text="A new program starts paused. You can explicitly enable it after reviewing its saved rules." />
           )}
           <Action
             title={editing ? "Save reviewed rules" : "Save paused program"}
@@ -819,12 +812,18 @@ export function MediaRewards({
       )}
       {fundProgram?.token && (
         <View style={s.card}>
-          <Text style={s.label}>{fundProgram.name} · test-token pool</Text>
+          <View style={styles.row}>
+            <Text style={[s.label, { flexShrink: 1 }]}>
+              {fundProgram.name} · Token pool
+            </Text>
+            <InfoTip
+              title="Token pool"
+              content="Review each approval, deposit and publication in your wallet. Reserved tokens stay in the pool for published or sealed allocations."
+            />
+          </View>
           <Text style={s.hint}>
-            Creator token {fundProgram.token.symbol} · chain{" "}
-            {fundProgram.token.chain_id}. The contract holds deposited tokens
-            for published allocations; your wallet controls every approval,
-            deposit and publication.
+            {fundProgram.token.symbol} · Test network · Chain{" "}
+            {fundProgram.token.chain_id}
           </Text>
           {pool?.program_id === fundProgram.id && (
             <View style={s.program}>
@@ -835,14 +834,11 @@ export function MediaRewards({
               <Text style={s.hint}>
                 Reserved {pool.reserved_token_amount} {fundProgram.token.symbol}
               </Text>
-              <Text style={s.micro}>
-                Read from the test-network reward contract.
-              </Text>
             </View>
           )}
           <Action
             secondary
-            title="Read token pool balance"
+            title="Refresh balance"
             busy={busy}
             onPress={() => void run(readPool)}
           />
@@ -855,25 +851,21 @@ export function MediaRewards({
           />
           <Action
             secondary
-            title="Review funding transaction"
+            title="Review deposit"
             busy={busy}
             onPress={() => void run(prepareFunding)}
           />
           <Text style={s.hint}>
-            If token allowance is insufficient, review the exact approval first.
-            After it confirms, review funding again to prepare the deposit.
+            Your wallet may ask for token approval before the deposit.
           </Text>
           <Action
             secondary
-            title="Review withdrawal of unused pool tokens"
+            title="Review withdrawal"
             busy={busy}
             onPress={() => void run(prepareWithdrawal)}
           />
           <Text style={s.hint}>
-            You can recover only unused, unreserved tokens to your verified
-            creator wallet. Tokens reserved for sealed or published allocations
-            cannot be withdrawn. Your wallet must approve the test-network
-            transaction.
+            Withdraw available tokens to your verified wallet.
           </Text>
           <RewardField
             label={`${fundProgram.token.symbol} per eligible point`}
@@ -888,11 +880,6 @@ export function MediaRewards({
             busy={busy}
             onPress={() => void run(prepareBatch)}
           />
-          <Text style={s.hint}>
-            A draft uses eligible, unallocated program points and currently
-            verified recipient wallets. Preparing a draft does not publish,
-            spend or promise a fiat value.
-          </Text>
           <Action
             secondary
             title="Close funding form"
@@ -934,7 +921,7 @@ export function MediaRewards({
               ))}
               {batch.status === "draft" && (
                 <>
-                  <Notice text="Preparing a publication seals these recipients, point reservations and token amounts because its unsigned transaction could be broadcast later. It cannot be cancelled or edited after preparation. Review every allocation before continuing." />
+                  <Notice text="Preparing publication locks the recipients and amounts permanently. Review each allocation before continuing." />
                   <Action
                     title="Review irreversible publication"
                     busy={busy}
@@ -980,17 +967,9 @@ export function MediaRewards({
           </View>
         ))}
         {!wallet?.history.length && (
-          <Text style={s.hint}>
-            Your server-recorded awards and reversals will appear here.
-            Refreshing this screen does not earn points.
-          </Text>
+          <Text style={s.hint}>No reward activity yet</Text>
         )}
       </View>
-      <Text style={s.hint}>
-        Ziipa Assistant may help inspect rewards and prepare a plan. Connecting,
-        funding or redeeming tokens always requires your review and your wallet
-        signature. No background agent can spend your funds.
-      </Text>
     </View>
   );
 }

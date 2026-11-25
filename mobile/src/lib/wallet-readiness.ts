@@ -12,9 +12,7 @@ export function assertWalletNetwork(
 ) {
   if (chainId === 84532 || chainId === 11155111) return;
   if (chainId === 31337 && development && platform === "web") return;
-  throw new Error(
-    "Select Base Sepolia or Ethereum Sepolia. Mainnet is disabled; the local chain is desktop development only.",
-  );
+  throw new Error("Select Base Sepolia or Ethereum Sepolia.");
 }
 
 export function mintSetupIssue(
@@ -23,8 +21,7 @@ export function mintSetupIssue(
   kind: "mint_nft" | "create_token",
 ) {
   if (!config) return "Checking minting availability…";
-  if (config.testnet_only !== true)
-    return "Minting is unavailable: Ziipa requires a test-network configuration.";
+  if (config.testnet_only !== true) return "Minting is unavailable.";
   const chain = config.chains.find((row) => row.id === chainId);
   const contract = kind === "mint_nft" ? "collectibles" : "factory";
   const address = chain?.contracts?.[contract] || "";
@@ -33,13 +30,13 @@ export function mintSetupIssue(
     !/^0x[0-9a-fA-F]{40}$/.test(address) ||
     /^0x0{40}$/i.test(address)
   )
-    return "Minting setup is pending for this test network. You can prepare your creation; minting opens when Ziipa’s test contracts are configured.";
+    return "Minting is unavailable on this network. Try another network.";
   if (
     chainId !== 31337 &&
     config.storage !== "public_ipfs" &&
     config.storage !== "pinata_ipfs"
   )
-    return "Public media storage must be configured before test-network minting.";
+    return "Minting is unavailable without public media storage.";
   return "";
 }
 
@@ -52,6 +49,6 @@ export function assertWalletIntent(
   assertWalletNetwork(intent.chain_id, development, platform);
   if (Number(intent.transaction.chainId) !== intent.chain_id)
     throw new Error(
-      "The transaction network does not match the selected test network. Nothing was sent.",
+      "The transaction network does not match your wallet’s selected network.",
     );
 }

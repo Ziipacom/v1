@@ -23,7 +23,7 @@ export async function proxyBackend(request: Request, origin: string, fetcher: ty
     backend = new URL(origin);
     if (backend.protocol !== 'https:' || backend.username || backend.password || backend.pathname !== '/' || backend.search || backend.hash || backend.origin === incoming.origin) throw new Error('Invalid backend');
   } catch {
-    return Response.json({ detail: 'Ziipa API origin is not configured correctly.' }, { status: 503 });
+    return Response.json({ detail: 'Ziipa is temporarily unavailable. Try again.' }, { status: 503 });
   }
   if (!incoming.pathname.startsWith('/api/')) return new Response(null, { status: 404 });
   const target = new URL(backend.origin);
@@ -81,6 +81,6 @@ export async function proxyBackend(request: Request, origin: string, fetcher: ty
     response.headers.set('Referrer-Policy', 'no-referrer');
     return response;
   } catch {
-    return Response.json({ detail: 'Ziipa API is temporarily unavailable.' }, { status: 502, headers: { 'Cache-Control': 'no-store' } });
+    return Response.json({ detail: 'Ziipa is temporarily unavailable. Try again.' }, { status: 502, headers: { 'Cache-Control': 'no-store' } });
   }
 }

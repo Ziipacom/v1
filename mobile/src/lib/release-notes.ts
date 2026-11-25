@@ -4,6 +4,13 @@
  */
 export const releaseNotes = [
   {
+    version: "1.0.23",
+    changes: [
+      "Browse listing photos in a compact gallery and see purchase details at a glance.",
+      "Move through Creator Studio and live broadcasts with simpler controls.",
+    ],
+  },
+  {
     version: "1.0.20",
     changes: [
       "Show or hide your password while signing in.",

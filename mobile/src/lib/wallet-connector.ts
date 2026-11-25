@@ -79,9 +79,7 @@ function ephemeralStorage() {
 }
 async function walletConnect() {
   if (!walletConnectConfigured)
-    throw new Error(
-      "WalletConnect needs your Reown project ID in the mobile build. A browser wallet can connect without it.",
-    );
+    throw new Error("Wallet app pairing is unavailable.");
   if (!universal) {
     const { default: Provider } =
       await import("@walletconnect/universal-provider");
@@ -92,7 +90,7 @@ async function walletConnect() {
       storage: ephemeralStorage(),
       metadata: {
         name: "Ziipa Studio",
-        description: "Ziipa creator wallet · test networks only",
+        description: "Connect your wallet to Ziipa Studio",
         url:
           Platform.OS === "web" && typeof location !== "undefined"
             ? location.origin
@@ -123,11 +121,9 @@ export async function connectWallet(
 ) {
   assertWalletNetwork(chainId, __DEV__, Platform.OS);
   if (!networks[chainId] || (!__DEV__ && chainId === 31337))
-    throw new Error("Unsupported test network");
+    throw new Error("Choose another network.");
   if (chainId === 31337 && Platform.OS !== "web")
-    throw new Error(
-      "Ziipa Local is for the desktop browser. Select a deployed public test network on a physical phone.",
-    );
+    throw new Error("Select Base Sepolia or Ethereum Sepolia.");
   clear();
   const attempt = ++connectionAttempt;
   let provider: EVMProvider;
@@ -136,7 +132,7 @@ export async function connectWallet(
     const injected = injectedWallet();
     if (!injected)
       throw new Error(
-        "No browser wallet found. Use a wallet-enabled browser or WalletConnect. Never enter a recovery phrase into Ziipa.",
+        "No browser wallet found. Choose Wallet app or open a browser with a wallet.",
       );
     provider = injected;
     accounts = (await provider.request({
@@ -164,7 +160,7 @@ export async function connectWallet(
       });
     }
     if (Number(await provider.request({ method: "eth_chainId" })) !== chainId)
-      throw new Error("Switch your wallet to the selected test network.");
+      throw new Error("Switch your wallet to the selected network.");
     provider.removeListener?.("accountsChanged", clear);
     provider.on?.("accountsChanged", clear);
     provider.removeListener?.("chainChanged", clear);
