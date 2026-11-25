@@ -92,6 +92,7 @@ function wizard() {
     if (name === "./ui")
       return { Action: "Action", Field: "Field", Pill: "Pill" };
     if (name === "./floating") return { FloatButton: "FloatButton" };
+    if (name === "./info-tip") return { InfoTip: "InfoTip" };
     if (name === "./disclosure")
       return {
         Disclosure: ({ children, expanded, ...rest }: any) =>
@@ -185,7 +186,29 @@ test("product publish Connect opens network setup without saving or posting", ()
   const ui=wizard();let connected=0;
   ui.props.step="publish";ui.props.onConnect=() => {connected++;};
   ui.click("Connect");
-  assert.equal(connected,1);assert.deepEqual(ui.saves,[]);
+  assert.equal(connected, 1);
+  assert.deepEqual(ui.saves, []);
+});
+
+test("product kind tiles preserve category defaults and lock during uploads", () => {
+  const ui = wizard();
+  const tile = () =>
+    ui
+      .render()
+      .find(
+        (node) =>
+          node.props.accessibilityRole === "radio" &&
+          node.props.accessibilityLabel === "Merchandise",
+      )!;
+  tile().props.onPress();
+  assert.equal(ui.props.draft.kind, "merchandise");
+  assert.equal(ui.props.draft.category, "merch");
+  assert.equal(ui.props.draft.condition, "new");
+  assert.equal(tile().props.accessibilityState.checked, true);
+  ui.props.busy = "Uploading media";
+  assert.equal(tile().props.disabled, true);
+  assert.equal(tile().props.accessibilityState.disabled, true);
+  assert.deepEqual(ui.saves, []);
 });
 
 test("manual Sell flow stays usable without AI and requires an explicit valid price", () => {

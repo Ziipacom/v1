@@ -11,8 +11,15 @@ import {
 } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { Bell, Check, RefreshCw, ShieldCheck } from "lucide-react-native";
-import { Action, Field, Notice, Pill } from "../components/ui";
+import {
+  Bell,
+  Check,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+  ArrowUpRight,
+} from "lucide-react-native";
+import { Action, Field, IconButton, Notice, Pill } from "../components/ui";
 import { Sheet } from "../components/floating";
 import { InfoTip } from "../components/info-tip";
 import * as Application from "expo-application";
@@ -330,28 +337,34 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
           setAccountConsent(false);
         }}
       />
-      {notificationCategories.map((category) => (
-        <Consent
-          key={category}
-          text={
-            category === "calendar"
-              ? "Calendar reminders"
-              : category === "recordings"
-                ? "Recordings and clips"
-                : "Publishing updates"
-          }
-          checked={categories.includes(category)}
-          disabled={busy}
-          onPress={() => {
-            setCategories((previous) =>
-              previous.includes(category)
-                ? previous.filter((value) => value !== category)
-                : [...previous, category],
-            );
-            setAccountConsent(false);
-          }}
-        />
-      ))}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {notificationCategories.map((category) => (
+          <View
+            key={category}
+            style={{ flexGrow: 1, flexBasis: "45%", minWidth: 140 }}
+          >
+            <Consent
+              text={
+                category === "calendar"
+                  ? "Calendar reminders"
+                  : category === "recordings"
+                    ? "Recordings and clips"
+                    : "Publishing updates"
+              }
+              checked={categories.includes(category)}
+              disabled={busy}
+              onPress={() => {
+                setCategories((previous) =>
+                  previous.includes(category)
+                    ? previous.filter((value) => value !== category)
+                    : [...previous, category],
+                );
+                setAccountConsent(false);
+              }}
+            />
+          </View>
+        ))}
+      </View>
       <Text style={styles.small}>
         Notifications keep your media, creation titles and calendar notes private.
       </Text>
@@ -364,7 +377,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
         />
       )}
       <Action
-        title="Save notification preferences"
+        title="Save preferences"
         icon={ShieldCheck}
         disabled={
           busy ||
@@ -448,18 +461,28 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
         <Text style={styles.body}>No devices registered for this account.</Text>
       )}
       {devices.map((device) => (
-        <View key={device.id} style={{ gap: 8, paddingVertical: 12 }}>
-          <Text style={styles.body}>
-            {device.label || "Unnamed device"} ·{" "}
-            {device.provider === "web" ? "Browser" : "Ziipa app"}
-          </Text>
-          <Text style={styles.small}>
-            {notificationStatus(device.status)} · last registration{" "}
-            {new Date(device.last_registered_at).toLocaleString()}
-          </Text>
-          <Action
-            secondary
-            title={`Remove ${device.label || "device"}`}
+        <View
+          key={device.id}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            paddingVertical: 12,
+          }}
+        >
+          <View style={{ flex: 1, gap: 5 }}>
+            <Text style={styles.body}>
+              {device.label || "Unnamed device"} ·{" "}
+              {device.provider === "web" ? "Browser" : "Ziipa app"}
+            </Text>
+            <Text style={styles.small}>
+              {notificationStatus(device.status)} · last registration{" "}
+              {new Date(device.last_registered_at).toLocaleString()}
+            </Text>
+          </View>
+          <IconButton
+            icon={Trash2}
+            label={`Remove ${device.label || "device"}`}
             disabled={busy || device.status === "revoked"}
             onPress={() =>
               void mutate(async (valid) => {
@@ -525,27 +548,29 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
             <Text style={styles.small}>{delivery.detail}</Text>
           )}
           {!delivery.opened_at && (
-            <Action
-              secondary
-              title="Open update"
-              disabled={busy}
-              onPress={() =>
-                void mutate(async (valid) => {
-                  await api(
-                    `${notificationRoot}/deliveries/${delivery.id}/opened`,
-                    {},
-                  );
-                  if (valid())
-                    navigation.navigate(
-                      delivery.category === "calendar"
-                        ? "Calendar"
-                        : delivery.category === "recordings"
-                          ? "Recordings"
-                          : "Campaigns",
+            <View style={{ alignSelf: "flex-start" }}>
+              <IconButton
+                icon={ArrowUpRight}
+                label="Open update"
+                disabled={busy}
+                onPress={() =>
+                  void mutate(async (valid) => {
+                    await api(
+                      `${notificationRoot}/deliveries/${delivery.id}/opened`,
+                      {},
                     );
-                })
-              }
-            />
+                    if (valid())
+                      navigation.navigate(
+                        delivery.category === "calendar"
+                          ? "Calendar"
+                          : delivery.category === "recordings"
+                            ? "Recordings"
+                            : "Campaigns",
+                      );
+                  })
+                }
+              />
+            </View>
           )}
         </View>
       ))}
@@ -570,11 +595,10 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
         ) : (
           <Text style={styles.small}>Your Ziipa account</Text>
         )}
-        <Action
-          secondary
-          title="Refresh"
+        <IconButton
+          label="Refresh notifications"
           icon={RefreshCw}
-          busy={busy}
+          disabled={busy}
           onPress={() => void load()}
         />
       </View>

@@ -233,9 +233,7 @@ function ConnectionPanel({
       </View>
       {["google", "microsoft", "device"].map((name) => {
         const linked = state?.connections.find((row) => row.provider === name);
-        const status = state?.providers.find(
-          (row) => row.provider === name,
-        );
+        const status = state?.providers.find((row) => row.provider === name);
         const configured = status?.ready;
         return (
           <View
@@ -349,14 +347,18 @@ function ConnectionPanel({
                         ))}
                         {linked.selected && (
                           <>
-                            <Text style={styles.small}>
-                              {linked.last_sync_at
-                                ? "Last synced " +
-                                  new Date(linked.last_sync_at).toLocaleString()
-                                : "Not synced yet"}{" "}
-                              · Sync now covers the last 30 and next 90 days.
-                              Background sync is not enabled.
-                            </Text>
+                            <HelpLabel
+                              label={
+                                linked.last_sync_at
+                                  ? "Synced " +
+                                    new Date(
+                                      linked.last_sync_at,
+                                    ).toLocaleString()
+                                  : "Not synced yet"
+                              }
+                              style={styles.small}
+                              help="Sync now imports the last 30 and next 90 days. Calendar sync runs only when you choose it."
+                            />
                             <Action
                               title="Sync now"
                               icon={RefreshCw}
@@ -515,28 +517,30 @@ function ConnectionPanel({
             This creates one event with a link to its Ziipa schedule, without
             guests. Repeating this action does not create another copy.
           </Text>
-          <Action
-            title="Confirm calendar export"
-            disabled={busy}
-            onPress={() =>
-              void run(async () => {
-                const result = await api<{ detail: string }>(
-                  root + "/" + exporting.connection.id + "/export",
-                  { occurrence_id: exporting.occurrence },
-                );
-                if (mounted.current) {
-                  setExporting(null);
-                  setNotice(result.detail);
-                }
-              })
-            }
-          />
-          <Action
-            secondary
-            title="Cancel export"
-            disabled={busy}
-            onPress={() => setExporting(null)}
-          />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <Action
+              title="Confirm calendar export"
+              disabled={busy}
+              onPress={() =>
+                void run(async () => {
+                  const result = await api<{ detail: string }>(
+                    root + "/" + exporting.connection.id + "/export",
+                    { occurrence_id: exporting.occurrence },
+                  );
+                  if (mounted.current) {
+                    setExporting(null);
+                    setNotice(result.detail);
+                  }
+                })
+              }
+            />
+            <Action
+              secondary
+              title="Cancel export"
+              disabled={busy}
+              onPress={() => setExporting(null)}
+            />
+          </View>
         </View>
       )}
       {editing && (
@@ -573,38 +577,40 @@ function ConnectionPanel({
             value={editing.ends_at}
             onChangeText={(ends_at) => setEditing({ ...editing, ends_at })}
           />
-          <Action
-            title="Save to connected calendar"
-            disabled={busy}
-            onPress={() =>
-              void run(async () => {
-                const {
-                  id,
-                  connection_id,
-                  revision,
-                  title,
-                  notes,
-                  starts_at,
-                  ends_at,
-                } = editing;
-                await api(
-                  root + "/" + connection_id + "/events/" + id + "/edit",
-                  { revision, title, notes, starts_at, ends_at },
-                );
-                await load();
-                if (mounted.current) {
-                  setEditing(null);
-                  setNotice("Calendar event saved.");
-                }
-              })
-            }
-          />
-          <Action
-            secondary
-            title="Cancel edit"
-            disabled={busy}
-            onPress={() => setEditing(null)}
-          />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <Action
+              title="Save to connected calendar"
+              disabled={busy}
+              onPress={() =>
+                void run(async () => {
+                  const {
+                    id,
+                    connection_id,
+                    revision,
+                    title,
+                    notes,
+                    starts_at,
+                    ends_at,
+                  } = editing;
+                  await api(
+                    root + "/" + connection_id + "/events/" + id + "/edit",
+                    { revision, title, notes, starts_at, ends_at },
+                  );
+                  await load();
+                  if (mounted.current) {
+                    setEditing(null);
+                    setNotice("Calendar event saved.");
+                  }
+                })
+              }
+            />
+            <Action
+              secondary
+              title="Cancel edit"
+              disabled={busy}
+              onPress={() => setEditing(null)}
+            />
+          </View>
         </View>
       )}
     </Sheet>

@@ -214,6 +214,7 @@ function harness(
       if (name === "./ui")
         return {
           Action: "Action",
+          IconButton: "IconButton",
           Field: "Field",
           Notice: "Notice",
           Pill: "Pill",
@@ -356,10 +357,74 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 async function choose(h: ReturnType<typeof harness>) {
   h.render();
   await settle();
-  h.action("Choose my response").props.onPress();
+  h.action("Upload").props.onPress();
   await settle();
   h.consent("I have permission").props.onPress();
 }
+
+test("compact Remix controls retain source preview, mode bounds and explicit Ziipa rights", async () => {
+  const h = harness();
+  try {
+    h.render();
+    await settle();
+    let nodes = h.render();
+    assert.equal(
+      nodes.some((node) => node.type === "MediaPlayer"),
+      false,
+    );
+    nodes
+      .find((node) => node.props.accessibilityLabel === "Preview source")!
+      .props.onPress();
+    assert.ok(h.render().find((node) => node.type === "MediaPlayer"));
+    assert.ok(
+      nodes.find(
+        (node) =>
+          node.type === "IconButton" &&
+          node.props.label === "Refresh permissions and availability",
+      ),
+    );
+    assert.ok(
+      nodes.find(
+        (node) =>
+          node.type === "HelpLabel" &&
+          node.props.label === "Ziipa-only remix" &&
+          node.props.help.includes("minting"),
+      ),
+    );
+    for (const label of ["Start (s)", "Length (s)", "Title"])
+      assert.ok(
+        nodes.find(
+          (node) => node.type === "Field" && node.props.label === label,
+        ),
+      );
+    assert.ok(h.action("Upload"));
+    assert.ok(h.action("Camera"));
+    assert.equal(
+      h.consent("I have permission").props.accessibilityLabel,
+      "I have permission to use both clips on Ziipa.",
+    );
+    nodes
+      .find(
+        (node) =>
+          node.props.accessibilityRole === "radio" &&
+          node.props.accessibilityLabel === "Split screen",
+      )!
+      .props.onPress();
+    nodes = h.render();
+    assert.equal(
+      nodes.find(
+        (node) =>
+          node.props.accessibilityRole === "radio" &&
+          node.props.accessibilityLabel === "Split screen",
+      )!.props.accessibilityState.checked,
+      true,
+    );
+    assert.equal(h.action("Create private remix").props.disabled, true);
+    assert.equal(h.counts().uploads, 0);
+  } finally {
+    h.unmount();
+  }
+});
 
 test("Remix upload/create/poll/apply is explicit, private and opens only the applied owned draft", async () => {
   const h = harness();
@@ -406,7 +471,7 @@ test("Unavailable matching worker or absent rights cannot upload or submit media
   try {
     missing.render();
     await settle();
-    missing.action("Choose my response").props.onPress();
+    missing.action("Upload").props.onPress();
     await settle();
     missing.action("Create private remix").props.onPress();
     await settle();
@@ -506,7 +571,7 @@ test("Recording a response reuses the recorder but does not upload until a separ
   try {
     h.render();
     await settle();
-    h.action("Record my response").props.onPress();
+    h.action("Camera").props.onPress();
     const recording = h.render().find((node) => node.type === "Recorder")!;
     assert.equal(recording.props.mode, "record");
     assert.equal(

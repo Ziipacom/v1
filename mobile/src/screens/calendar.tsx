@@ -21,12 +21,13 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as Crypto from "expo-crypto";
 import {
   CalendarClock,
+  Bell,
   CheckCircle2,
   Plus,
   Radio,
   RefreshCw,
 } from "lucide-react-native";
-import { Action, Field, Notice, Pill } from "../components/ui";
+import { Action, Field, IconButton, Notice, Pill } from "../components/ui";
 import { CalendarDayPicker } from "../components/calendar-day-picker";
 import { CalendarConnections } from "../components/calendar-connections";
 import { useDesktopLayout } from "../components/desktop-layout";
@@ -506,7 +507,11 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
         <>
           <View style={styles.between}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.title}>Calendar</Text>
+              <HelpLabel
+                label="Calendar"
+                style={styles.title}
+                help="Connect calendars, add an event, and choose which reminders reach your devices. Scheduled broadcasts still need you to start them."
+              />
             </View>
             <Pressable
               accessibilityRole="button"
@@ -518,16 +523,26 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
               <RefreshCw color={color.lime} size={24} />
             </Pressable>
           </View>
-          <CalendarConnections
-            events={events}
-            onChanged={() => void load()}
-            deviceConnectRequest={route.params?.deviceConnectRequest}
-          />
-          <Action
-            secondary
-            title="Notifications & devices"
-            onPress={() => navigation.navigate("Notifications")}
-          />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <CalendarConnections
+                events={events}
+                onChanged={() => void load()}
+                deviceConnectRequest={route.params?.deviceConnectRequest}
+              />
+            </View>
+            <IconButton
+              icon={Bell}
+              label="Notifications & devices"
+              onPress={() => navigation.navigate("Notifications")}
+            />
+            <IconButton
+              icon={Plus}
+              label="New calendar event"
+              disabled={busy}
+              onPress={newEvent}
+            />
+          </View>
         </>
       )}
       {loading ? (
@@ -538,15 +553,6 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
       ) : null}
       {error ? <Notice error text={error} /> : null}
       {notice ? <Notice text={notice} /> : null}
-      {!desktop && (
-        <Action
-          title="New calendar event"
-          secondary
-          icon={Plus}
-          disabled={busy}
-          onPress={newEvent}
-        />
-      )}
       <DesktopGroup
         style={{
           flexDirection: contentWidth >= 760 ? "row" : "column",
@@ -968,12 +974,11 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
               {event ? (
                 <>
                   {event.kind === "stream" ? (
-                    <Card title="Broadcast preflight">
-                      <Text style={styles.small}>
-                        Read-only provider checks help you prepare. They never
-                        grant start permission, open your camera or certify that
-                        a future broadcast happened.
-                      </Text>
+                    <Card title="Broadcast checks">
+                      <HelpLabel
+                        label="About this check"
+                        help="Checks the linked broadcast without starting it or opening your camera. Start the broadcast yourself in Live controls."
+                      />
                       <Action
                         secondary
                         title="Check this linked broadcast"
@@ -1078,7 +1083,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
                       }
                     />
                   ) : null}
-                  <Card title="Planned occurrences and receipts">
+                  <Card title="Schedule activity">
                     {!event.occurrences.length ? (
                       <Text style={styles.small}>
                         No planned occurrences are available for this schedule.
@@ -1127,13 +1132,19 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
                       </View>
                     ))}
                     {event.status !== "cancelled" ? (
-                      <>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          flexWrap: "wrap",
+                          gap: 8,
+                        }}
+                      >
                         <Action
                           secondary
                           title={
                             event.status === "paused"
-                              ? "Resume reminder schedule"
-                              : "Pause reminder schedule"
+                              ? "Resume schedule"
+                              : "Pause schedule"
                           }
                           busy={busy}
                           onPress={() =>
@@ -1147,13 +1158,13 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
                         />
                         <Action
                           danger
-                          title="Cancel future reminder occurrences"
+                          title="Cancel future reminders"
                           busy={busy}
                           onPress={() =>
                             void run((valid) => control("cancel", valid))
                           }
                         />
-                      </>
+                      </View>
                     ) : null}
                   </Card>
                 </>

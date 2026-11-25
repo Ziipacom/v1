@@ -6,6 +6,7 @@ import {
   Camera,
   Check,
   ImagePlus,
+  Film,
   Package,
   Plus,
   ShoppingBag,
@@ -16,6 +17,7 @@ import {
 import { Action, Field, Pill } from "./ui";
 import { Disclosure } from "./disclosure";
 import { FloatButton } from "./floating";
+import { InfoTip } from "./info-tip";
 import {
   centsFromText,
   productCategories,
@@ -234,24 +236,45 @@ export function StoreSellWizard(props: Props) {
             </View>
           )}
           <View style={{ flexDirection: "row", gap: 8 }}>
-            <Pill
-              title="Digital media"
-              active={draft.kind === "digital"}
-              onPress={() =>
-                onChange({ kind: "digital", condition: "not_applicable" })
-              }
-            />
-            <Pill
-              title="Merchandise"
-              active={draft.kind === "merchandise"}
-              onPress={() =>
-                onChange({
-                  kind: "merchandise",
-                  category: "merch",
-                  condition: "new",
-                })
-              }
-            />
+            {(["digital", "merchandise"] as const).map((kind) => {
+              const Icon = kind === "digital" ? Film : Package;
+              const selected = draft.kind === kind;
+              return (
+                <Pressable
+                  key={kind}
+                  accessibilityRole="radio"
+                  accessibilityLabel={
+                    kind === "digital" ? "Digital media" : "Merchandise"
+                  }
+                  accessibilityState={{ checked: selected, disabled: !!busy }}
+                  disabled={!!busy}
+                  onPress={() =>
+                    onChange(
+                      kind === "digital"
+                        ? { kind, condition: "not_applicable" }
+                        : { kind, category: "merch", condition: "new" },
+                    )
+                  }
+                  style={{
+                    flex: 1,
+                    minHeight: 76,
+                    gap: 7,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: selected ? color.lime : color.border,
+                    backgroundColor: color.panel,
+                    opacity: busy ? 0.55 : 1,
+                  }}
+                >
+                  <Icon size={24} color={selected ? color.lime : color.text} />
+                  <Text style={styles.label}>
+                    {kind === "digital" ? "Digital media" : "Merchandise"}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
           <Field
             {...input}
@@ -277,9 +300,6 @@ export function StoreSellWizard(props: Props) {
             busy={busy === "Preparing suggestions"}
             onPress={props.onGenerate}
           />
-          <Text style={[styles.small, { fontSize: 12, lineHeight: 16 }]}>
-            AI prepares your listing copy. Review the price and final display.
-          </Text>
           <Action
             title="Continue without AI"
             secondary
@@ -392,11 +412,15 @@ export function StoreSellWizard(props: Props) {
               onChangeText={(descriptor) => onChange({ descriptor })}
             />
             {props.mediaUploader}
-            <Text style={styles.small}>
-              Add a cover photo plus up to 10 photos, video or audio files in
-              total. Listing media are public previews, not protected paid
-              downloads.
-            </Text>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+            >
+              <Text style={styles.small}>Public previews · up to 10 files</Text>
+              <InfoTip
+                title="Product previews"
+                content="Add a cover photo, video or audio. Listing media are public previews, not protected paid downloads. Upload preview copies to keep your originals private."
+              />
+            </View>
           </Disclosure>
           <Action
             title="Continue to publish"
@@ -416,7 +440,15 @@ export function StoreSellWizard(props: Props) {
               gap: 10,
             }}
           >
-            <Text style={styles.label}>External networks</Text>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+            >
+              <Text style={styles.label}>Promote</Text>
+              <InfoTip
+                title="Promote your product"
+                content="Connect publishing accounts to promote your products. Connecting an account or publishing a Ziipa listing does not post to another network."
+              />
+            </View>
             {props.onConnect && (
               <Action
                 title="Connect"
@@ -428,15 +460,19 @@ export function StoreSellWizard(props: Props) {
             )}
           </View>
           <Text style={styles.small}>
-            Connect publishing accounts to promote your products. Connecting or
-            publishing a Ziipa listing does not post to another network.
+            Selected media will be public product previews.
           </Text>
-          <Text style={styles.small}>
-            Publishing makes the selected source photos, video and audio
-            available as product previews. Use preview copies if your originals
-            or edits should stay private. For merchandise, include shipping in
-            the listed price and explain delivery and returns.
-          </Text>
+          {draft.kind === "merchandise" && (
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+            >
+              <Text style={styles.small}>Include shipping in your price</Text>
+              <InfoTip
+                title="Shipping & returns"
+                content="Include shipping in the listed price. Describe delivery locations, timing and returns before publishing."
+              />
+            </View>
+          )}
           <Text style={[styles.body, { fontFamily: font.semibold }]}>
             {draft.title || "Your product"}
           </Text>
@@ -478,8 +514,8 @@ export function StoreSellWizard(props: Props) {
             onPress={props.onEnableStore}
           />
           <Text style={styles.small}>
-            Publishing creates a visible product listing. Live payments are off;
-            test checkout is available only for eligible merchandise.
+            Live payments are off. Eligible merchandise supports test checkout
+            only.
           </Text>
           <Action
             title="Save privately"

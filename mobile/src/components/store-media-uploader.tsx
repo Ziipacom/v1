@@ -130,35 +130,40 @@ export function StoreMediaUploader({
       </Text>
       {source && (
         <Sheet title="Add product media" onClose={() => setSource(false)}>
-          <Action
-            secondary
-            title="Upload"
-            icon={Upload}
-            onPress={() => {
-              setSource(false);
-              upload();
-            }}
-          />
-          {camera && (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <Action
               secondary
-              title="Camera"
-              icon={Camera}
+              title="Upload"
+              icon={Upload}
+              disabled={busy}
               onPress={() => {
                 setSource(false);
-                camera();
+                upload();
               }}
             />
-          )}
-          <Action
-            secondary
-            title="Ziipa Library"
-            icon={Images}
-            onPress={() => {
-              setSource(false);
-              library();
-            }}
-          />
+            {camera && (
+              <Action
+                secondary
+                title="Camera"
+                icon={Camera}
+                disabled={busy}
+                onPress={() => {
+                  setSource(false);
+                  camera();
+                }}
+              />
+            )}
+            <Action
+              secondary
+              title="Library"
+              icon={Images}
+              disabled={busy}
+              onPress={() => {
+                setSource(false);
+                library();
+              }}
+            />
+          </View>
         </Sheet>
       )}
       {selected && (
