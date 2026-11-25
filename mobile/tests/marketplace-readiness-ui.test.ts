@@ -398,7 +398,7 @@ test("wallet readiness is honest and user-facing without contract or provider se
       state.detail,
       /configur|contract|provider|deploy|credential/i,
     );
-    assert.match(state.detail, /unchanged|keep working/);
+    assert.match(state.detail, /^checking |^minting is unavailable/i);
   }
 });
 
