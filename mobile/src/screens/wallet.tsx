@@ -1628,7 +1628,9 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 width: "100%",
                 maxWidth: 720,
                 alignSelf: "center",
-                paddingBottom: 24,
+                // The desktop assistant floats 18px up and is 56px tall.
+                // Leave a 12px gap above it without duplicating the phone dock.
+                paddingBottom: 18 + 56 + 12,
               },
             ]}
           >
@@ -2205,11 +2207,13 @@ const s = themedStyles(() =>
     },
     buttons: {
       flexDirection: "row",
+      flexShrink: 0,
       gap: 19,
       justifyContent: "center",
       paddingHorizontal: 25,
       paddingTop: 12,
-      paddingBottom: 46,
+      // StudioDock already reserves its own height and safe-area inset.
+      paddingBottom: 12,
     },
     next: {
       backgroundColor: color.purple,

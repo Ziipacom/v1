@@ -148,14 +148,14 @@ function NavigationContent() {
   // React Navigation owns browser history, including rollback of prevented Back
   // actions. Only explicitly allowed IDs and filters are ever put in a URL.
   const linking = useMemo<LinkingOptions<RootStack> | undefined>(() => {
-    if (!desktop || typeof window === "undefined") return undefined;
+    if (typeof window === "undefined" || (!desktop && !portalMode)) return undefined;
     const base = portalMode ? "/studio/" : window.location.pathname;
     return {
       prefixes: [],
       getStateFromPath(path) {
         const destination = destinationFromSearch(
           path.includes("?") ? path.slice(path.indexOf("?")) : "",
-        ) || { screen: "Main", params: undefined };
+        ) || { screen: desktop ? "Main" : "Studio", params: undefined };
         let name = destination.screen;
         let params = destination.params ? { ...destination.params } : undefined;
         if (name === "Composer" && typeof params?.draftId === "string") {
@@ -168,10 +168,14 @@ function NavigationContent() {
             params = { tab: "library" };
           }
         }
-        return { routes: [{ name, params }] };
+        const routes = !desktop && name !== "Studio" && name !== "Main"
+          ? [{ name: "Studio" }, { name, params }]
+          : [{ name, params }];
+        return { routes };
       },
       getPathFromState(state) {
         const route = state.routes[state.index ?? state.routes.length - 1];
+        if (!desktop && route.name === "Studio" && !route.params) return base;
         return (
           base +
           (destinationSearch(

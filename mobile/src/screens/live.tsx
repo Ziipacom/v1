@@ -1,5 +1,5 @@
 import { useDesktopLayout } from "../components/desktop-layout";
-import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
+import { workspace } from "../components/desktop-workspace";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,
@@ -22,7 +22,7 @@ import {
   RefreshCw,
   Square,
 } from "lucide-react-native";
-import { Action, Empty, Field, Pill } from "../components/ui";
+import { Action, Empty, Field, IconButton, Pill } from "../components/ui";
 import { LiveTransmitter } from "../components/live-transmitter";
 import { LiveViewer } from "../components/live-viewer";
 import { LiveDestinations } from "../components/live-destinations";
@@ -318,9 +318,7 @@ export function LiveScreen({
     } catch {
       if (mounted.current) {
         setPublics([]);
-        setError(
-          "Cannot load verified broadcasts. Check your API connection; no live status has been assumed.",
-        );
+        setError("Live feeds didn’t load.");
       }
     } finally {
       loadingRef.current = false;
@@ -457,40 +455,15 @@ export function LiveScreen({
       automaticallyAdjustKeyboardInsets
       keyboardShouldPersistTaps="handled"
       style={styles.screen}
-      contentContainerStyle={desktop ? workspace.page : styles.page}
+      contentContainerStyle={desktop ? workspace.page : [styles.page, { gap: 14 }]}
       showsVerticalScrollIndicator={false}
     >
-      {desktop ? (
-        <WorkspaceHeading
-          title={tab === "broadcast" ? "Live control room" : "Live now"}
-          description={
-            tab === "broadcast"
-              ? "Prepare your session, verify the connection and go live when you choose."
-              : "Verified live broadcasts from the Ziipa community."
-          }
-        />
-      ) : (
-        <>
-          <View style={styles.between}>
-            <View>
-              <Text style={styles.eyebrow}>ZIIPA STUDIO</Text>
-              <Text style={styles.title}>Live feeds</Text>
-            </View>
-            <Radio size={30} color={color.lime} />
-          </View>
-        </>
-      )}
-      <View style={styles.row}>
-        <Pill
-          title="Watch live"
-          active={tab === "watch"}
-          onPress={() => void switchTab("watch")}
-        />
-        <Pill
-          title="Your broadcast"
-          active={tab === "broadcast"}
-          onPress={() => void switchTab("broadcast")}
-        />
+      <View style={styles.between}>
+        <View style={[styles.row, { flex: 1, flexWrap: "wrap", gap: 7 }]}>
+          <Pill title="Watch live" active={tab === "watch"} onPress={() => void switchTab("watch")} />
+          <Pill title="Your broadcast" active={tab === "broadcast"} onPress={() => void switchTab("broadcast")} />
+        </View>
+        <IconButton icon={RefreshCw} label="Refresh live feeds" disabled={loading || !!busy} onPress={() => void refresh()} />
       </View>
       <View style={{ flexDirection: "row", gap: 8, maxWidth: 360 }}>
         {[
@@ -561,9 +534,6 @@ export function LiveScreen({
       {!!transport && <Text style={styles.small}>{transport}</Text>}
       {tab === "watch" ? (
         <>
-          <Text style={styles.body}>
-            Live moments from the Ziipa community.
-          </Text>
           {watching && (
             <View style={[styles.panel, desktop && workspace.panel]}>
               <Text style={styles.heading}>{watching.title}</Text>
@@ -574,7 +544,7 @@ export function LiveScreen({
                 <LiveViewer key={watching.id} url={watchedUrl} />
               ) : (
                 <Text style={styles.body}>
-                  Checking current playback availability…
+                  Checking playback…
                 </Text>
               )}
               <Action
@@ -613,20 +583,10 @@ export function LiveScreen({
               </View>
             ))
           )}
-          <Action
-            title="Refresh live feeds"
-            icon={RefreshCw}
-            secondary
-            busy={loading}
-            onPress={() => void refresh()}
-          />
         </>
       ) : guest || !session ? (
         <View style={[styles.panel, desktop && workspace.panel]}>
           <Text style={styles.heading}>Sign in to broadcast</Text>
-          <Text style={styles.body}>
-            Use your Ziipa account to prepare and start a public broadcast.
-          </Text>
           <Action
             title="Sign in or register"
             onPress={() => navigation.navigate("Login")}
@@ -639,14 +599,8 @@ export function LiveScreen({
               <HelpLabel
                 label="Broadcasting unavailable"
                 style={styles.heading}
-                help={
-                  config.detail ||
-                  "Broadcasting must be available before you can prepare a live session. Your camera and microphone stay off until you choose to start."
-                }
+                help="Refresh to check service availability. Camera and microphone stay off until you start a broadcast."
               />
-              <Text style={styles.small}>
-                Try refreshing the status. Your camera and microphone are off.
-              </Text>
             </View>
           )}
           {!selected ? (
@@ -694,17 +648,11 @@ export function LiveScreen({
                   {record && <Check size={18} color="white" />}
                 </View>
                 <Text style={[styles.body, { flex: 1 }]}>
-                  Record this broadcast. I have permission to record its
-                  participants, music and media and consent to importing the
-                  recording as a private Ziipa draft.
+                  Record as a private draft. I have permission to record.
                 </Text>
               </Pressable>
-              <Text style={styles.small}>
-                Recording is {record ? "on" : "off"}. Preparing keeps your
-                camera off and sends no media. The streaming service may retain
-                its own recording. Imported recordings and clips stay private
-                until you review and publish them.
-              </Text>
+              <HelpLabel label={record ? "Recording on" : "Recording off"}
+                help="Confirm rights for participants, music and media before recording. Preparing sends no media. Your provider may retain a recording. Imports stay private until published." />
               <Action
                 title={
                   createRequest.current

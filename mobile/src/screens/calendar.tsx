@@ -559,7 +559,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
             </View>
             <IconButton
               icon={List}
-              label={`${agendaOpen ? "Hide" : "Show"} agenda, ${events.length} events`}
+              label={`${agendaOpen ? "Hide" : "Show"} agenda, ${events.length} ${events.length === 1 ? "event" : "events"}`}
               active={agendaOpen}
               onPress={() => setAgendaOpen((value) => !value)}
             />
