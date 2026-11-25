@@ -45,6 +45,7 @@ LAUNCH_ACCEPTANCE_NOT_TESTED = [
     "new-account signup, verification, password recovery and account deletion",
     "authenticated provider configuration and OAuth permissions",
     "private upload, edited-video export and cross-network publishing",
+    "Remix rendering, source permissions and attribution in published creations",
     "live ingest, playback, stop, recording import and clip rendering",
     "live payments and seller payouts; sandbox checkout is not acceptance",
     "contract bytecode, wallet signing and actual mint execution",
@@ -182,11 +183,12 @@ def validate(kind, status, content_type, body):
         if kind == "launch_health":
             renderer = value.get("renderer")
             renderer = renderer if isinstance(renderer, dict) else {}
+            capabilities = ("enabled", "worker_ready", "can_render", "can_remix")
             facts.update({"renderer_" + field: renderer.get(field) is True
-                          for field in ("enabled", "worker_ready", "can_render")})
+                          for field in capabilities})
             ok = ok and facts["environment"] == "production" and all(
-                facts["renderer_" + field] for field in ("enabled", "worker_ready", "can_render"))
-            return ok, "Production dependencies and renderer heartbeat checked; real export still unverified", facts
+                facts["renderer_" + field] for field in capabilities)
+            return ok, "Production and worker capabilities checked. Actual render and Remix flows remain unverified", facts
         return ok, "Database, session storage, media and email configuration checked", facts
     if kind == "signup":
         facts = {"signup_unpaused": value.get("signup_paused") is False,

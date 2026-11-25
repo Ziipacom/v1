@@ -1,4 +1,9 @@
-"""Dedicated serial worker; queue metadata is durable, Redis wake hints are not."""
+"""Dedicated serial v4 worker for ordinary edits and permission-bound Remix.
+
+Ordinary edit snapshots remain protocol three. Remix claims require an isolated
+v4 heartbeat: drain older workers before enabling schema-four jobs. Queue
+metadata is durable; Redis wake hints are not.
+"""
 import argparse
 import signal
 import threading

@@ -37,6 +37,7 @@ import { Action, Cover, Field, Notice } from "../components/ui";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { ReelMedia } from "../components/reel-media";
 import { PhotoSteps } from "../components/photo-steps";
+import { RemixAttribution, RemixPanel } from "../components/remix-panel";
 import { useDevicePreferences } from "../components/device-preferences";
 import { inCreativeWorld, pageAtOffset } from "../lib/domain";
 import { creatorProfileParams } from "../lib/profile-collections";
@@ -111,7 +112,10 @@ export function WatchScreen({
     items.findIndex((i) => i.id === route.params?.itemId),
   );
   const [index, setIndex] = useState(start);
-  const [photoSelection, setPhotoSelection] = useState({ postId: "", index: 0 });
+  const [photoSelection, setPhotoSelection] = useState({
+    postId: "",
+    index: 0,
+  });
   const [height, setHeight] = useState(0);
   const list = useRef<FlatList<Item>>(null);
   const [paused, setPaused] = useState(!autoplay);
@@ -121,7 +125,9 @@ export function WatchScreen({
     () => setMuted(devicePreferences.startMuted),
     [devicePreferences.startMuted],
   );
-  const [panel, setPanel] = useState<"comments" | "more" | null>(null);
+  const [panel, setPanel] = useState<"comments" | "more" | "remix" | null>(
+    null,
+  );
   const [body, setBody] = useState("");
   const [comments, setComments] = useState<Comment[]>([]);
   const [sampleComments, setSampleComments] = useState<
@@ -130,8 +136,11 @@ export function WatchScreen({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const item = items[index];
-  const photoIndex = photoSelection.postId === item?.id &&
-    photoSelection.index <= (item?.photo_ids?.length || 0) ? photoSelection.index : 0;
+  const photoIndex =
+    photoSelection.postId === item?.id &&
+    photoSelection.index <= (item?.photo_ids?.length || 0)
+      ? photoSelection.index
+      : 0;
   const selectedPhotoId = item?.photo_ids?.[photoIndex - 1];
   const openCreator = (post: Item) => {
     const params = creatorProfileParams(post);
@@ -269,9 +278,14 @@ export function WatchScreen({
               aria-hidden={i !== index}
             >
               <ReelMedia
-                item={i === index && selectedPhotoId
-                  ? { ...post, cover: `/api/creator/media/${selectedPhotoId}` }
-                  : post}
+                item={
+                  i === index && selectedPhotoId
+                    ? {
+                        ...post,
+                        cover: `/api/creator/media/${selectedPhotoId}`,
+                      }
+                    : post
+                }
                 active={i === index}
                 paused={paused || !!panel}
                 muted={muted}
@@ -327,7 +341,9 @@ export function WatchScreen({
                   <PhotoSteps
                     index={photoIndex}
                     count={(post.photo_ids?.length || 0) + 1}
-                    onChange={(next) => setPhotoSelection({ postId: post.id, index: next })}
+                    onChange={(next) =>
+                      setPhotoSelection({ postId: post.id, index: next })
+                    }
                   />
                 )}
                 <Pressable
@@ -380,6 +396,15 @@ export function WatchScreen({
                 >
                   {post.tags.map((t) => `#${t}`).join("  ")}
                 </Text>
+                {i === index && (
+                  <RemixAttribution
+                    item={post}
+                    onDark
+                    onViewItem={(id) =>
+                      navigation.navigate("Watch", { itemId: id })
+                    }
+                  />
+                )}
                 <View
                   style={{ flexDirection: "row", alignItems: "center", gap: 7 }}
                 >
@@ -529,7 +554,7 @@ export function WatchScreen({
             label="Create a remix"
             icon={Plus}
             active
-            onPress={() => navigation.navigate("Composer", { remix: item })}
+            onPress={() => setPanel("remix")}
           />
         </View>
       )}
@@ -623,30 +648,32 @@ export function WatchScreen({
         }}
         onInbox={() => navigation.navigate("Utility", { kind: "inbox" })}
       />
-      {panel && item && (
+      {panel && panel !== "remix" && item && (
         <Sheet
           title={panel === "comments" ? "The conversation" : "Make it your own"}
           onClose={() => setPanel(null)}
-          footer={panel === "comments" ? (
-            <View style={{ gap: 8 }}>
-              {!!error && <Notice text={error} error />}
-              <Field
-                label="Add a comment"
-                value={body}
-                onChangeText={setBody}
-                maxLength={1000}
-                multiline
-                placeholder="Share a little good energy…"
-                style={{ minHeight: 48, maxHeight: 66, paddingVertical: 9 }}
-              />
-              <Action
-                title={guest ? "Add sample comment" : "Post comment"}
-                onPress={() => void comment()}
-                disabled={!body.trim()}
-                busy={busy}
-              />
-            </View>
-          ) : undefined}
+          footer={
+            panel === "comments" ? (
+              <View style={{ gap: 8 }}>
+                {!!error && <Notice text={error} error />}
+                <Field
+                  label="Add a comment"
+                  value={body}
+                  onChangeText={setBody}
+                  maxLength={1000}
+                  multiline
+                  placeholder="Share a little good energy…"
+                  style={{ minHeight: 48, maxHeight: 66, paddingVertical: 9 }}
+                />
+                <Action
+                  title={guest ? "Add sample comment" : "Post comment"}
+                  onPress={() => void comment()}
+                  disabled={!body.trim()}
+                  busy={busy}
+                />
+              </View>
+            ) : undefined
+          }
         >
           {panel === "comments" ? (
             <>
@@ -676,8 +703,7 @@ export function WatchScreen({
                 title="Remix this idea"
                 icon={Scissors}
                 onPress={() => {
-                  setPanel(null);
-                  navigation.navigate("Composer", { remix: item });
+                  setPanel("remix");
                 }}
               />
               <Action
@@ -721,6 +747,24 @@ export function WatchScreen({
           {panel !== "comments" && !!error && <Notice text={error} error />}
         </Sheet>
       )}
+      {panel === "remix" && item && (
+        <RemixPanel
+          item={item}
+          onClose={() => setPanel(null)}
+          onSignIn={() => {
+            setPanel(null);
+            navigation.navigate("Login");
+          }}
+          onOpenDraft={(draft) => {
+            setPanel(null);
+            navigation.navigate("Composer", { item: draft });
+          }}
+          onViewItem={(id) => {
+            setPanel(null);
+            navigation.navigate("Watch", { itemId: id });
+          }}
+        />
+      )}
     </View>
   );
   return desktop ? (
@@ -751,19 +795,25 @@ function CreatorPostAvatar({ item }: { item: Item }) {
     useCallback(() => {
       if (guest || own || !creatorId || !token) return;
       let active = true;
-      void api<{ avatar_url: string | null }>(`/api/creator/profiles/${creatorId}/avatar`)
+      void api<{ avatar_url: string | null }>(
+        `/api/creator/profiles/${creatorId}/avatar`,
+      )
         .then(({ avatar_url }) => {
           if (active) setRemote({ identity, path: avatar_url });
         })
         .catch(() => {
           if (active) setRemote({ identity, path: null });
         });
-      return () => { active = false; };
+      return () => {
+        active = false;
+      };
     }, [api, creatorId, guest, identity, own, token]),
   );
   const avatarPath = own
     ? data.profile?.avatar_url
-    : remote?.identity === identity ? remote.path : null;
+    : remote?.identity === identity
+      ? remote.path
+      : null;
   const source = useProfileImageSource(avatarPath, token);
   const imageIdentity = useMemo(() => ({}), [identity, remote, source]);
   const currentImage = useRef(imageIdentity);
@@ -819,7 +869,9 @@ function DesktopWatchLayout({
       style={styles.screen}
       onLayout={(event) => setArea(event.nativeEvent.layout)}
     >
-      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
         style={{ flex: 1 }}
         contentContainerStyle={desktopWatch.page}
         showsVerticalScrollIndicator={false}

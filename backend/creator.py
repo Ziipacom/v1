@@ -512,6 +512,9 @@ def assert_visible(item_id, session, user):
     prefs = prefs_for(session, user)
     if not row or row.owner_id in prefs['blocked_user_ids'] or (row.owner_id != user.id and (row.visibility != 'published' or not account_allows_view(session, row.owner_id, user.id))):
         raise HTTPException(404, 'Post not found')
+    from remix_services import remix_is_visible
+    if not remix_is_visible(session, row, user.id):
+        raise HTTPException(404, 'Post not found')
 
 
 def account_allows_view(session, owner_id: int, viewer_id: int | None = None) -> bool:
@@ -551,6 +554,8 @@ def bootstrap(user: User = Depends(current_user), session: Session = Depends(db)
     prefs = prefs_for(session, user)
     published = session.scalars(select(CreatorItem).where(CreatorItem.visibility == 'published').order_by(CreatorItem.created_at.desc()).limit(200)).all()
     published = [i for i in published if i.owner_id == user.id or account_is_discoverable(session, i.owner_id)]
+    from remix_services import remix_is_visible
+    published = [i for i in published if remix_is_visible(session, i, user.id)]
     items = [serialize_item(i, session) for i in published] + (CATALOG if settings.enable_demo_catalog and prefs['show_demos'] else [])
     items = [i for i in items if i.get('creator_id') not in prefs['blocked_user_ids'] and i['creator'] not in prefs['blocked_creators'] and not any(w.lower() in (i['title'] + ' ' + i['description'] + ' ' + ' '.join(i['tags'])).lower() for w in prefs['muted_words'] if w.strip())]
     own = session.scalars(select(CreatorItem).where(CreatorItem.owner_id == user.id).order_by(CreatorItem.created_at.desc())).all()
@@ -578,6 +583,8 @@ def save_item(data, session, user, row=None):
         except ValidationError as exc:
             issue = exc.errors(include_url=False, include_context=False, include_input=False)[0]
             raise HTTPException(422, f'The saved draft and these changes are invalid: {issue["msg"]}') from exc
+    from remix_services import guard_item_update
+    guard_item_update(session, user, row, data)
     media = None
     if data.media_id:
         media = session.get(CreatorMedia, data.media_id)
@@ -607,7 +614,7 @@ def save_item(data, session, user, row=None):
             raise HTTPException(409, 'Broadcasting and minting are not connected; save this as a draft.')
         if not data.media_id:
             raise HTTPException(422, 'Upload media before publishing.')
-    if data.remix_of:
+    if data.remix_of and (row is None or data.remix_of != row.data.get('remix_of')):
         assert_visible(data.remix_of, session, user)
     if row is None:
         row = CreatorItem(owner_id=user.id)
@@ -623,6 +630,7 @@ def save_item(data, session, user, row=None):
 
 @router.post('/items', status_code=201, dependencies=[Depends(guard)])
 def create_item(data: ItemInput, user: User = Depends(current_user), session: Session = Depends(db)):
+    lock_admission(session, user.id)
     return save_item(data, session, user)
 
 
@@ -630,6 +638,7 @@ def create_item(data: ItemInput, user: User = Depends(current_user), session: Se
 def edit_item(item_id: str, data: ItemInput, user: User = Depends(current_user), session: Session = Depends(db)):
     # Serialize updates before merging so simultaneous clients cannot overwrite
     # one another's omitted fields with an earlier snapshot of the JSON record.
+    lock_admission(session, user.id)
     row = session.scalar(select(CreatorItem).where(CreatorItem.id == item_id,
                          CreatorItem.owner_id == user.id).with_for_update())
     if not row:
@@ -854,11 +863,19 @@ def read_media(media_id: str, user: User = Depends(current_user), session: Sessi
         if row.content_type.startswith('image/'):
             sources.extend(CreatorItem.data['photo_ids'][index].as_string() == media_id
                            for index in range(MAX_ADDITIONAL_PHOTOS))
-        shared = session.scalar(select(CreatorItem.id).where(
+        shared = session.scalars(select(CreatorItem).where(
             CreatorItem.owner_id == row.owner_id, CreatorItem.visibility == 'published',
             or_(*sources),
-        ).limit(1))
-        if not shared:
+        ).limit(100)).all()
+        from remix_services import remix_is_visible
+        from admin_services import enforce_content_visible
+        def permitted(item):
+            try:
+                enforce_content_visible(session, item)
+                return remix_is_visible(session, item, user.id)
+            except HTTPException:
+                return False
+        if not any(permitted(item) for item in shared):
             raise HTTPException(404, 'Media not found')
         if not account_allows_view(session, row.owner_id, user.id):
             raise HTTPException(404, 'Media not found')

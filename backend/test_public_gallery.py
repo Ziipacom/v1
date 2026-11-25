@@ -86,6 +86,43 @@ def test_owner_defaults_opt_in_normalization_and_public_origin(context):
     assert 'no-store' in result.headers['cache-control']
 
 
+def test_member_remix_is_unavailable_in_anonymous_gallery_and_external_export(context):
+    from remix_distribution import require_external_media_permission
+    from remix_services import RemixProject, assert_external_export_allowed
+    from render_services import RenderJob
+
+    ctx = context
+    original, source = creation(ctx)
+    derivative, output = creation(ctx)
+    job = RenderJob(owner_id=ctx.owner.id, item_id=derivative.id, input_fingerprint='1' * 64,
+                    snapshot={'schema': 4, 'remix': {'mode': 'stitch'}},
+                    status='ready', output_media_id=output.id)
+    ctx.session.add(job)
+    ctx.session.flush()
+    project = RemixProject(item_id=derivative.id, owner_id=ctx.owner.id, request_id=str(uuid.uuid4()),
+                           request_hash='2' * 64, parent_id=original.id, root_id=original.id,
+                           source_owner_id=ctx.owner.id, policy_revision=1,
+                           source_spec={'media': {'id': source.id}}, response_spec={}, mode='stitch',
+                           source_start_ms=0, source_seconds_ms=1000, job_id=job.id,
+                           result_media_id=output.id)
+    ctx.session.add(project)
+    ctx.session.commit()
+    assert reserve(ctx).status_code == 200
+    gallery_url = '/api/public/galleries/owner-gallery'
+    assert [row['id'] for row in ctx.client.get(gallery_url).json()['items']] == [original.id]
+    assert ctx.client.get(f'{gallery_url}/items/{derivative.id}').status_code == 404
+    assert ctx.client.get(f'{gallery_url}/items/{derivative.id}/media').status_code == 404
+    with pytest.raises(HTTPException, match='External export'):
+        assert_external_export_allowed(ctx.session, derivative.id)
+
+    ctx.session.delete(project)
+    ctx.session.delete(derivative)
+    ctx.session.commit()
+    with pytest.raises(HTTPException, match='inside Ziipa'):
+        require_external_media_permission(ctx.session, output.id)
+    require_external_media_permission(ctx.session, source.id)
+
+
 @pytest.mark.parametrize('slug', ['aa', 'a' * 41, '-invalid', 'invalid-', 'double--hyphen', 'a/b', 'café', 'api', 'ZIIPA'])
 def test_invalid_or_reserved_slugs_are_not_claimed(context, slug):
     assert reserve(context, slug).status_code == 422

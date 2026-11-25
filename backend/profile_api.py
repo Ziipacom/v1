@@ -39,6 +39,9 @@ def visible_owner(session, viewer, owner_id):
 def visible_item(session, viewer, row):
     if not row or row.visibility != 'published':
         return False
+    from remix_services import remix_is_visible
+    if not remix_is_visible(session, row, viewer.id):
+        return False
     from admin_services import AdminContentState
     moderation = session.get(AdminContentState, row.id, populate_existing=True)
     if moderation and moderation.hidden:

@@ -151,11 +151,12 @@ def test_launch_signup_requires_explicit_open_flags_without_claiming_registratio
 
 
 @pytest.mark.parametrize('environment,renderer,expected', [
-    ('production', {'enabled': True, 'worker_ready': True, 'can_render': True}, True),
-    ('production', {'enabled': True, 'worker_ready': False, 'can_render': False}, False),
-    ('production', {'enabled': True, 'worker_ready': True, 'can_render': 'true'}, False),
+    ('production', {'enabled': True, 'worker_ready': True, 'can_render': True, 'can_remix': True}, True),
+    ('production', {'enabled': True, 'worker_ready': True, 'can_render': True}, False),
+    ('production', {'enabled': True, 'worker_ready': False, 'can_render': False, 'can_remix': False}, False),
+    ('production', {'enabled': True, 'worker_ready': True, 'can_render': 'true', 'can_remix': True}, False),
     ('production', None, False),
-    ('development', {'enabled': True, 'worker_ready': True, 'can_render': True}, False),
+    ('development', {'enabled': True, 'worker_ready': True, 'can_render': True, 'can_remix': True}, False),
 ])
 def test_launch_health_requires_real_worker_heartbeat_beyond_default_health(environment, renderer, expected):
     value = {'database': 'connected', 'redis': 'connected', 'media_storage': 'r2',
@@ -163,8 +164,8 @@ def test_launch_health_requires_real_worker_heartbeat_beyond_default_health(envi
     assert json_check('health', value)[0]  # Preserve existing smoke behavior.
     passed, detail, facts = json_check('launch_health', value)
     assert passed is expected
-    assert 'real export still unverified' in detail
-    assert isinstance(facts['renderer_worker_ready'], bool)
+    assert 'flows remain unverified' in detail
+    assert facts['renderer_can_remix'] is ((renderer or {}).get('can_remix') is True)
 
 
 def policy_html(kind, extra='', heading=None):

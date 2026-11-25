@@ -16,7 +16,8 @@ import render_migrate as migration
 
 def test_store_migration_follows_immutable_deployed_live_revision():
     scripts = ScriptDirectory.from_config(migration.migration_config())
-    assert scripts.get_heads() == ['20261125_0019']
+    assert scripts.get_heads() == ['20261125_0020']
+    assert scripts.get_revision('20261125_0020').down_revision == '20261125_0019'
     assert scripts.get_revision('20261123_0018').down_revision == '20261030_0016'
     assert scripts.get_revision('20261125_0019').down_revision == '20261123_0018'
 

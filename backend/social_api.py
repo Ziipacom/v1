@@ -213,9 +213,12 @@ def hub(user: User = Depends(current_user), session: Session = Depends(db)):
 
 @router.post('/media/{media_id}/export', dependencies=[Depends(guard)])
 def export_owned_media(media_id: str, user: User = Depends(current_user), session: Session = Depends(db)):
+    from remix_distribution import require_external_media_permission
+
     media = session.get(CreatorMedia, media_id)
     if not media or media.owner_id != user.id:
         raise HTTPException(404, 'Your media file was not found.')
+    require_external_media_permission(session, media.id)
     backend = storage()
     if isinstance(backend, LocalStorage):
         url = f'/api/creator/media/{media.id}'

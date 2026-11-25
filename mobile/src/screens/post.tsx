@@ -23,6 +23,7 @@ import {
 } from "lucide-react-native";
 import { Action, Field, IconButton, Notice, Pill } from "../components/ui";
 import { MediaPlayer } from "../components/player";
+import { RemixAttribution, RemixPanel } from "../components/remix-panel";
 import { useZiipa } from "../provider";
 import { color, font, styles } from "../theme";
 import type { Comment, RootStack } from "../lib/types";
@@ -55,6 +56,7 @@ export function PostScreen({
   const [commentId, setCommentId] = useState<string | undefined>();
   const [reason, setReason] = useState("harassment");
   const [details, setDetails] = useState("");
+  const [remixOpen, setRemixOpen] = useState(false);
   useEffect(() => {
     let live = true;
     if (session)
@@ -156,7 +158,7 @@ export function PostScreen({
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.page}
       >
-        <MediaPlayer item={item} />
+        {!remixOpen && <MediaPlayer item={item} />}
         <View style={{ gap: 11 }}>
           <Text style={styles.eyebrow}>
             {item.demo
@@ -171,6 +173,10 @@ export function PostScreen({
             {item.city ? ` · ${item.city}` : ""}
           </Text>
           <Text style={styles.body}>{item.description}</Text>
+          <RemixAttribution
+            item={item}
+            onViewItem={(id) => navigation.navigate("Watch", { itemId: id })}
+          />
           <View style={[styles.row, { flexWrap: "wrap" }]}>
             {item.tags.map((t) => (
               <Text
@@ -244,15 +250,11 @@ export function PostScreen({
           secondary
           title="Remix this idea"
           icon={Scissors}
-          onPress={() =>
-            requireAccount(() =>
-              navigation.navigate("Composer", { remix: item }),
-            )
-          }
+          onPress={() => requireAccount(() => setRemixOpen(true))}
         />
         <Text style={styles.small}>
-          A remix starts your own draft with attribution. Only upload media you
-          have permission to use.
+          Choose a creator-permitted mode and your own response video. Remixes
+          retain source credits and stay private until you publish inside Ziipa.
         </Text>
         {!!error && <Notice error text={error} />}
         <View style={styles.separator} />
@@ -316,6 +318,24 @@ export function PostScreen({
           </View>
         ))}
       </ScrollView>
+      {remixOpen && (
+        <RemixPanel
+          item={item}
+          onClose={() => setRemixOpen(false)}
+          onSignIn={() => {
+            setRemixOpen(false);
+            navigation.navigate("Login");
+          }}
+          onOpenDraft={(draft) => {
+            setRemixOpen(false);
+            navigation.navigate("Composer", { item: draft });
+          }}
+          onViewItem={(id) => {
+            setRemixOpen(false);
+            navigation.navigate("Watch", { itemId: id });
+          }}
+        />
+      )}
       <Modal
         visible={reporting}
         animationType="slide"

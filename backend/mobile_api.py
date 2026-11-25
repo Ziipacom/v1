@@ -231,6 +231,8 @@ async def delete_account(data: DeleteAccount, user: User = Depends(current_user)
     await delete_live_account(user.id, session)
     await delete_publishing_account(user.id, session)
     from render_services import delete_render_jobs
+    from remix_services import delete_remix_data
+    delete_remix_data(session, user.id)
     delete_render_jobs(user.id, session)
     # Durable workflows and proposals must stop before the account/media vanish.
     from media_workflows import delete_workflows_data

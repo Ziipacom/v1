@@ -223,7 +223,10 @@ def metadata(data: MetadataInput, user: User = Depends(current_user), session: S
         raise HTTPException(422, 'Metadata traits are too long')
     media_type = 'image'
     if data.media_id:
+        from remix_distribution import require_external_media_permission
+
         media = owned(session, creator.CreatorMedia, data.media_id, user)
+        require_external_media_permission(session, media.id)
         from storage_services import LocalStorage, storage
         provider = storage()
         if isinstance(provider, LocalStorage):

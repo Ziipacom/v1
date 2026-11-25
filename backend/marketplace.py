@@ -181,6 +181,8 @@ def save_store(data: StoreInput, user: User = Depends(current_user), session: Se
 
 @router.post('/listings', dependencies=[Depends(guard)])
 def save_listing(data: ListingInput, user: User = Depends(current_user), session: Session = Depends(db)):
+    from remix_distribution import require_external_media_permission
+
     lock_owner(session, user.id)
     row = session.get(StoreListing, str(data.id)) if data.id else None
     if row and row.owner_id != user.id:
@@ -199,6 +201,7 @@ def save_listing(data: ListingInput, user: User = Depends(current_user), session
         photo(session, user.id, value)
     for value in previews:
         preview_media(session, user.id, value)
+        require_external_media_permission(session, value)
     if data.status == 'published':
         store = session.get(Storefront, user.id)
         if not store or not store.data.get('enabled') or not account_is_discoverable(session, user.id):

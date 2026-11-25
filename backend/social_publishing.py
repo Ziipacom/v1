@@ -599,11 +599,13 @@ def _enforce_actor(session, owner_id, *, mutation=False):
 
 def _check_job_source(session, job):
     from admin_services import enforce_content_visible
+    from remix_services import assert_external_export_allowed
     item = session.scalar(select(CreatorItem).where(CreatorItem.id == job.item_id,
         CreatorItem.owner_id == job.owner_id).execution_options(populate_existing=True))
     if not item:
         raise HTTPException(409, 'The provider source is no longer available. Existing receipts are retained.')
     enforce_content_visible(session, item)
+    assert_external_export_allowed(session, item.id)
     if item.visibility != 'published':
         from creation_campaigns import CampaignDelivery, validate_job_campaign_authority
         delivery = session.scalar(select(CampaignDelivery.id).where(CampaignDelivery.owner_id == job.owner_id,
@@ -724,11 +726,13 @@ class TikTokReviewInput(BaseModel):
 
 def reviewed_tiktok_source(data, owner_id, session):
     from admin_services import enforce_content_visible
+    from remix_services import assert_external_export_allowed
     _enforce_actor(session, owner_id)
     item = session.get(CreatorItem, str(data.item_id), populate_existing=True)
     if not item or item.owner_id != owner_id or item.visibility != 'published':
         raise HTTPException(404, 'Your published source creation was not found.')
     enforce_content_visible(session, item)
+    assert_external_export_allowed(session, item.id)
     if item.data.get('media_id') != str(data.expected_media_id):
         raise HTTPException(409, 'The source changed. Review the current file before publishing.')
     if data.render_id:
@@ -1161,7 +1165,9 @@ async def publish(data: PublishInput, user: User = Depends(current_user), sessio
     if not item:
         raise HTTPException(404, 'Your creation was not found.')
     from admin_services import enforce_content_visible
+    from remix_services import assert_external_export_allowed
     enforce_content_visible(session, item)
+    assert_external_export_allowed(session, item.id)
     if data.campaign_id is not None:
         # Draft renditions are usable only by the exact owner-reviewed campaign;
         # incoming campaign fields alone never grant access or publication.
@@ -1255,6 +1261,7 @@ async def publish(data: PublishInput, user: User = Depends(current_user), sessio
             if not current_item or current_item.visibility != 'published' and data.campaign_id is None:
                 raise HTTPException(409, 'The published source creation was removed or made private before delivery.')
             enforce_content_visible(session, current_item)
+            assert_external_export_allowed(session, current_item.id)
             if current_item.data.get('media_id') != str(data.expected_media_id):
                 raise HTTPException(409, 'The source file changed after your approval. Refresh and approve the current file.')
             if not data.render_id:

@@ -226,9 +226,12 @@ def owned(session, owner_id, campaign_id, lock=False):
 
 
 def source(session, row):
+    from remix_services import assert_external_export_allowed
+
     item = session.scalar(select(CreatorItem).where(CreatorItem.id == row.item_id, CreatorItem.owner_id == row.owner_id).execution_options(populate_existing=True))
     if not item:
         raise HTTPException(404, 'Your saved video was removed.')
+    assert_external_export_allowed(session, item.id)
     if item.visibility not in ('draft', 'published') or item.data.get('category', 'video') not in ('video', 'music', 'games'):
         raise HTTPException(409, 'Campaigns accept saved video, music and gaming posts, never hidden posts, broadcasts, products or minting requests.')
     fingerprint = input_fingerprint(session, item)

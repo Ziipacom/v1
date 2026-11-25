@@ -188,11 +188,14 @@ def available_gallery(slug, session):
 
 
 def visible_items(owner_id):
+    from remix_distribution import remix_item_exists
+
     return (select(CreatorItem, CreatorMedia)
         .join(CreatorMedia, and_(CreatorMedia.id == CreatorItem.data['media_id'].as_string(), CreatorMedia.owner_id == owner_id))
         .outerjoin(AdminContentState, AdminContentState.item_id == CreatorItem.id)
         .where(CreatorItem.owner_id == owner_id, CreatorItem.visibility == 'published',
             or_(AdminContentState.item_id.is_(None), AdminContentState.hidden.is_(False)),
+            ~remix_item_exists(CreatorItem.id),
             CreatorMedia.content_type.in_(ALLOWED_MEDIA), CreatorMedia.size > 0, CreatorMedia.size <= MAX_MEDIA_BYTES))
 
 

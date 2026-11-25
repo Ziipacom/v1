@@ -84,7 +84,9 @@ def coordination_scope():
 
 
 EDIT_PROTOCOL = 3
-HEARTBEAT_KEY = 'ziipa:render:worker:v3:' + coordination_scope()
+WORKER_PROTOCOL = 4
+HEARTBEAT_KEY = 'ziipa:render:worker:v4:' + coordination_scope()
+ORDINARY_V3_HEARTBEAT_KEY = 'ziipa:render:worker:v3:' + coordination_scope()
 WAKE_KEY = 'ziipa:render:queue-revision:v3:' + coordination_scope()
 LEGACY_HEARTBEAT_KEYS = ('ziipa:render:worker:' + coordination_scope(),
                          'ziipa:render:worker:v2:' + coordination_scope())
@@ -118,7 +120,7 @@ class RenderJob(Base):
     snapshot: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(20), default='queued', index=True)
     detail: Mapped[str] = mapped_column(String(400), default='Waiting for the render worker.')
-    output_media_id: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid.uuid4()))
+    output_media_id: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid.uuid4()), index=True)
     output_sha256: Mapped[str] = mapped_column(String(64), default='')
     source_sha256: Mapped[str] = mapped_column(String(64), default='')
     duration: Mapped[float | None] = mapped_column(nullable=True)
@@ -149,14 +151,22 @@ def readiness():
         requirements.append('Install FFmpeg, ffprobe and a Unicode font')
     try:
         incompatible_worker_active = any(cache.get(key) for key in LEGACY_HEARTBEAT_KEYS)
-        worker_ready = bool(cache.get(HEARTBEAT_KEY)) and not incompatible_worker_active
+        current_worker = bool(cache.get(HEARTBEAT_KEY))
+        ordinary_worker = bool(cache.get(ORDINARY_V3_HEARTBEAT_KEY))
+        worker_ready = (current_worker or ordinary_worker) and not incompatible_worker_active
+        remix_worker_ready = current_worker and not ordinary_worker and not incompatible_worker_active
     except Exception:
         worker_ready, incompatible_worker_active = False, False
+        remix_worker_ready = False
     if incompatible_worker_active:
         requirements.append('Stop and drain the older render worker before queuing protocol-three edits')
     return {'configured': not requirements, 'worker_ready': worker_ready,
             'incompatible_worker_active': bool(incompatible_worker_active),
             'edit_protocol': EDIT_PROTOCOL,
+            'worker_protocol': WORKER_PROTOCOL,
+            'remix_protocol': 1, 'remix_modes': ['stitch', 'split_screen', 'use_sound'],
+            'remix_worker_ready': remix_worker_ready,
+            'can_remix': not requirements and remix_worker_ready,
             'can_render': not requirements and worker_ready, 'requirements': requirements,
             'max_input_bytes': MAX_INPUT_BYTES, 'max_output_bytes': MAX_OUTPUT_BYTES,
             'max_duration_seconds': MAX_DURATION, 'max_output_long_edge': 1280,
@@ -228,6 +238,9 @@ def input_fingerprint(session, item: CreatorItem, rendition: Rendition = 'origin
 
 
 def current_job_fingerprint(session, item, job):
+    if job.snapshot.get('remix') is not None:
+        from remix_services import current_source_fingerprint
+        return current_source_fingerprint(session, job)
     return input_fingerprint(session, item, snapshot_rendition(job.snapshot)['name'])
 
 
@@ -239,6 +252,10 @@ def resolve_rendered_media(session, owner_id: int, item: CreatorItem, render_id:
     job = session.get(RenderJob, render_id)
     if item.owner_id != owner_id or not job or job.owner_id != owner_id or job.item_id != item.id:
         raise HTTPException(404, 'Your render was not found.')
+    from remix_services import assert_external_export_allowed
+    assert_external_export_allowed(session, item.id)
+    if job.snapshot.get('schema') == 4:
+        raise HTTPException(409, 'This Remix is licensed for reuse inside Ziipa only.')
     if job.status != 'ready':
         raise HTTPException(409, 'The rendered video is not ready.')
     if job.input_fingerprint != current_job_fingerprint(session, item, job):
@@ -443,6 +460,10 @@ def _still_source(snapshot, work):
 
 def validate_snapshot_version(snapshot):
     version = snapshot.get('schema')
+    if version == 4 or snapshot.get('remix') is not None:
+        from remix_media import validate_remix_snapshot
+        validate_remix_snapshot(snapshot)
+        return
     if type(version) is not int or version not in (1, 2, EDIT_PROTOCOL):
         raise RuntimeError('The render snapshot version is unsupported; save and queue this edit again.')
     edit = snapshot.get('edit')
@@ -459,6 +480,9 @@ def validate_snapshot_version(snapshot):
 def render_files(snapshot: dict, work: Path):
     """Render already materialized source.bin/music.bin in an isolated folder."""
     validate_snapshot_version(snapshot)
+    if snapshot.get('remix') is not None:
+        from remix_media import render_remix
+        return render_remix(snapshot, work)
     ffmpeg, _, font = runtime_paths()
     still_source = snapshot['source']['content_type'] in IMAGE_FORMATS
     duration, streams = _still_source(snapshot, work) if still_source else _probe(work / 'source.bin', snapshot['source']['content_type'])
@@ -639,12 +663,34 @@ def render_files(snapshot: dict, work: Path):
     return output, output_duration
 
 
-def claim_job(session):
+def claim_job(session, *, _invalidated=0):
     now = datetime.now(timezone.utc)
-    job = session.scalar(select(RenderJob).where(or_(RenderJob.status == 'queued',
-        (RenderJob.status == 'processing') & (RenderJob.lease_until < now))).order_by(RenderJob.created_at).with_for_update(skip_locked=True).limit(1))
+    query = select(RenderJob).where(or_(RenderJob.status == 'queued',
+        (RenderJob.status == 'processing') & (RenderJob.lease_until < now)))
+    query = query.order_by(RenderJob.created_at).with_for_update(skip_locked=True).limit(1)
+    job = session.scalar(query)
+    if job and job.snapshot.get('schema') == 4:
+        try:
+            remix_isolated = bool(cache.get(HEARTBEAT_KEY)) and not any(cache.get(key) for key in (*LEGACY_HEARTBEAT_KEYS, ORDINARY_V3_HEARTBEAT_KEY))
+        except Exception:
+            remix_isolated = False
+        if not remix_isolated:
+            # Check the new capability only for Remix candidates: ordinary
+            # claims retain their existing availability even if Redis is down.
+            job = session.scalar(query.where(RenderJob.snapshot['schema'].as_integer() != 4))
     if not job:
         return None
+    if job.snapshot.get('remix') is not None:
+        try:
+            from remix_services import validate_remix_job
+            validate_remix_job(session, job, lock=True)
+        except HTTPException:
+            job.status, job.detail = 'stale', 'Remix permission or source access changed. Review the source again.'
+            job.lease_until, job.updated_at = None, now
+            session.commit()
+            # A revoked head must not strand valid work until the periodic
+            # reconciliation scan. Bound the skip to the active queue limit.
+            return claim_job(session, _invalidated=_invalidated + 1) if _invalidated < 19 else None
     if job.attempts >= 2:
         job.status, job.detail = 'failed', 'The worker was interrupted twice. Save and explicitly retry the render.'
         session.commit()
@@ -690,9 +736,21 @@ def process_job(session_factory, job_id: str, claim: str):
         session.commit()
     try:
         validate_snapshot_version(snapshot)
+        if snapshot.get('remix') is not None:
+            with session_factory() as session:
+                job = session.get(RenderJob, job_id)
+                if not job or job.status != 'processing' or job.claim_token != claim:
+                    return
+                from remix_services import validate_remix_job
+                validate_remix_job(session, job)
         with tempfile.TemporaryDirectory(prefix='render-', dir=root) as temporary:
             work = Path(temporary)
             source_hash = _materialize(owner_id, snapshot['source'], work / 'source.bin')
+            response_hash = source_hash
+            parent_hash = None
+            if snapshot.get('remix') is not None:
+                parent_hash = _materialize(snapshot['remix']['source_owner_id'], snapshot['remix']['source'], work / 'remix-source.bin')
+                source_hash = snapshot_hash({'response_sha256': response_hash, 'source_sha256': parent_hash})
             if snapshot['audio']:
                 _materialize(owner_id, snapshot['audio'], work / 'music.bin')
             output, duration = render_files(snapshot, work)
@@ -702,6 +760,9 @@ def process_job(session_factory, job_id: str, claim: str):
                 job = session.scalar(select(RenderJob).where(RenderJob.id == job_id).with_for_update())
                 if not user or not job or job.status != 'processing' or job.claim_token != claim:
                     return
+                if snapshot.get('remix') is not None:
+                    from remix_services import validate_remix_job, record_remix_provenance
+                    validate_remix_job(session, job, lock=True)
                 item = session.get(CreatorItem, job.item_id)
                 if not item or item.owner_id != owner_id or current_job_fingerprint(session, item, job) != job.input_fingerprint:
                     job.status, job.detail = 'stale', 'Editor settings changed while rendering. Save and render the current version.'
@@ -717,13 +778,16 @@ def process_job(session_factory, job_id: str, claim: str):
                     # This random reserved key can only be a previous crashed
                     # attempt. The user/job locks and lease prevent concurrent
                     # claims; never overwrite a catalogued original or output.
-                    if job.output_media_id in {snapshot['source']['id'], (snapshot['audio'] or {}).get('id')}:
+                    if job.output_media_id in {snapshot['source']['id'], (snapshot['audio'] or {}).get('id'), (snapshot.get('remix') or {}).get('source', {}).get('id')}:
                         raise RuntimeError('The render reservation conflicts with an original.')
                     backend.delete(owner_id, job.output_media_id)
                 _store_output(backend, owner_id, job.output_media_id, output)
                 session.add(CreatorMedia(id=job.output_media_id, owner_id=owner_id, content_type='video/mp4', size=output.stat().st_size))
-                job.status, job.detail = 'ready', 'The saved timeline, visual effect, captions, overlays and selected soundtrack are baked into this private MP4.'
+                job.status, job.detail = 'ready', ('Your private Remix is ready. Review its draft before publishing inside Ziipa.' if parent_hash is not None else
+                    'The saved timeline, visual effect, captions, overlays and selected soundtrack are baked into this private MP4.')
                 job.output_sha256, job.source_sha256, job.duration = digest, source_hash, duration
+                if parent_hash is not None:
+                    record_remix_provenance(session, job, source_sha256=parent_hash, response_sha256=response_hash)
                 _, output_streams = _probe(output, 'video/mp4')
                 output_video = next(s for s in output_streams if s.get('codec_type') == 'video')
                 job.output_width, job.output_height = int(output_video['width']), int(output_video['height'])
@@ -739,7 +803,9 @@ def process_job(session_factory, job_id: str, claim: str):
                 return
             job = session.scalar(select(RenderJob).where(RenderJob.id == job_id).with_for_update())
             if job and job.claim_token == claim and job.status == 'processing':
-                job.status, job.detail = 'failed', (exc.detail if isinstance(exc, MediaAdmissionError) else str(exc) if isinstance(exc, OverlayLayoutError) else
+                from remix_media import RemixMediaError
+                revoked_remix = snapshot.get('remix') is not None and isinstance(exc, HTTPException) and not isinstance(exc, MediaAdmissionError)
+                job.status, job.detail = ('stale' if revoked_remix else 'failed'), (exc.detail if isinstance(exc, MediaAdmissionError) else 'Remix permission or source access changed. Review the source again.' if revoked_remix else str(exc) if isinstance(exc, (OverlayLayoutError, RemixMediaError)) else
                     'The media could not be rendered within the format, duration or resource limits. Check your trim/audio and retry.')
                 job.updated_at, job.lease_until = datetime.now(timezone.utc), None
                 # A failed final storage write may leave this reserved key.

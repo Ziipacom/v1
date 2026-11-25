@@ -36,6 +36,8 @@ def queue_render(data: RenderInput, user: User = Depends(current_user), session:
     item = session.get(CreatorItem, str(data.item_id))
     if not item or item.owner_id != user.id:
         raise HTTPException(404, 'Your saved creation was not found.')
+    from remix_services import assert_external_export_allowed
+    assert_external_export_allowed(session, item.id)
     snapshot = input_snapshot(session, item, data.rendition)
     if snapshot['audio'] and not data.soundtrack_rights_confirmed:
         raise HTTPException(422, 'Confirm that you own or have a license to use the selected soundtrack.')
@@ -103,6 +105,8 @@ def export_render(job_id: uuid.UUID, response: Response, user: User = Depends(cu
     item = session.get(CreatorItem, job.item_id)
     if not item or item.owner_id != user.id:
         raise HTTPException(404, 'Your saved creation was not found.')
+    from remix_services import assert_external_export_allowed
+    assert_external_export_allowed(session, item.id)
     media = resolve_rendered_media(session, user.id, item, str(job_id))
     backend = storage()
     response.headers['Cache-Control'] = 'no-store'

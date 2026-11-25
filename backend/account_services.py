@@ -220,6 +220,7 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
     from rewards_redemption import export_settlement_data
     from admin_services import export_admin_account_data
     from public_gallery import export_gallery
+    from remix_services import export_remix_data
     state = state_for(session, user)
     return {
         'exported_at': datetime.now(timezone.utc).isoformat(),
@@ -247,6 +248,7 @@ def export_account(user: User = Depends(current_user), session: Session = Depend
         'reward_distributions': export_settlement_data(session, user.id),
         'administration': export_admin_account_data(session, user.id),
         'public_gallery': export_gallery(session, user.id),
+        'remixes': export_remix_data(session, user.id),
         'profile_tags': __import__('profile_api').export_profile_tags(session, user.id),
         'ziipa_follows': __import__('profile_follows').export_follows(session, user.id),
         'store': __import__('marketplace').export_store(session, user.id),

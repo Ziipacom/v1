@@ -297,13 +297,14 @@ def health(response: Response):
     services['environment'] = settings.environment
     from render_services import config as renderer_config, readiness
     services['renderer'] = {'enabled': bool(renderer_config.enabled),
-                            'worker_ready': False, 'can_render': False}
+                            'worker_ready': False, 'can_render': False, 'can_remix': False}
     try:
         renderer = readiness()
         # Only report this API's scoped worker heartbeat, never its scope or
         # configuration details. Rendering is optional and cannot fail health.
         services['renderer'].update(worker_ready=bool(renderer['worker_ready']),
-                                    can_render=bool(renderer['can_render']))
+                                    can_render=bool(renderer['can_render']),
+                                    can_remix=renderer.get('can_remix') is True)
     except Exception:
         pass
     if 'unavailable' in services.values():
@@ -414,6 +415,8 @@ from social_read_imports import router as social_read_router
 app.include_router(social_read_router)
 from render_api import router as render_router
 app.include_router(render_router)
+from remix_api import router as remix_router
+app.include_router(remix_router)
 from personal_media import router as personal_media_router
 app.include_router(personal_media_router)
 from media_workflows import router as media_workflows_router

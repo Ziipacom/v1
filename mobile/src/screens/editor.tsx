@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { maxCreationPhotos, pickCreatorMedia } from "../lib/creator-media-picker";
 import { HelpLabel } from "../components/help-label";
+import { RemixProjectStatus } from "../components/remix-panel";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system/legacy";
 import { useIsFocused, usePreventRemove } from "@react-navigation/native";
@@ -1602,6 +1603,27 @@ export function ComposerScreen({
   );
   const inspector = (
     <View style={{ padding: 20, gap: 16 }}>
+      {(saved || existing)?.remix_of && (
+        <RemixProjectStatus
+          item={(saved || existing)!}
+          unsavedKey={unsaved ? `${fingerprint}:${captionDraftPending}` : null}
+          disabled={busy || rechecking || !!pendingSubmission}
+          acquire={() => {
+            if (saveLock.current || recheckLock.current || pendingSubmission) return null;
+            const owner = saveOwner.current, generation = saveGeneration.current;
+            saveLock.current = true;
+            setBusy(true);
+            setPaused(true);
+            return () => {
+              if (saveOwner.current !== owner || saveGeneration.current !== generation) return;
+              saveLock.current = false;
+              setBusy(false);
+            };
+          }}
+          onOpenDraft={(item) => navigation.replace("Composer", savedComposerParams(item))}
+          onViewItem={(itemId) => navigation.navigate("Watch", { itemId })}
+        />
+      )}
       <View style={styles.between}>
         <Text style={styles.eyebrow}>
           STEP {steps.findIndex((step) => step.name === tab) + 1} OF{" "}
