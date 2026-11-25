@@ -88,7 +88,7 @@ function NotificationMessagesContent({ navigation }: { navigation: Navigation })
       : <Text accessibilityRole="header" style={styles.title}>Notifications</Text>}
     <View accessibilityRole="toolbar" accessibilityLabel="Notification tools" style={{ flexDirection: "row", gap: 8 }}>
       <NotificationShortcut title="Refresh" label="Refresh notifications" icon={RefreshCw} busy={loading} disabled={!!markingId || !session || guest} onPress={() => void refresh()} />
-      <NotificationShortcut title="Settings" label="Notification settings" icon={Settings} onPress={() => navigation.navigate("Notifications")} />
+      <NotificationShortcut title="Settings" label="Notification settings" icon={Settings} onPress={() => navigation.navigate("Notifications", {tab: "Preferences"})} />
     </View>
     {!session || guest ? <Notice text="Sign in to see your private Ziipa notification history. No sample messages are shown." /> : <>
       {!!error && <Notice text={error} error />}

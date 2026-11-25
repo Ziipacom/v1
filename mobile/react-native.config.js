@@ -3,15 +3,15 @@ const admobTestAds =
   process.env.APP_VARIANT !== "production" &&
   process.env.EXPO_PUBLIC_PORTAL_MODE !== "true";
 
-const limitedTestflight = [
+const limitedStoreBeta = [
   process.env.ZIIPA_BUILD_SCOPE,
   process.env.EXPO_PUBLIC_BUILD_SCOPE,
-].some((scope) => scope === "ios-internal-testflight" || scope === "ios-external-testflight");
+].some((scope) => scope === "ios-internal-testflight" || scope === "ios-external-testflight" || scope === "android-play-internal");
 const admobReleaseAds =
   process.env.ZIIPA_ADMOB_RELEASE_ADS === "true" &&
   process.env.APP_VARIANT === "production" &&
   process.env.EXPO_PUBLIC_PORTAL_MODE !== "true" &&
-  !limitedTestflight &&
+  !limitedStoreBeta &&
   (process.env.ZIIPA_APP_ID || "com.ziipa.app") === "com.ziipa.app";
 
 module.exports = {

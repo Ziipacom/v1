@@ -117,7 +117,7 @@ export function DesktopExplore({ route, navigation }: Props) {
   }
 
   return (
-    <ScrollView
+    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
       style={styles.screen}
       contentContainerStyle={s.page}
       showsVerticalScrollIndicator={false}

@@ -433,11 +433,11 @@ function ScopedAdministration({ navigation }: Props) {
     );
 
   return (
-    <ScrollView
+    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
       ref={scroll}
       style={styles.screen}
       showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
+
       contentContainerStyle={{ alignItems: "center", paddingBottom: 40 }}
     >
       <View style={[a.page, { paddingHorizontal: width > 780 ? 32 : 20 }]}>

@@ -25,6 +25,7 @@ import { conceptsEnabled } from "../lib/config";
 import type { Category, Item } from "../lib/types";
 import { useZiipa } from "../provider";
 import { useDesktopLayout } from "./desktop-layout";
+import { HelpLabel } from "./help-label";
 
 export function Logo({ width = 116 }: { width?: number }) {
   const { resolvedMode } = useTheme();
@@ -146,13 +147,14 @@ export function IconButton({
 }
 export function Field({
   label,
+  help,
   style,
   ...props
-}: TextInputProps & { label: string }) {
+}: TextInputProps & { label: string; help?: string }) {
   const { desktop } = useDesktopLayout();
   return (
     <View>
-      <Text style={styles.label}>{label}</Text>
+      <HelpLabel label={label} help={help} />
       <TextInput
         {...props}
         accessibilityLabel={label}

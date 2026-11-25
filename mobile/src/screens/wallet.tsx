@@ -37,6 +37,7 @@ import * as Clipboard from "expo-clipboard";
 import QRCode from "react-native-qrcode-svg";
 import { Action, Notice } from "../components/ui";
 import { Sheet } from "../components/floating";
+import { HelpLabel } from "../components/help-label";
 import { StudioDock } from "../components/studio-dock";
 import { themedStyles, themeValue, color, font, styles } from "../theme";
 import { useZiipa } from "../provider";
@@ -64,8 +65,9 @@ import {
   walletConnectConfigured,
 } from "../lib/wallet-connector";
 import { readPending, savePending, type Pending } from "../lib/wallet-pending";
-import { androidPlayInternal, limitedStoreBeta } from "../lib/config";
 import { sourceMintItem } from "../lib/editor-source";
+import { assertWalletNetwork, mintSetupIssue } from "../lib/wallet-readiness";
+import { metaMaskPairingLink } from "../lib/wallet-links";
 import { MediaRewards, RewardRuleFields } from "../components/media-rewards";
 import {
   emptyRewardDraft,
@@ -84,66 +86,14 @@ type Transfer = {
   symbol?: string;
 };
 export function WalletScreen(props: Props) {
-  return limitedStoreBeta ? <InternalWalletScreen {...props} /> : <FullWalletScreen {...props} />;
-}
-
-/** Privacy cleanup remains available without initializing an external wallet. */
-function InternalWalletScreen({ navigation }: Props) {
-  const { api, session } = useZiipa();
-  const token = session?.access_token;
-  const owner = useRef(token);
-  owner.current = token;
-  const mounted = useRef(true);
-  const [saved, setSaved] = useState<{ owner: string; links: WalletLink[] } | null>(null);
-  const [busy, setBusy] = useState("");
-  const [message, setMessage] = useState("");
-  useEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
-  useEffect(() => {
-    let current = true;
-    setMessage("");
-    setBusy("");
-    if (token) void api<WalletLink[]>("/api/web3/wallets").then((links) => {
-      if (current && owner.current === token) setSaved({ owner: token, links });
-    }).catch((error) => {
-      if (current && owner.current === token) setMessage((error as Error).message);
-    });
-    return () => { current = false; };
-  }, [api, token]);
-  async function unlink(id: string) {
-    if (!token || busy || owner.current !== token) return;
-    setBusy(id);
-    setMessage("");
-    try {
-      await api(`/api/web3/wallets/${id}/unlink`, {});
-      if (!mounted.current || owner.current !== token) return;
-      setSaved((previous) => previous?.owner === token ? { ...previous, links: previous.links.filter((row) => row.id !== id) } : previous);
-      setMessage("Wallet link removed from Ziipa. Assets remain in your external wallet.");
-    } catch (error) {
-      if (mounted.current && owner.current === token) setMessage((error as Error).message);
-    } finally {
-      if (mounted.current && owner.current === token) setBusy("");
-    }
-  }
-  return <SafeAreaView style={styles.screen}><ScrollView contentContainerStyle={styles.page}>
-    <Action secondary title="Back" onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Studio")} />
-    <Text style={styles.title}>Wallet privacy</Text>
-    <Notice text={androidPlayInternal
-      ? "Pairing, signatures, minting and transfers are unavailable in this internal Android beta. You can remove an existing Ziipa wallet link without connecting or signing with a wallet."
-      : "Pairing, signatures, minting and transfers are unavailable in this private iPhone beta. You can remove an existing Ziipa wallet link without connecting or signing with a wallet."} />
-    {(saved && saved.owner === token ? saved.links : []).map((row) => <View key={row.id} style={styles.panel}>
-      <Text style={styles.body}>{shortAddress(row.address)}</Text>
-      <Action secondary title="Unlink wallet from Ziipa" busy={busy === row.id} disabled={!!busy} onPress={() => void unlink(row.id)} />
-    </View>)}
-    {!!message && <Notice text={message} />}
-  </ScrollView></SafeAreaView>;
+  return <FullWalletScreen {...props} />;
 }
 
 function FullWalletScreen({ navigation, initialItem }: Props) {
   const { desktop } = useDesktopLayout();
   const { session, api, data } = useZiipa();
+  initialItem =
+    sourceMintItem(initialItem, session?.user.id, false) || undefined;
   const [step, setStep] = useState(0);
   const [view, setView] = useState<"wizard" | "vault">("wizard");
   const [config, setConfig] = useState<WalletConfig | null>(null);
@@ -181,7 +131,14 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
   owner.current = session?.access_token || null;
   const walletOwner = useRef<number | null>(session?.user.id || null);
   const [sheet, setSheet] = useState<
-    "protocol" | "review" | "pairing" | "transfer" | "receive" | "media" | null
+    | "protocol"
+    | "review"
+    | "pairing"
+    | "ownership"
+    | "transfer"
+    | "receive"
+    | "media"
+    | null
   >(null);
   const [intent, setIntent] = useState<Intent | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -199,6 +156,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
   const [curator, setCurator] = useState("");
   const [split, setSplit] = useState("0");
   const chain = config?.chains.find((c) => c.id === chainId);
+  const mintIssue = mintSetupIssue(config, chainId, kind);
   const activeLink = link?.chain_id === chainId ? link : null;
   const balance =
     syncedBalance?.chain_id === chainId &&
@@ -211,6 +169,12 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
     currentWallet()?.address.toLowerCase() ===
       activeLink.address.toLowerCase() &&
     currentWallet()?.chainId === chainId;
+  const mintDisabled =
+    !name.trim() ||
+    (!mediaId && !imageUri.trim()) ||
+    !consent ||
+    !linkedConnection ||
+    !!mintIssue;
   const [metadataId, setMetadataId] = useState("");
   const [metadataRequest, setMetadataRequest] = useState(() =>
     Crypto.randomUUID(),
@@ -322,6 +286,11 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
       return;
     }
     const token = session.access_token;
+    assertWalletNetwork(chainId, __DEV__, Platform.OS);
+    if (!config || config.testnet_only !== true)
+      throw new Error(
+        "Check the test-network connection before connecting a wallet.",
+      );
     const wallet = await connectWallet(chainId, method, (uri) => {
       if (owner.current !== token) return;
       setPairUri(uri);
@@ -334,17 +303,22 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
       "/api/web3/challenge",
       { chain_id: chainId, address: wallet.address },
     );
+    if (owner.current !== token) return;
+    setSheet("ownership");
     const signature = await signWalletProof(
       proof.message,
       wallet.address,
       chainId,
     );
+    if (owner.current !== token) return;
     const verified = await api<WalletLink>("/api/web3/verify", {
       challenge_id: proof.id,
       signature,
     });
+    if (owner.current !== token) return;
     setLink(verified);
     setLinks((prev) => [verified, ...prev.filter((l) => l.id !== verified.id)]);
+    setSheet(null);
     setNotice("Ownership verified. Signing stays in your wallet.");
   }
   async function sync(wallet = activeLink) {
@@ -399,9 +373,11 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
       throw new Error(
         "Reconnect your verified wallet before preparing a mint.",
       );
-    if (!chain?.deployed)
+    assertWalletNetwork(chainId, __DEV__, Platform.OS);
+    if (mintIssue) throw new Error(mintIssue);
+    if (!name.trim() || (!mediaId && !imageUri.trim()))
       throw new Error(
-        "Contracts need to be deployed on this test network. Ziipa Local is available for local testing.",
+        "Name your token and choose your saved media before minting.",
       );
     if (!consent)
       throw new Error("Approve permanent public metadata storage to continue.");
@@ -569,7 +545,9 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
     }
     setStep(Math.min(step + 1, 3));
   }
-  const ownedMedia = data.drafts.filter((item) => sourceMintItem(item, session?.user.id, false));
+  const ownedMedia = data.drafts.filter((item) =>
+    sourceMintItem(item, session?.user.id, false),
+  );
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.screen}>
@@ -592,13 +570,17 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Back"
-            onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Studio")}
+            onPress={() =>
+              navigation.canGoBack()
+                ? navigation.goBack()
+                : navigation.navigate("Studio")
+            }
             style={s.icon}
           >
             <ChevronLeft size={27} color={color.text} strokeWidth={1.4} />
           </Pressable>
           <Text style={s.title}>
-            {view === "wizard" ? "Connect Wallet" : "Your Wallet"}
+            {view === "wizard" ? "Token Wallet" : "Your Wallet"}
           </Text>
           <Pressable
             accessibilityRole="button"
@@ -675,6 +657,22 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
         >
           {view === "wizard" ? (
             <>
+              <View style={{ gap: 8, marginBottom: 14 }}>
+                <Text style={s.chip}>TEST NETWORKS ONLY</Text>
+                {!!mediaName && (
+                  <Text style={s.hint}>Selected creation: {mediaName}</Text>
+                )}
+                {!!mintIssue && <Notice text={mintIssue} />}
+                {step === 0 && (
+                  <Action
+                    secondary
+                    title="Connect wallet"
+                    icon={Wallet}
+                    disabled={busy}
+                    onPress={() => setStep(2)}
+                  />
+                )}
+              </View>
               <View style={s.card}>
                 <Text style={s.cardTitle}>
                   {
@@ -834,14 +832,17 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                                 : "Connect with WalletConnect"
                             }
                             busy={busy}
+                            disabled={!walletConnectConfigured || !config}
                             onPress={() =>
                               void run(() => connect("walletconnect"))
                             }
                           />
                           {!walletConnectConfigured && (
                             <Text style={s.hint}>
-                              Native pairing requires your WalletConnect project
-                              ID. Browser extensions can connect directly.
+                              Wallet connection is not enabled in this build
+                              yet. You can prepare your token and saved media
+                              here. Browser extensions can connect directly on
+                              web.
                             </Text>
                           )}
                         </>
@@ -902,7 +903,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                         {ownedMedia.length > 0 && (
                           <Action
                             secondary
-                            title="Choose a Studio draft"
+                            title="Choose a saved creation"
                             onPress={() => setSheet("media")}
                           />
                         )}
@@ -1003,9 +1004,6 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                           ? "Current environment: offline local IPFS. Files are pinned locally and are not publicly retrievable."
                           : "Current environment: public IPFS. Publishing may be permanent."}
                       </Text>
-                      {!chain?.deployed && (
-                        <Notice text="The contracts for this network are not deployed yet. Select Ziipa Local for local integration testing." />
-                      )}
                     </>
                   )}
                 </View>
@@ -1043,7 +1041,14 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 </View>
                 <Text style={s.balance}>
                   {balance ? units(balance.native_wei) : "—"}{" "}
-                  <Text style={{ fontSize: 17, color: themeValue("#AD9CBD", color.muted) }}>ETH</Text>
+                  <Text
+                    style={{
+                      fontSize: 17,
+                      color: themeValue("#AD9CBD", color.muted),
+                    }}
+                  >
+                    ETH
+                  </Text>
                 </Text>
                 <Pressable
                   accessibilityRole="button"
@@ -1488,20 +1493,13 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
               </Pressable>
             )}
             <Pressable
-              disabled={
-                busy ||
-                (step === 3 &&
-                  (!consent || !linkedConnection || !chain?.deployed))
-              }
+              disabled={busy || (step === 3 && mintDisabled)}
               accessibilityRole="button"
               accessibilityLabel={
                 step === 3 ? "Store metadata & review mint" : "Next"
               }
               accessibilityState={{
-                disabled:
-                  busy ||
-                  (step === 3 &&
-                    (!consent || !linkedConnection || !chain?.deployed)),
+                disabled: busy || (step === 3 && mintDisabled),
               }}
               onPress={() => (step === 3 ? void run(prepareMint) : next())}
               style={[
@@ -1509,12 +1507,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 {
                   flex: step > 0 ? 1 : undefined,
                   width: step === 0 ? 166 : undefined,
-                  opacity:
-                    busy ||
-                    (step === 3 &&
-                      (!consent || !linkedConnection || !chain?.deployed))
-                      ? 0.5
-                      : 1,
+                  opacity: busy || (step === 3 && mintDisabled) ? 0.5 : 1,
                 },
               ]}
             >
@@ -1543,40 +1536,48 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 ? "Review transaction"
                 : sheet === "pairing"
                   ? "Connect Wallet"
-                  : sheet === "transfer"
-                    ? transfer.kind === "tip"
-                      ? "Tip a creator"
-                      : "Send asset"
-                    : sheet === "media"
-                      ? "Your Studio media"
-                      : "Receive"
+                  : sheet === "ownership"
+                    ? "Verify wallet ownership"
+                    : sheet === "transfer"
+                      ? transfer.kind === "tip"
+                        ? "Tip a creator"
+                        : "Send asset"
+                      : sheet === "media"
+                        ? "Your Studio media"
+                        : "Receive"
           }
         >
           {sheet === "protocol" && (
             <>
-              {config?.chains.map((c) => (
-                <Pressable
-                  key={c.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={c.name}
-                  onPress={() => chooseChain(c)}
-                  style={s.asset}
-                >
-                  <View style={{ flex: 1, gap: 7 }}>
-                    <Text style={s.label}>{c.name}</Text>
-                    <Text style={s.hint}>
-                      {c.id === 31337
-                        ? "Local development chain"
-                        : `Test network · chain ${c.id}`}{" "}
-                      ·{" "}
-                      {c.deployed
-                        ? "Contracts configured"
-                        : "Contracts pending deployment"}
-                    </Text>
-                  </View>
-                  {c.id === chainId && <Check size={20} color="#A6E21B" />}
-                </Pressable>
-              ))}
+              {config?.chains
+                .filter(
+                  (c) =>
+                    [84532, 11155111].includes(c.id) ||
+                    (__DEV__ && Platform.OS === "web" && c.id === 31337),
+                )
+                .map((c) => (
+                  <Pressable
+                    key={c.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={c.name}
+                    onPress={() => chooseChain(c)}
+                    style={s.asset}
+                  >
+                    <View style={{ flex: 1, gap: 7 }}>
+                      <Text style={s.label}>{c.name}</Text>
+                      <Text style={s.hint}>
+                        {c.id === 31337
+                          ? "Local development chain"
+                          : `Test network · chain ${c.id}`}{" "}
+                        ·{" "}
+                        {c.deployed
+                          ? "Contracts configured"
+                          : "Contracts pending deployment"}
+                      </Text>
+                    </View>
+                    {c.id === chainId && <Check size={20} color="#A6E21B" />}
+                  </Pressable>
+                ))}
               <Text style={s.hint}>
                 Mainnet is disabled. Network configuration and signed
                 transactions must match.
@@ -1614,6 +1615,17 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 </View>
               )}
               <Action
+                title="Open MetaMask"
+                disabled={!pairUri}
+                onPress={() =>
+                  void Linking.openURL(metaMaskPairingLink(pairUri)).catch(() =>
+                    setError(
+                      "Install MetaMask or scan the QR from another device. Never enter your recovery phrase into Ziipa.",
+                    ),
+                  )
+                }
+              />
+              <Action
                 title="Open wallet app"
                 onPress={() =>
                   void Linking.openURL(pairUri).catch(() =>
@@ -1632,6 +1644,26 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 Waiting for wallet approval. Keep the wallet open for the
                 following signature request. Closing this sheet cancels pairing.
               </Text>
+            </>
+          )}
+          {sheet === "ownership" && (
+            <>
+              <Text style={s.hint}>
+                Approve the Ziipa ownership message in MetaMask, then return
+                here. This links your address; it does not mint or spend test
+                gas.
+              </Text>
+              <Action
+                title="Open MetaMask"
+                onPress={() =>
+                  void Linking.openURL("metamask://").catch(() =>
+                    setError(
+                      "Open your connected wallet to approve the ownership message.",
+                    ),
+                  )
+                }
+              />
+              {!!error && <Notice error text={error} />}
             </>
           )}
           {sheet === "review" && intent && (
@@ -1677,6 +1709,19 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 </Text>
               )}
               <Notice text="This is a test-network transaction. Your wallet displays the final gas fee and requests approval. Transactions cannot be undone. Ziipa does not receive your private keys." />
+              {busy && (
+                <Action
+                  secondary
+                  title="Open MetaMask to approve"
+                  onPress={() =>
+                    void Linking.openURL("metamask://").catch(() =>
+                      setError(
+                        "Open your connected wallet to review the pending request.",
+                      ),
+                    )
+                  }
+                />
+              )}
               {intent.status === "prepared" ? (
                 <Action
                   title="Approve in wallet"
@@ -1817,21 +1862,21 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
             ownedMedia.map((d) => {
               const label = `${d.title}${d.photo_ids?.length ? " · Cover photo" : ""}`;
               return (
-              <Pressable
-                key={d.id}
-                accessibilityRole="button"
-                style={s.asset}
-                onPress={() => {
-                  changed(() => {
-                    setMediaId(d.media_id!);
-                    setMediaName(label);
-                    setImageUri("");
-                  });
-                  setSheet(null);
-                }}
-              >
-                <Text style={s.label}>{label}</Text>
-              </Pressable>
+                <Pressable
+                  key={d.id}
+                  accessibilityRole="button"
+                  style={s.asset}
+                  onPress={() => {
+                    changed(() => {
+                      setMediaId(d.media_id!);
+                      setMediaName(label);
+                      setImageUri("");
+                    });
+                    setSheet(null);
+                  }}
+                >
+                  <HelpLabel label={label} style={s.label} />
+                </Pressable>
               );
             })}
           {sheet && error && <Notice text={error} error />}
@@ -1866,188 +1911,195 @@ function Input({
     </View>
   );
 }
-const s = themedStyles(() => StyleSheet.create({
-  header: {
-    height: 80,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 17,
-  },
-  icon: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: {
-    color: color.text,
-    fontFamily: font.medium,
-    fontSize: 21,
-    letterSpacing: 1.5,
-  },
-  progress: {
-    flexDirection: "row",
-    gap: 20,
-    paddingHorizontal: 25,
-    marginTop: 22,
-    marginBottom: 15,
-  },
-  bar: { height: 5, borderRadius: 3, flex: 1 },
-  wizard: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: 25,
-    paddingVertical: 30,
-  },
-  vault: { paddingHorizontal: 23, paddingTop: 15, paddingBottom: 30, gap: 20 },
-  card: {
-    backgroundColor: themeValue("#0B0811", color.panel),
-    borderRadius: 26,
-    borderWidth: 1,
-    borderColor: themeValue("#1B1426", color.border),
-    overflow: "hidden",
-  },
-  cardTitle: {
-    fontFamily: font.medium,
-    fontSize: 20,
-    letterSpacing: 1,
-    color: color.text,
-    textAlign: "center",
-    paddingVertical: 22,
-    borderBottomWidth: 1,
-    borderBottomColor: color.border,
-  },
-  cardBody: { padding: 28, gap: 19, minHeight: 158 },
-  label: {
-    fontFamily: font.medium,
-    color: themeValue("#F9F4FC", color.text),
-    fontSize: 16,
-    letterSpacing: 0.5,
-  },
-  input: {
-    minHeight: 46,
-    borderWidth: 1,
-    borderColor: themeValue("#9C94A7", color.border),
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    backgroundColor: themeValue("#020203", color.panel),
-  },
-  inputText: {
-    fontFamily: font.medium,
-    color: color.text,
-    fontSize: 17,
-    letterSpacing: 0.5,
-  },
-  select: {
-    minHeight: 46,
-    borderWidth: 1,
-    borderColor: "#AAA3B4",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    backgroundColor: themeValue("#020203", color.panel),
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: -9,
-  },
-  hint: {
-    fontFamily: font.regular,
-    color: themeValue("#AFA0BD", color.muted),
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  micro: {
-    fontFamily: font.regular,
-    color: themeValue("#A89CB7", color.muted),
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  type: {
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  chip: {
-    fontFamily: font.medium,
-    color: themeValue("#BF9CEB", color.muted),
-    fontSize: 10,
-    letterSpacing: 1,
-    backgroundColor: themeValue("#2B1646", color.accentSoft),
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  buttons: {
-    flexDirection: "row",
-    gap: 19,
-    justifyContent: "center",
-    paddingHorizontal: 25,
-    paddingTop: 12,
-    paddingBottom: 46,
-  },
-  next: {
-    backgroundColor: color.purple,
-    minHeight: 54,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 10,
-  },
-  back: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#C2B9CE",
-    minHeight: 54,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 10,
-  },
-  buttonText: {
-    fontFamily: font.medium,
-    color: "white",
-    fontSize: 15,
-    letterSpacing: 1,
-  },
-  walletEmblem: {
-    width: 65,
-    height: 65,
-    borderRadius: 33,
-    backgroundColor: themeValue("#291444", color.accentSoft),
-    borderWidth: 1,
-    borderColor: themeValue("#57317D", color.border),
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  kicker: {
-    color: themeValue("#AB95C2", color.muted),
-    fontFamily: font.medium,
-    fontSize: 10,
-    letterSpacing: 2,
-  },
-  balance: { color: color.text, fontFamily: font.semibold, fontSize: 42 },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#A6E21B" },
-  quickIcon: {
-    width: 45,
-    height: 45,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: themeValue("#53405F", color.border),
-    backgroundColor: themeValue("#1E142B", color.panel),
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  asset: {
-    padding: 16,
-    gap: 13,
-    borderWidth: 1,
-    borderColor: themeValue("#30223D", color.border),
-    backgroundColor: themeValue("#181120", color.panel),
-    borderRadius: 17,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-}));
+const s = themedStyles(() =>
+  StyleSheet.create({
+    header: {
+      height: 80,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 17,
+    },
+    icon: {
+      width: 44,
+      height: 44,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    title: {
+      color: color.text,
+      fontFamily: font.medium,
+      fontSize: 21,
+      letterSpacing: 1.5,
+    },
+    progress: {
+      flexDirection: "row",
+      gap: 20,
+      paddingHorizontal: 25,
+      marginTop: 22,
+      marginBottom: 15,
+    },
+    bar: { height: 5, borderRadius: 3, flex: 1 },
+    wizard: {
+      flexGrow: 1,
+      justifyContent: "center",
+      paddingHorizontal: 25,
+      paddingVertical: 30,
+    },
+    vault: {
+      paddingHorizontal: 23,
+      paddingTop: 15,
+      paddingBottom: 30,
+      gap: 20,
+    },
+    card: {
+      backgroundColor: themeValue("#0B0811", color.panel),
+      borderRadius: 26,
+      borderWidth: 1,
+      borderColor: themeValue("#1B1426", color.border),
+      overflow: "hidden",
+    },
+    cardTitle: {
+      fontFamily: font.medium,
+      fontSize: 20,
+      letterSpacing: 1,
+      color: color.text,
+      textAlign: "center",
+      paddingVertical: 22,
+      borderBottomWidth: 1,
+      borderBottomColor: color.border,
+    },
+    cardBody: { padding: 28, gap: 19, minHeight: 158 },
+    label: {
+      fontFamily: font.medium,
+      color: themeValue("#F9F4FC", color.text),
+      fontSize: 16,
+      letterSpacing: 0.5,
+    },
+    input: {
+      minHeight: 46,
+      borderWidth: 1,
+      borderColor: themeValue("#9C94A7", color.border),
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      backgroundColor: themeValue("#020203", color.panel),
+    },
+    inputText: {
+      fontFamily: font.medium,
+      color: color.text,
+      fontSize: 17,
+      letterSpacing: 0.5,
+    },
+    select: {
+      minHeight: 46,
+      borderWidth: 1,
+      borderColor: "#AAA3B4",
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      backgroundColor: themeValue("#020203", color.panel),
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginTop: -9,
+    },
+    hint: {
+      fontFamily: font.regular,
+      color: themeValue("#AFA0BD", color.muted),
+      fontSize: 13,
+      lineHeight: 19,
+    },
+    micro: {
+      fontFamily: font.regular,
+      color: themeValue("#A89CB7", color.muted),
+      fontSize: 11,
+      lineHeight: 16,
+    },
+    type: {
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderWidth: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    chip: {
+      fontFamily: font.medium,
+      color: themeValue("#BF9CEB", color.muted),
+      fontSize: 10,
+      letterSpacing: 1,
+      backgroundColor: themeValue("#2B1646", color.accentSoft),
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+    },
+    buttons: {
+      flexDirection: "row",
+      gap: 19,
+      justifyContent: "center",
+      paddingHorizontal: 25,
+      paddingTop: 12,
+      paddingBottom: 46,
+    },
+    next: {
+      backgroundColor: color.purple,
+      minHeight: 54,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 10,
+    },
+    back: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: "#C2B9CE",
+      minHeight: 54,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 10,
+    },
+    buttonText: {
+      fontFamily: font.medium,
+      color: "white",
+      fontSize: 15,
+      letterSpacing: 1,
+    },
+    walletEmblem: {
+      width: 65,
+      height: 65,
+      borderRadius: 33,
+      backgroundColor: themeValue("#291444", color.accentSoft),
+      borderWidth: 1,
+      borderColor: themeValue("#57317D", color.border),
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    kicker: {
+      color: themeValue("#AB95C2", color.muted),
+      fontFamily: font.medium,
+      fontSize: 10,
+      letterSpacing: 2,
+    },
+    balance: { color: color.text, fontFamily: font.semibold, fontSize: 42 },
+    dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#A6E21B" },
+    quickIcon: {
+      width: 45,
+      height: 45,
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: themeValue("#53405F", color.border),
+      backgroundColor: themeValue("#1E142B", color.panel),
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    asset: {
+      padding: 16,
+      gap: 13,
+      borderWidth: 1,
+      borderColor: themeValue("#30223D", color.border),
+      backgroundColor: themeValue("#181120", color.panel),
+      borderRadius: 17,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+  }),
+);

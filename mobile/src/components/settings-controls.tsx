@@ -239,7 +239,7 @@ function ScopedSettingsControls({ navigation }: Props) {
             disabled={!session || !preferences || loading || busy}
             trackColor={{ true: color.purple }}
             onValueChange={(value) => {
-              if (value) navigation.navigate("Notifications");
+              if (value) navigation.navigate("Notifications", {tab: "Preferences"});
               else void turnOffPush();
             }}
           />
@@ -264,7 +264,7 @@ function ScopedSettingsControls({ navigation }: Props) {
             icon={Bell}
             secondary
             disabled={busy}
-            onPress={() => navigation.navigate("Notifications")}
+            onPress={() => navigation.navigate("Notifications", {tab: "Preferences"})}
           />
           <Action
             title="Refresh notification status"

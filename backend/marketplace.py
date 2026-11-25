@@ -8,6 +8,7 @@ from typing import Literal
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import DateTime, ForeignKey, JSON, String, delete, func, select, update
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -17,6 +18,7 @@ from creator import CreatorMedia, account_is_discoverable, prefs_for, _profile_i
 
 router = APIRouter(prefix='/api/store', dependencies=[Depends(current_user)])
 PHOTO_TYPES = ('image/jpeg', 'image/png', 'image/webp')
+PREVIEW_TYPES = ('video/mp4', 'video/webm', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/ogg')
 Kind = Literal['digital', 'merchandise']
 Category = Literal['music', 'video', 'art', 'merch', 'other']
 NO_STORE = {'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'}
@@ -84,7 +86,8 @@ class ListingInput(Input):
     category: Category = 'music'
     price_cents: int = Field(default=0, ge=0, le=100000000, strict=True)
     currency: Literal['USD'] = 'USD'
-    photo_ids: list[uuid.UUID] = Field(default_factory=list, max_length=6)
+    photo_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
+    media_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
     descriptor: str = Field(default='', max_length=80)
     overlay: Literal['none', 'price', 'editorial'] = 'price'
     condition: Literal['not_applicable', 'new', 'like_new', 'good', 'fair'] = 'not_applicable'
@@ -119,6 +122,13 @@ def photo(session, owner_id, media_id):
     return row
 
 
+def preview_media(session, owner_id, media_id):
+    row = session.get(CreatorMedia, str(media_id))
+    if not row or row.owner_id != owner_id or row.content_type not in PREVIEW_TYPES or not 0 < row.size <= 100 * 1024 * 1024:
+        raise HTTPException(422, 'Choose your own supported video or audio preview, up to 100 MB.')
+    return row
+
+
 def visible(session, row):
     store = session.get(Storefront, row.owner_id)
     return bool(row.status == 'published' and store and store.data.get('enabled')
@@ -132,9 +142,11 @@ def listing_json(session, row, *, owner=False):
              'description': row.description, 'kind': row.kind, 'category': row.category,
              'price_cents': row.price_cents, 'status': row.status, 'revision': row.revision,
              'created_at': row.created_at.isoformat(), 'checkout_ready': False,
-             'photos': [f'/api/store/listings/{row.id}/photos/{pid}' for pid in row.data.get('photo_ids', [])]}
+             'photos': [f'/api/store/listings/{row.id}/photos/{pid}' for pid in row.data.get('photo_ids', [])],
+             'media': [{'id': mid, 'content_type': preview_media(session, row.owner_id, mid).content_type,
+                        'path': f'/api/store/listings/{row.id}/media/{mid}'} for mid in row.data.get('media_ids', [])]}
     if not owner:
-        for key in ('rights_confirmed', 'adult_seller', 'photo_ids'):
+        for key in ('rights_confirmed', 'adult_seller', 'photo_ids', 'media_ids'):
             value.pop(key, None)
     return value
 
@@ -180,8 +192,13 @@ def save_listing(data: ListingInput, user: User = Depends(current_user), session
     if not row and session.scalar(select(func.count()).select_from(StoreListing).where(StoreListing.owner_id == user.id)) >= 100:
         raise HTTPException(409, 'The current storefront limit is 100 listings.')
     photos = list(dict.fromkeys(str(value) for value in data.photo_ids))
+    previews = list(dict.fromkeys(str(value) for value in data.media_ids))
+    if len(photos) + len(previews) > 10:
+        raise HTTPException(422, 'Add up to 10 photos, video or audio previews in total.')
     for value in photos:
         photo(session, user.id, value)
+    for value in previews:
+        preview_media(session, user.id, value)
     if data.status == 'published':
         store = session.get(Storefront, user.id)
         if not store or not store.data.get('enabled') or not account_is_discoverable(session, user.id):
@@ -197,6 +214,7 @@ def save_listing(data: ListingInput, user: User = Depends(current_user), session
             _profile_image_bytes(photo(session, user.id, value))
     values = data.model_dump(mode='json', exclude={'id', 'revision', 'title', 'description', 'kind', 'category', 'price_cents', 'status'})
     values['photo_ids'] = photos
+    values['media_ids'] = previews
     columns = dict(title=data.title, description=data.description, kind=data.kind, category=data.category,
                    price_cents=data.price_cents, status=data.status, data=values)
     if row:
@@ -255,6 +273,26 @@ def read_photo(listing_id: uuid.UUID, media_id: uuid.UUID, request: Request,
     media = photo(session, row.owner_id, media_id)
     # Still images are bounded and validated; no signed storage URLs leave the API.
     return Response(_profile_image_bytes(media), media_type=media.content_type, headers=NO_STORE)
+
+
+@router.get('/listings/{listing_id}/media/{media_id}')
+def read_preview(listing_id: uuid.UUID, media_id: uuid.UUID,
+                 user: User = Depends(current_user), session: Session = Depends(db)):
+    from creator import prefs_for, storage
+    from storage_services import LocalStorage
+    row = session.get(StoreListing, str(listing_id))
+    if (not row or (row.owner_id != user.id and (not visible(session, row)
+        or row.owner_id in prefs_for(session, user)['blocked_user_ids']))
+        or str(media_id) not in row.data.get('media_ids', [])):
+        raise HTTPException(404, 'Product preview unavailable.')
+    media = preview_media(session, row.owner_id, media_id)
+    provider = storage()
+    if isinstance(provider, LocalStorage):
+        path = provider.path(media.id)
+        if not path.is_file(): raise HTTPException(404, 'Product preview unavailable.')
+        return FileResponse(path, media_type=media.content_type, headers=NO_STORE)
+    return RedirectResponse(provider.read_url(row.owner_id, media.id), status_code=307,
+                            headers={**NO_STORE, 'Referrer-Policy': 'no-referrer'})
 
 
 @router.post('/listings/{listing_id}/report', dependencies=[Depends(guard)])
@@ -349,13 +387,20 @@ def suggest(data: SuggestInput, user: User = Depends(current_user), session: Ses
 
 
 def export_store(session, owner_id):
+    from marketplace_payments import MarketOrder, order_json
     row = session.get(Storefront, owner_id)
-    return {'storefront': {**row.data, 'revision': row.revision} if row else None,
+    return {'orders': [order_json(order) for order in session.scalars(select(MarketOrder).where((MarketOrder.buyer_id == owner_id) | (MarketOrder.seller_id == owner_id)))],
+            'storefront': {**row.data, 'revision': row.revision} if row else None,
             'listings': [listing_json(session, item, owner=True) for item in session.scalars(
                 select(StoreListing).where(StoreListing.owner_id == owner_id))]}
 
 
 def delete_store(session, owner_id):
+    from marketplace_payments import SellerPaymentAccount, MarketOrder
+    from marketplace_paypal import PayPalSellerAccount
+    session.execute(delete(MarketOrder).where((MarketOrder.buyer_id == owner_id) | (MarketOrder.seller_id == owner_id)))
+    session.execute(delete(SellerPaymentAccount).where(SellerPaymentAccount.owner_id == owner_id))
+    session.execute(delete(PayPalSellerAccount).where(PayPalSellerAccount.owner_id == owner_id))
     ids = select(StoreListing.id).where(StoreListing.owner_id == owner_id)
     session.execute(delete(StoreReport).where((StoreReport.owner_id == owner_id) | StoreReport.listing_id.in_(ids)))
     session.execute(delete(StoreListing).where(StoreListing.owner_id == owner_id))

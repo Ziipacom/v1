@@ -181,6 +181,13 @@ test("Sell begins with one creation step and AI requires explicit description co
   );
 });
 
+test("product publish Connect opens network setup without saving or posting", () => {
+  const ui=wizard();let connected=0;
+  ui.props.step="publish";ui.props.onConnect=() => {connected++;};
+  ui.click("Connect");
+  assert.equal(connected,1);assert.deepEqual(ui.saves,[]);
+});
+
 test("manual Sell flow stays usable without AI and requires an explicit valid price", () => {
   const ui = wizard();
   ui.props.prompt = "An original hoodie, size M";

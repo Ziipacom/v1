@@ -1,5 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {canEditProduct} from "../src/lib/commerce.ts";
+
+test("product editing shortcut belongs only to the signed-in seller", () => {
+  const item={seller_id:7,status:"published" as const};
+  assert.equal(canEditProduct(item,7,false),true);
+  assert.equal(canEditProduct(item,8,false),false);
+  assert.equal(canEditProduct(item,undefined,false),false);
+  assert.equal(canEditProduct(item,7,true),false);
+  assert.equal(canEditProduct({...item,status:"hidden"},7,false),false);
+  assert.equal(canEditProduct({...item,status:"draft"},7,false),true);
+});
 import {
   centsFromText,
   editListing,

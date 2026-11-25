@@ -1,5 +1,8 @@
 {
-  "cli": { "version": ">= 18.0.0", "appVersionSource": "remote" },
+  "cli": {
+    "version": ">= 18.0.0",
+    "appVersionSource": "remote"
+  },
   "build": {
     "development": {
       "developmentClient": true,
@@ -11,20 +14,26 @@
         "APP_VARIANT": "preview",
         "EXPO_PUBLIC_API_URL": "https://api.ziipa.com",
         "EXPO_PUBLIC_ENABLE_DEMO": "true",
-        "EXPO_PUBLIC_ENABLE_CONCEPTS": "true"
+        "EXPO_PUBLIC_ENABLE_CONCEPTS": "true",
+        "EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID": "9c65a916dd054ea5033d0cc926ddab8e",
+        "EXPO_PUBLIC_WALLET_ORIGIN": "https://ziipa.com"
       }
     },
     "preview": {
       "distribution": "internal",
       "environment": "preview",
-      "android": { "buildType": "apk" },
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_OWNER": "ziipa",
         "EXPO_EAS_PROJECT_ID": "a130b762-6812-4963-9ebd-5d103a24084e",
         "APP_VARIANT": "preview",
         "EXPO_PUBLIC_API_URL": "https://api.ziipa.com",
         "EXPO_PUBLIC_ENABLE_DEMO": "true",
-        "EXPO_PUBLIC_ENABLE_CONCEPTS": "true"
+        "EXPO_PUBLIC_ENABLE_CONCEPTS": "true",
+        "EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID": "9c65a916dd054ea5033d0cc926ddab8e",
+        "EXPO_PUBLIC_WALLET_ORIGIN": "https://ziipa.com"
       }
     },
     "android-universal-apk": {
@@ -37,7 +46,9 @@
           "ORG_GRADLE_PROJECT_reactNativeArchitectures": "armeabi-v7a,arm64-v8a,x86,x86_64"
         }
       },
-      "env": { "EXPO_NO_DOTENV": "1" }
+      "env": {
+        "EXPO_NO_DOTENV": "1"
+      }
     },
     "android-ad-test": {
       "extends": "android-universal-apk",
@@ -111,7 +122,9 @@
       "credentialsSource": "remote",
       "environment": "production",
       "autoIncrement": true,
-      "android": { "buildType": "app-bundle" },
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
         "EXPO_OWNER": "ziipa",
         "EXPO_EAS_PROJECT_ID": "a130b762-6812-4963-9ebd-5d103a24084e",
@@ -119,20 +132,33 @@
         "EXPO_PUBLIC_PORTAL_MODE": "false",
         "EXPO_PUBLIC_API_URL": "https://api.ziipa.com",
         "EXPO_PUBLIC_ENABLE_DEMO": "false",
-        "EXPO_PUBLIC_ENABLE_CONCEPTS": "false"
+        "EXPO_PUBLIC_ENABLE_CONCEPTS": "false",
+        "EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID": "9c65a916dd054ea5033d0cc926ddab8e",
+        "EXPO_PUBLIC_WALLET_ORIGIN": "https://ziipa.com"
       }
     }
   },
   "submit": {
     "ios-external-testflight": {
-      "ios": { "ascAppId": "6827668999", "appleTeamId": "L6WH6BD2N5" }
+      "ios": {
+        "ascAppId": "6827668999",
+        "appleTeamId": "L6WH6BD2N5"
+      }
     },
     "ios-internal-testflight": {
-      "ios": { "ascAppId": "6827668999", "appleTeamId": "L6WH6BD2N5" }
+      "ios": {
+        "ascAppId": "6827668999",
+        "appleTeamId": "L6WH6BD2N5"
+      }
     },
     "production": {
-      "ios": { "ascAppId": "6827668999" },
-      "android": { "track": "internal", "releaseStatus": "draft" }
+      "ios": {
+        "ascAppId": "6827668999"
+      },
+      "android": {
+        "track": "internal",
+        "releaseStatus": "draft"
+      }
     }
   }
 }

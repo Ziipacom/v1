@@ -35,7 +35,7 @@ export function StudioDock() {
     >
       {[
         {
-          label: "Dashboard",
+          label: "Profile",
           Icon: LayoutGrid,
           action: () =>
             navigation.navigate("Profile", { creatorId: undefined }),

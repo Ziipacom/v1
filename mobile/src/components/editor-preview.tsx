@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { AppState, Platform, StyleSheet, Text, View } from "react-native";
 import { Image, type ImageSource } from "expo-image";
+import { Asset } from "expo-asset";
 import { VideoView, useVideoPlayer, type VideoSource } from "expo-video";
 import {
   useAudioPlayer,
@@ -12,11 +13,13 @@ import { useIsFocused } from "@react-navigation/native";
 import { Cover } from "./ui";
 import { useZiipa } from "../provider";
 import { usePlaybackSource } from "../lib/media-playback";
-import { coverSource } from "../lib/assets";
+import { coverSource, localImages } from "../lib/assets";
 import type { Item, TimelineClip, VisualEffect } from "../lib/types";
+import { capturePhotoTitle, captureWebVideoTitle, encodeTitleImage, type TitleImageCapture } from "../lib/title-image";
 
 export type EditorFrame = { time: number; source: ImageSource };
 type Props = {
+  titleCapture?: Ref<TitleImageCapture>;
   item: Item;
   localUri?: string;
   paused: boolean;
@@ -34,15 +37,25 @@ type Props = {
 export function EditorPreview(props: Props) {
   const { session } = useZiipa();
   const focused = useIsFocused();
+  const image = props.item.content_type?.startsWith("image/");
+  const videoCapture = useRef<TitleImageCapture>(null);
   const { source, loading, error } = usePlaybackSource(
-    props.item.media_url,
+    image ? props.item.cover : props.item.media_url,
     session?.access_token,
     !!props.item.demo,
     focused,
     props.localUri,
   );
-  const image = props.item.content_type?.startsWith("image/");
   const audio = props.item.content_type?.startsWith("audio/");
+  useImperativeHandle(props.titleCapture, () => ({
+    isReady: () => !!focused && (image ? !!(source || localImages[props.item.cover]) : !audio && !!videoCapture.current?.isReady()),
+    capture: async () => {
+    if (!focused) throw new Error("Reopen your creation to suggest a title.");
+    const picture = source || localImages[props.item.cover];
+    if (image && picture) return capturePhotoTitle(picture as ImageSource | number);
+    if (!image && !audio && videoCapture.current) return videoCapture.current.capture();
+    throw new Error("Add a photo or load a video before suggesting a title.");
+  } }), [focused, image, audio, source, props.item.cover, session?.access_token]);
   const pictureTime = useRef(0);
   const callbacks = useRef(props);
   callbacks.current = props;
@@ -81,11 +94,7 @@ export function EditorPreview(props: Props) {
       )}
       {image && (
         <Image
-          source={
-            props.localUri
-              ? { uri: props.localUri }
-              : coverSource(props.item.cover, session?.access_token)
-          }
+          source={source as ImageSource | number || coverSource(props.item.cover, session?.access_token)}
           style={StyleSheet.absoluteFill}
           contentFit="contain"
           onLoad={(event) =>
@@ -105,6 +114,7 @@ export function EditorPreview(props: Props) {
           <EditorVideo
             key={props.localUri || props.item.media_url}
             {...props}
+            titleCapture={videoCapture}
             source={source}
           />
         ))}
@@ -177,6 +187,20 @@ function EditorVideo(props: Props & { source: VideoSource }) {
     bufferedPosition: 0,
   });
   const ready = status === "readyToPlay";
+  useImperativeHandle(props.titleCapture, () => ({ isReady: () => ready && visible, capture: async () => {
+    if (!ready || !visible) throw new Error("Wait for the video to load before suggesting a title.");
+    const previewTime = Math.max(0, Math.min(player.currentTime || Math.min(1, player.duration / 2), player.duration - 0.05));
+    if (Platform.OS === "web") {
+      const uri = typeof props.source === "number" ? Asset.fromModule(props.source).uri
+        : typeof props.source === "string" ? props.source
+        : typeof props.source === "object" && props.source ? props.source.uri : null;
+      if (!uri) throw new Error("This video cannot provide a title preview.");
+      return captureWebVideoTitle(uri, previewTime);
+    }
+    const [frame] = await player.generateThumbnailsAsync([previewTime], { maxWidth: 512, maxHeight: 512 });
+    if (!frame) throw new Error("This video cannot provide a title preview.");
+    try { return await encodeTitleImage(frame); } finally { frame.release(); }
+  } }), [player, ready, visible, props.source]);
   const [loadedDuration, setLoadedDuration] = useState(0);
   const appliedSeek = useRef("");
   const clipsKey = JSON.stringify(props.clips);

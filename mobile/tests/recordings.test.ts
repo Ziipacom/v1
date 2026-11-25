@@ -11,6 +11,8 @@ import {
 import type { Item } from "../src/lib/types.ts";
 import type { RenderJob } from "../src/lib/render-types.ts";
 import type { MediaExport } from "../src/lib/share-types.ts";
+import { upcomingBroadcastEvents } from "../src/lib/broadcast-events.ts";
+import type { CalendarEvent } from "../src/lib/calendar-types.ts";
 const policy = { revision: 0 } as RecordingAutomation;
 const fields = {
   enabled: true,
@@ -19,6 +21,45 @@ const fields = {
   seconds: "30",
   rendition: "portrait" as const,
 };
+
+test("the event catalogue shows future active stream occurrences, excluding cancelled, missed and non-stream plans", () => {
+  const event = (
+    id: string,
+    kind = "stream",
+    status = "active",
+  ): CalendarEvent =>
+    ({
+      id,
+      kind,
+      status,
+      occurrences: [
+        { id: "past", starts_at: "2026-11-22T12:00:00Z", status: "scheduled" },
+        {
+          id: "future",
+          starts_at: "2026-11-25T12:00:00Z",
+          status: "scheduled",
+        },
+        {
+          id: "cancelled",
+          starts_at: "2026-11-24T12:00:00Z",
+          status: "cancelled",
+        },
+        { id: "missed", starts_at: "2026-11-24T12:00:00Z", status: "missed" },
+        { id: "bad-date", starts_at: "invalid", status: "scheduled" },
+      ],
+    }) as CalendarEvent;
+  assert.deepEqual(
+    upcomingBroadcastEvents(
+      [
+        event("broadcast"),
+        event("reminder", "reminder"),
+        event("cancelled-event", "stream", "cancelled"),
+      ],
+      Date.parse("2026-11-23T12:00:00Z"),
+    ).map((value) => [value.event.id, value.occurrence.id]),
+    [["broadcast", "future"]],
+  );
+});
 test("private excerpt automation requires recording rights consent, bounded lengths and optimistic revision", () => {
   assert.throws(() => recordingAutomationInput(policy, fields, false));
   assert.throws(() =>
@@ -55,7 +96,10 @@ test("clip preview binds ready render to its owned source, clears baked effects 
     captions: [{ start: 1, end: 2, text: "Caption" }],
     overlays: [{ text: "Overlay" }],
     soundtrack: { media_id: "sound" },
-    timeline: { version: 1, clips: [{ id: "cut", start: 30, end: 40, speed: 1 }] },
+    timeline: {
+      version: 1,
+      clips: [{ id: "cut", start: 30, end: 40, speed: 1 }],
+    },
     visual_effect: "vivid",
   } as Item;
   const clip = {

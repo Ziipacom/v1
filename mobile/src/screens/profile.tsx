@@ -238,7 +238,23 @@ function OwnedProfileScreen({
   const createCategory: Category = category === "all" ? "video" : category;
   return (
     <View style={styles.screen}>
+      <SafeAreaView
+        edges={["top", "left", "right"]}
+        style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 20,
+          backgroundColor: `${color.bg}A6`, borderBottomWidth: 1, borderBottomColor: `${color.border}66` }}
+      >
+        <View testID="profile-navigation" style={[styles.between, { paddingHorizontal: 15, paddingVertical: 5 }]}>
+          <FloatButton label="Back to discovery" icon={ArrowLeft} plain
+            onPress={() => navigation.navigate("Main")} />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <SignOutButton />
+            <FloatButton label="Open Studio menu" icon={Menu}
+              onPress={() => navigation.navigate("Studio")} />
+          </View>
+        </View>
+      </SafeAreaView>
       <ScrollView
+        style={{ flex: 1 }}
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={80}
@@ -250,9 +266,10 @@ function OwnedProfileScreen({
           const offset = event.nativeEvent.contentOffset.y;
           setScrollY(offset);
         }}
-        contentContainerStyle={
-          desktop ? workspace.page : { paddingBottom: 108 + insets.bottom }
-        }
+        contentContainerStyle={[
+          desktop ? workspace.page : { paddingBottom: 108 + insets.bottom },
+          desktop && { paddingTop: workspace.page.padding + 54 + insets.top },
+        ]}
       >
         {desktop && (
           <WorkspaceHeading
@@ -265,34 +282,11 @@ function OwnedProfileScreen({
           style={
             desktop
               ? { height: 180, borderRadius: 12, overflow: "hidden" }
-              : { height: 216 + insets.top }
+              : { height: 216 + 54 + insets.top }
           }
           imageStyle={{ opacity: 0.8 }}
         >
-          <SafeAreaView
-            edges={["top"]}
-            style={{ flex: 1, backgroundColor: "#08031220" }}
-          >
-            <View
-              style={[styles.between, { paddingHorizontal: 15, paddingTop: 5 }]}
-            >
-              <FloatButton
-                label="Back to discovery"
-                icon={ArrowLeft}
-                plain
-                onPress={() => navigation.navigate("Main")}
-              />
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-              >
-                <SignOutButton />
-                <FloatButton
-                  label="Open Studio menu"
-                  icon={Menu}
-                  onPress={() => navigation.navigate("Studio")}
-                />
-              </View>
-            </View>
+          <View style={{ flex: 1, backgroundColor: "#08031220" }}>
             <View
               style={{
                 position: "absolute",
@@ -322,7 +316,7 @@ function OwnedProfileScreen({
                 onPress={() => setSheet("art")}
               />
             </View>
-          </SafeAreaView>
+          </View>
         </ImageBackground>
         <View
           style={{

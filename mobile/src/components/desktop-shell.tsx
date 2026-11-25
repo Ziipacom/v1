@@ -16,6 +16,10 @@ import {
 import {
   ArrowUpRight,
   Bookmark,
+  Bot,
+  Brain,
+  ChevronDown,
+  ChevronUp,
   CalendarDays,
   ChartColumn,
   ChevronRight,
@@ -56,6 +60,7 @@ import {
 } from "../lib/admin-api";
 import { color, font, themeValue } from "../theme";
 import type { RootStack } from "../lib/types";
+import { agentOSSections, isAgentOSTab } from "../lib/agent-os-navigation";
 
 export type DesktopRoute = {
   name: keyof RootStack;
@@ -72,6 +77,7 @@ type NavItem = {
   params?: Record<string, unknown>;
   active: boolean;
   count?: number;
+  children?: NavItem[];
 };
 
 function NavButton({
@@ -168,6 +174,7 @@ export function DesktopShell({
   const { desktop, measureContent } = useDesktopLayout();
   const { session, guest, api, data, refreshing, refresh } = useZiipa();
   const [collapsed, setCollapsed] = useState(false);
+  const [agentNavOpen, setAgentNavOpen] = useState(false);
   const [query, setQuery] = useState("");
   const input = useRef<TextInput>(null);
   const [administration, setAdministration] = useState<AdminIdentity | null>(
@@ -178,6 +185,10 @@ export function DesktopShell({
     (route.name === "Live" && route.params?.tab !== "broadcast");
   const params = route.params || {};
   const library = route.name === "CreatorStudio" && params.tab === "library";
+  useEffect(() => {
+    if (route.name === "MediaOS" && isAgentOSTab(params.tab))
+      setAgentNavOpen(true);
+  }, [route.name, params.tab]);
 
   useEffect(() => {
     if (route.name === "Main" || route.name === "CreatorStudio")
@@ -277,7 +288,7 @@ export function DesktopShell({
             (route.name === "Utility" && params.kind === "promote"),
         },
         {
-          label: "Recordings & clips",
+          label: "Live & recordings",
           Icon: Clapperboard,
           name: "Recordings",
           active: route.name === "Recordings" || route.name === "Exports",
@@ -309,20 +320,25 @@ export function DesktopShell({
       active: route.name === "CreatorGallery" && params.creatorId === undefined,
     });
   }
+  const agentIcons = {
+    Agent: Bot,
+    Memory: Brain,
+    Assistant: Sparkles,
+    Workflows: Workflow,
+  };
   const osLinks: NavItem[] = [
     {
-      label: "Assistant",
-      Icon: Sparkles,
+      label: "Agent OS",
+      Icon: Bot,
       name: "MediaOS",
-      params: { tab: "Assistant" },
-      active: route.name === "MediaOS" && params.tab === "Assistant",
-    },
-    {
-      label: "Workflows",
-      Icon: Workflow,
-      name: "MediaOS",
-      params: { tab: "Workflows" },
-      active: route.name === "MediaOS" && params.tab === "Workflows",
+      active: route.name === "MediaOS" && isAgentOSTab(params.tab),
+      children: agentOSSections.map((section) => ({
+        label: section.label,
+        Icon: agentIcons[section.tab],
+        name: "MediaOS",
+        params: { tab: section.tab },
+        active: route.name === "MediaOS" && params.tab === section.tab,
+      })),
     },
     {
       label: "Insights",
@@ -337,7 +353,8 @@ export function DesktopShell({
       name: "MediaOS",
       active:
         route.name === "MediaOS" &&
-        !["Assistant", "Workflows", "Insights"].includes(String(params.tab)),
+        !isAgentOSTab(params.tab) &&
+        params.tab !== "Insights",
     },
   ];
   const account: NavItem[] = [
@@ -406,14 +423,84 @@ export function DesktopShell({
           {title}
         </Text>
       )}
-      {items.map((item) => (
-        <NavButton
-          key={item.label}
-          item={item}
-          collapsed={collapsed}
-          navigate={navigate}
-        />
-      ))}
+      {items.map((item) =>
+        item.children ? (
+          <View key={item.label}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Agent OS navigation"
+              aria-expanded={agentNavOpen && !collapsed}
+              accessibilityState={{
+                expanded: agentNavOpen && !collapsed,
+                selected: item.active,
+              }}
+              onPress={() => {
+                if (collapsed) {
+                  setCollapsed(false);
+                  setAgentNavOpen(true);
+                } else setAgentNavOpen((open) => !open);
+              }}
+              style={({ pressed }) => ({
+                minHeight: 43,
+                borderRadius: 11,
+                paddingHorizontal: collapsed ? 12 : 13,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: collapsed ? "center" : "flex-start",
+                gap: 11,
+                backgroundColor: item.active
+                  ? color.accentSoft
+                  : pressed
+                    ? color.hover
+                    : "transparent",
+              })}
+            >
+              <item.Icon
+                size={18}
+                color={item.active ? color.text : color.muted}
+              />
+              {!collapsed ? (
+                <>
+                  <Text
+                    style={{
+                      fontFamily: font.medium,
+                      fontSize: 14,
+                      color: item.active ? color.text : color.muted,
+                      flex: 1,
+                    }}
+                  >
+                    Agent OS
+                  </Text>
+                  {agentNavOpen ? (
+                    <ChevronUp size={14} color={color.muted} />
+                  ) : (
+                    <ChevronDown size={14} color={color.muted} />
+                  )}
+                </>
+              ) : null}
+            </Pressable>
+            {agentNavOpen && !collapsed ? (
+              <View style={{ paddingLeft: 12, gap: 2 }}>
+                {item.children.map((child) => (
+                  <NavButton
+                    key={child.label}
+                    item={child}
+                    collapsed={false}
+                    navigate={navigate}
+                  />
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : (
+          <NavButton
+            key={item.label}
+            item={item}
+            collapsed={collapsed}
+            navigate={navigate}
+          />
+        ),
+      )}
     </View>
   );
   const submitSearch = () =>

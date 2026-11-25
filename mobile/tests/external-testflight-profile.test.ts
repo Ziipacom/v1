@@ -91,22 +91,22 @@ test("both iOS beta scopes share all existing request/action guards and preserve
   for (const selectedScope of [policy.internalBetaScope, scope]) {
     const config = evaluateConfig("ios", selectedScope);
     assert.equal(config.iosLimitedTestflight, true);
-    assert.equal(config.iosInternalTestflight, true); // Existing guarded callers use this compatibility export.
+    assert.equal(config.limitedStoreBeta, true); // Both iOS beta scopes share the store restrictions.
     assert.equal(config.iosExternalTestflight, selectedScope === scope);
-    for (const route of ["/api/mobile/auth/register", "/api/web3/challenge", "/api/social/youtube/sync", "/api/social/facebook/connect", "/api/notifications/devices", "/api/os/workflows/new/run"])
-      assert.throws(() => policy.assertInternalBetaRequest(config.iosInternalTestflight, route, "POST"));
-    for (const action of ["registration", "wallet", "network-import", "remote-push"] as const)
-      assert.throws(() => policy.assertInternalBetaAction(config.iosInternalTestflight, action));
-    assert.doesNotThrow(() => policy.assertInternalBetaRequest(config.iosInternalTestflight, "/api/social/facebook/disconnect", "POST"));
-    assert.doesNotThrow(() => policy.assertInternalBetaRequest(config.iosInternalTestflight, "/api/web3/wallets/12345678-1234-4123-8123-123456789012/unlink", "POST"));
-    assert.doesNotThrow(() => policy.assertInternalBetaRequest(config.iosInternalTestflight, "/api/os/workflows/old/pause", "POST"));
+    for (const route of ["/api/mobile/auth/register", "/api/social/youtube/sync", "/api/social/facebook/connect", "/api/notifications/devices", "/api/os/workflows/new/run"])
+      assert.throws(() => policy.assertInternalBetaRequest(config.limitedStoreBeta, route, "POST"));
+    for (const action of ["registration", "network-import", "remote-push"] as const)
+      assert.throws(() => policy.assertInternalBetaAction(config.limitedStoreBeta, action));
+    assert.doesNotThrow(() => policy.assertInternalBetaRequest(config.limitedStoreBeta, "/api/social/facebook/disconnect", "POST"));
+    assert.doesNotThrow(() => policy.assertInternalBetaRequest(config.limitedStoreBeta, "/api/web3/wallets/12345678-1234-4123-8123-123456789012/unlink", "POST"));
+    assert.doesNotThrow(() => policy.assertInternalBetaRequest(config.limitedStoreBeta, "/api/os/workflows/old/pause", "POST"));
   }
   const external = evaluateConfig("ios", scope);
   assert.equal(external.legalUrls.privacy, policy.externalBetaPrivacyUrl);
   assert.equal(external.legalOperatorName, "Niche Labs LLC");
   for (const platform of ["web", "android"])
-    assert.equal(evaluateConfig(platform, scope).iosInternalTestflight, false);
-  assert.equal(evaluateConfig("ios").iosInternalTestflight, false);
+    assert.equal(evaluateConfig(platform, scope).limitedStoreBeta, false);
+  assert.equal(evaluateConfig("ios").limitedStoreBeta, false);
   assert.equal(evaluateConfig("ios").legalUrls.privacy, "");
   assert.equal(policy.isIosInternalBeta("ios", scope), false);
 });
@@ -138,4 +138,33 @@ test("external config retains exact Z, permission purposes and APNs removal with
   assert.deepEqual(native.entitlements, { keep: "safe" });
   assert.deepEqual(native.info.UIBackgroundModes, ["audio"]);
   assert.throws(() => module.exports({ extra: { buildScope: "production" }, entitlements: {}, info: {} }));
+});
+
+test("Play internal beta is Android-only and applies the store beta request guards", () => {
+  const playScope = policy.playInternalBetaScope;
+  const profile = source.build[playScope];
+  const values = {
+    ...source.build.production.env,
+    ...profile.env,
+    EAS_BUILD_PLATFORM: "android",
+    EAS_BUILD_PROFILE: playScope,
+  };
+  assert.equal(gate(values).status, 0);
+  for (const change of [
+    { EAS_BUILD_PLATFORM: "ios" },
+    { EAS_BUILD_PROFILE: "production" },
+    { ZIIPA_APP_ID: "com.ziipa.app.preview" },
+    { EXPO_PUBLIC_BUILD_SCOPE: "" },
+    { ZIIPA_ADMOB_RELEASE_ADS: "true" },
+  ]) assert.equal(gate({ ...values, ...change }).status, 1);
+
+  const config = evaluateConfig("android", playScope);
+  assert.equal(config.androidPlayInternal, true);
+  assert.equal(config.limitedStoreBeta, true);
+  assert.equal(config.iosLimitedTestflight, false);
+  assert.equal(config.legalUrls.privacy, policy.externalBetaPrivacyUrl);
+  assert.doesNotThrow(() => policy.assertInternalBetaRequest(config.limitedStoreBeta, "/api/web3/challenge", "POST"));
+  assert.doesNotThrow(() => policy.assertInternalBetaRequest(config.limitedStoreBeta, "/api/mobile/auth/login", "POST"));
+  for (const platform of ["ios", "web"])
+    assert.equal(evaluateConfig(platform, playScope).limitedStoreBeta, false);
 });

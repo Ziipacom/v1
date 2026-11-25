@@ -1,3 +1,4 @@
+import { HelpLabel } from "../components/help-label";
 import {
   useCallback,
   useEffect,
@@ -437,7 +438,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
 
   if (!session || guest)
     return (
-      <ScrollView style={styles.screen} contentContainerStyle={styles.page}>
+      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" style={styles.screen} contentContainerStyle={styles.page}>
         <Card title="Your release calendar">
           <Text style={styles.body}>
             Plan creator releases, studio work and broadcast reminders in your
@@ -453,10 +454,10 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
     );
 
   return (
-    <ScrollView
+    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
       style={styles.screen}
       showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
+
       contentContainerStyle={[
         styles.page,
         {
@@ -539,7 +540,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
           <Notice text="Use Connect to authorize a calendar, choose what to sync and review exports. Saving a Ziipa reminder does not publish media, start a broadcast or enable device push." />
           <Action
             secondary
-            title="Private updates · opt-in reminder notifications"
+            title="Notifications & devices"
             onPress={() => navigation.navigate("Notifications")}
           />
         </>
@@ -809,9 +810,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
                       daylight-saving time is rejected; recurring gaps are
                       skipped.
                     </Text>
-                    <Text style={styles.label}>
-                      If the clock repeats this hour
-                    </Text>
+                    <HelpLabel label="If the clock repeats this hour" help="When clocks move back, the same local time can occur twice. Choose whether your event uses the earlier or later occurrence." />
                     <View style={{ flexDirection: "row", gap: 8 }}>
                       <Pill
                         title="Earlier occurrence"
@@ -846,7 +845,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
                       Reminders appear as saved Ziipa receipts. Email and push
                       delivery are not implied.
                     </Text>
-                    <Text style={styles.label}>Repeat</Text>
+                    <HelpLabel label="Repeat" help="Creates recurring event dates. A scheduled stream is a plan; you must still start the broadcast yourself." />
                     <View
                       style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}
                     >

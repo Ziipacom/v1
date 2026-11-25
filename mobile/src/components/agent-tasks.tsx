@@ -13,7 +13,11 @@ import * as Crypto from "expo-crypto";
 import { Action, Field, Notice, Pill } from "./ui";
 import { useZiipa } from "../provider";
 import { useDesktopLayout } from "./desktop-layout";
-import { color, styles } from "../theme";
+import { color, styles, font } from "../theme";
+import { InfoTip } from "./info-tip";
+import { HelpLabel } from "./help-label";
+import { Sheet } from "./floating";
+import { LibrarySection } from "./personal-library";
 import { readableStatus, type Project } from "../lib/media-os-types";
 import {
   agentTaskActive,
@@ -54,7 +58,7 @@ export function AgentTasks({
   projects: Project[];
   permissions: () => void;
 }) {
-  const { desktop, contentWidth } = useDesktopLayout();
+  const { desktop } = useDesktopLayout();
   const { session } = useZiipa();
   const [config, setConfig] = useState<AgentConfig | null>(null);
   const [policy, setPolicy] = useState<AgentPolicy | null>(null);
@@ -76,6 +80,9 @@ export function AgentTasks({
     AppState.currentState === "active",
   );
   const [pollRemaining, setPollRemaining] = useState(12);
+  const [section, setSection] = useState<"Tasks" | "Activity" | "Settings">(
+    "Tasks",
+  );
   const alive = useRef(true);
   const owner = useRef(session?.access_token);
   owner.current = session?.access_token;
@@ -349,32 +356,46 @@ export function AgentTasks({
   }
 
   const agentReadiness = (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
       {[
-        [
-          config?.worker_ready ? "Worker online" : "Worker unavailable",
-          !!config?.worker_ready,
-        ],
-        [
-          config?.inference.available
-            ? "Inference ready"
-            : "Inference unavailable",
-          !!config?.inference.available,
-        ],
-        [policy?.enabled ? "Agent enabled" : "Agent off", !!policy?.enabled],
-      ].map(([title, ready]) => (
+        ["Service", !!config?.worker_ready],
+        ["AI", !!config?.inference.available],
+        ["Agent", !!policy?.enabled],
+      ].map(([label, ready]) => (
         <View
-          key={String(title)}
+          key={String(label)}
           style={{
-            paddingHorizontal: 12,
-            paddingVertical: 9,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            borderRadius: 16,
             borderWidth: 1,
-            borderColor: ready ? color.purple : color.border,
-            borderRadius: 20,
-            backgroundColor: ready ? color.purple : color.bg,
+            borderColor: color.border,
+            backgroundColor: color.bg,
           }}
         >
-          <Text style={[styles.small, { color: ready ? color.onAccent : color.text }]}>{title}</Text>
+          <View
+            style={{
+              width: 5,
+              height: 5,
+              borderRadius: 3,
+              backgroundColor: ready ? color.lime : color.faint,
+            }}
+          />
+          <Text style={[styles.small, { fontSize: 12 }]}>
+            {String(label)}{" "}
+            {config
+              ? label === "Agent"
+                ? ready
+                  ? "on"
+                  : "off"
+                : ready
+                  ? "ready"
+                  : "unavailable"
+              : "checking"}
+          </Text>
         </View>
       ))}
     </View>
@@ -394,43 +415,47 @@ export function AgentTasks({
   const agentError = error ? <Notice error text={error} /> : null;
   const agentNotice = notice ? <Notice text={notice} /> : null;
   const refreshAgent = (
-    <Action
-      title="Refresh agent"
-      secondary
-      icon={RefreshCw}
-      busy={loading}
-      disabled={busy}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Refresh agent"
+      accessibilityState={{ disabled: busy || loading, busy: loading }}
+      disabled={busy || loading}
       onPress={() => {
         setPollRemaining(12);
         void load();
       }}
-    />
+      style={{
+        width: 36,
+        height: 36,
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: loading ? 0.5 : 1,
+      }}
+    >
+      <RefreshCw size={18} color={color.muted} />
+    </Pressable>
   );
   const agentStatus = (
     <View
       style={[
         styles.panel,
-        { gap: 14 },
-        desktop && { padding: 20, borderRadius: 14, minWidth: 0 },
+        { gap: 12 },
+        desktop && { padding: 18, borderRadius: 14 },
       ]}
     >
       <View style={styles.between}>
-        <Text style={[styles.heading, desktop && { fontSize: 18 }]}>
+        <Text
+          style={[styles.heading, { flex: 1, fontSize: desktop ? 20 : 24 }]}
+        >
           Ziipa Agent
         </Text>
-        <Bot size={29} color={color.lime} />
+        <InfoTip
+          title="Ziipa Agent"
+          content="Ziipa can complete private tasks using only the tools and budgets you enable. Each completed step has a receipt. Public publishing, wallet transactions and account deletion are not automatic."
+        />
+        {refreshAgent}
       </View>
-      <Text style={styles.body}>
-        Give Ziipa an objective. It can plan and complete approved private
-        workspace work while you are away, with a receipt for every step.
-      </Text>
       {agentReadiness}
-      {agentInference}
-      {agentDetail}
-      {agentSafety}
-      {agentError}
-      {agentNotice}
-      {refreshAgent}
     </View>
   );
   const policyEditor =
@@ -570,11 +595,7 @@ export function AgentTasks({
         <Text style={[styles.heading, desktop && { fontSize: 18 }]}>
           Start a task
         </Text>
-        <Text style={styles.small}>
-          Examples: “Search my media for launch clips, then create a project
-          called Autumn release” or “Review my insights and create a goal for my
-          next episode”.
-        </Text>
+
         <Field
           label="What should Ziipa complete?"
           value={objective}
@@ -588,7 +609,10 @@ export function AgentTasks({
           editable={!busy}
           placeholder="Organize my next release using my private library."
         />
-        <Text style={styles.label}>Project context</Text>
+        <HelpLabel
+          label="Project context"
+          help="Choose a project to focus this task, or use the whole private workspace. The task still follows your saved tool permissions and limits."
+        />
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           <Pill
             title="Whole workspace"
@@ -617,12 +641,31 @@ export function AgentTasks({
           ))}
         </View>
         {policyChanged ? (
-          <Notice text="Save the updated policy before starting a task." />
+          <Text style={styles.small}>
+            Save your updated settings before starting a task.
+          </Text>
         ) : !policy.enabled ? (
-          <Notice text="Enable the agent and save its policy before starting a task." />
+          <View style={{ gap: 8 }}>
+            <Text style={styles.small}>
+              Agent is off. Enable it in Settings before starting a task.
+            </Text>
+            <Action
+              secondary
+              title="Agent settings"
+              onPress={() => setSection("Settings")}
+            />
+          </View>
         ) : !config.can_run ||
           !config.effective_tools.some((tool) => tool !== "render.create") ? (
-          <Notice text="A running worker, healthy inference and at least one effective tool permission are required." />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+            <Text style={[styles.small, { flexShrink: 1 }]}>
+              Tasks are currently unavailable.
+            </Text>
+            <InfoTip
+              title="Task availability"
+              content="Background processing, private AI and at least one effective tool permission must be available before a task can run. Check Agent settings or refresh the status."
+            />
+          </View>
         ) : null}
         {review && canQueue ? (
           <>
@@ -674,9 +717,9 @@ export function AgentTasks({
       <Text style={styles.small}>
         {active
           ? pollRemaining > 0 && foreground
-            ? "Active tasks refresh every 10 seconds for up to two minutes while this screen is visible."
-            : "Automatic refresh paused. Refresh manually to check progress."
-          : "Completed actions remain in your private activity history."}
+            ? "Updating active tasks…"
+            : "Refresh to check task progress."
+          : "Your recent private tasks."}
       </Text>
       {!tasks.length ? (
         <Text style={styles.body}>No autonomous tasks yet.</Text>
@@ -702,10 +745,15 @@ export function AgentTasks({
               {readableStatus(task.status)} · {task.step_count}/{task.max_steps}{" "}
               steps
             </Text>
-            <Text style={[styles.body, { color: color.text }]}>
+            <Text
+              numberOfLines={2}
+              style={[styles.body, { color: color.text }]}
+            >
               {task.objective}
             </Text>
-            <Text style={styles.small}>{task.detail}</Text>
+            <Text numberOfLines={2} style={styles.small}>
+              {task.detail}
+            </Text>
             <Text style={styles.small}>
               {new Date(task.updated_at).toLocaleString()}
             </Text>
@@ -799,66 +847,100 @@ export function AgentTasks({
               {step.position}. {step.title}
             </Text>
             <Text style={styles.small}>
-              {step.tool} · {readableStatus(step.status)}
+              {config?.tools.find((tool) => tool.id === step.tool)?.title ||
+                "Workspace action"}{" "}
+              · {readableStatus(step.status)}
             </Text>
-            {step.action_id ? (
-              <Text style={styles.small}>
-                Activity receipt: {step.action_id}
-              </Text>
-            ) : null}
-            {step.result ? (
-              <Text selectable style={styles.small}>
-                {JSON.stringify(step.result, null, 2).slice(0, 1500)}
-              </Text>
-            ) : null}
+            <LibrarySection title="Step details" initiallyOpen={false}>
+              {step.action_id ? (
+                <Text style={styles.small}>
+                  Activity receipt: {step.action_id}
+                </Text>
+              ) : null}
+              {step.result ? (
+                <Text selectable style={styles.small}>
+                  {JSON.stringify(step.result, null, 2).slice(0, 1500)}
+                </Text>
+              ) : null}
+            </LibrarySection>
           </View>
         ))
       )}
     </View>
   ) : null;
-  return desktop ? (
-    <View style={{ gap: 20 }}>
-      <View style={[styles.panel, { padding: 16, gap: 12, borderRadius: 14 }]}>
-        <View style={[styles.between, { gap: 12, flexWrap: "wrap" }]}>
-          {agentReadiness}
-          {refreshAgent}
-        </View>
-        {agentInference}
-        {agentDetail}
-        {agentError}
-        {agentNotice}
-      </View>
+  return (
+    <View style={{ gap: 14 }}>
+      {agentStatus}
+      {agentError}
+      {agentNotice}
       <View
         style={{
-          flexDirection: contentWidth >= 940 ? "row" : "column",
-          gap: 20,
-          alignItems: "stretch",
+          flexDirection: "row",
+          gap: 6,
+          padding: 4,
+          backgroundColor: color.panel,
+          borderRadius: 12,
         }}
       >
-        <View style={{ flex: 1, minWidth: 0, gap: 20 }}>
-          {taskComposer}
-          {taskActivity}
-          {taskReceipts}
-        </View>
-        <View
-          style={{
-            width: contentWidth >= 940 ? 350 : "100%",
-            minWidth: 0,
-            gap: 20,
-          }}
-        >
+        {(["Tasks", "Activity", "Settings"] as const).map((value) => (
+          <Pressable
+            key={value}
+            accessibilityRole="tab"
+            aria-selected={section === value}
+            accessibilityState={{ selected: section === value }}
+            onPress={() => setSection(value)}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: 38,
+              borderRadius: 9,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: section === value ? color.purple : "transparent",
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: font.semibold,
+                fontSize: 14,
+                color: section === value ? color.onAccent : color.muted,
+              }}
+            >
+              {value}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      {section === "Tasks" ? taskComposer : null}
+      {section === "Activity" ? taskActivity : null}
+      {section === "Settings" ? (
+        <>
           {agentSafety}
           {policyEditor}
-        </View>
-      </View>
-    </View>
-  ) : (
-    <View style={{ gap: 18 }}>
-      {agentStatus}
-      {policyEditor}
-      {taskComposer}
-      {taskActivity}
-      {taskReceipts}
+          <LibrarySection title="Service details" initiallyOpen={false}>
+            {agentInference}
+            {agentDetail}
+            <Text style={styles.small}>
+              Service status does not change your saved permissions or enable
+              the agent.
+            </Text>
+          </LibrarySection>
+        </>
+      ) : null}
+      {selected ? (
+        <Sheet
+          title="Task progress"
+          maxWidth={800}
+          onClose={() => {
+            selectedId.current = null;
+            detailGeneration.current++;
+            setSelected(null);
+            setCancelReview(null);
+          }}
+        >
+          {taskReceipts}
+        </Sheet>
+      ) : null}
     </View>
   );
 }

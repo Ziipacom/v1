@@ -8,6 +8,17 @@ const source = readFileSync(new URL('../lib/backend-proxy.ts', import.meta.url),
 vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports, URL, Headers, Response, fetch: () => { throw new Error('No network requests in unit tests'); } });
 const { proxyBackend } = exports;
 
+test('authorized product media streams through the portal without forwarding account headers to storage', async()=>{
+  const path='/api/store/listings/00000000-0000-4000-8000-000000000001/media/00000000-0000-4000-8000-000000000002';
+  const calls=[];
+  const result=await proxyBackend(new Request('https://ziipa.com'+path,{headers:{cookie:'session=private',authorization:'Bearer synthetic'}}),'https://api.ziipa.com',async(url,init)=>{
+    calls.push({url,init});
+    return calls.length===1?new Response(null,{status:307,headers:{location:'https://'+'a'.repeat(32)+'.r2.cloudflarestorage.com/ziipa-media/creator-media/7/preview?X-Amz-Signature=test'}}):new Response('preview',{headers:{'content-type':'video/mp4'}});
+  });
+  assert.equal(result.status,200);assert.equal(await result.text(),'preview');assert.equal(calls.length,2);
+  assert.equal(calls[1].init.headers.get('cookie'),null);assert.equal(calls[1].init.headers.get('authorization'),null);
+});
+
 test('portal proxy preserves host-only cookies and OAuth redirects without forwarding credentials to the redirect', async () => {
   const calls=[];
   const result=await proxyBackend(new Request('https://ziipa.com/api/publishing/oauth/youtube/authorize?ticket=opaque', {headers:{cookie:'ziipa_session=secret', 'x-ziipa-user':'12', 'x-forwarded-host':'evil.test'}}), 'https://api.ziipa.com', async (url, init) => {

@@ -712,7 +712,7 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
 
   if (!session || guest)
     return (
-      <ScrollView style={styles.screen} contentContainerStyle={styles.page}>
+      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" style={styles.screen} contentContainerStyle={styles.page}>
         <Block title="Create once. Review every destination.">
           <Text style={styles.body}>
             Bring your saved video through preparation, a real export preview
@@ -728,10 +728,10 @@ function ScopedCampaignsScreen({ route, navigation }: Props) {
     );
 
   return (
-    <ScrollView
+    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
       style={styles.screen}
       showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
+
       contentContainerStyle={[
         styles.page,
         {

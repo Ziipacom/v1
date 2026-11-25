@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { maxCreationPhotos, pickCreatorMedia } from "../lib/creator-media-picker";
+import { HelpLabel } from "../components/help-label";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system/legacy";
 import { useIsFocused, usePreventRemove } from "@react-navigation/native";
@@ -80,6 +81,10 @@ import {
   type UploadFile,
 } from "../lib/api";
 import { editorCaptions } from "../lib/editor-captions";
+import { CreationTitle } from "../components/creation-title";
+import { createCreationCopyController, initialCreationTitle, requiredCreationTitle } from "../lib/creation-title";
+import { useCreationAutofill } from "../lib/use-creation-autofill";
+import type { TitleImageCapture } from "../lib/title-image";
 import { validateSoundtrackStart } from "../lib/soundtrack-controls";
 import {
   hasAdvancedOverlays,
@@ -102,7 +107,6 @@ import {
   validateCaptionCues,
 } from "../lib/auto-captions";
 import { audioCreationSource, isStudioMediaCategory, sourceMintItem } from "../lib/editor-source";
-import { iosLimitedTestflight } from "../lib/config";
 import { inCreativeWorld, parseEditing, parsePrice } from "../lib/domain";
 import {
   rememberLocalMedia,
@@ -204,10 +208,24 @@ export function ComposerScreen({
     guest ? existing || samples[0] : undefined,
   );
   const [title, setTitle] = useState(
-    existing?.title ||
+    initialCreationTitle(existing?.title) ||
       (remix ? `Inspired by ${remix.title}`.slice(0, 140) : ""),
   );
+  const titleCapture = useRef<TitleImageCapture>(null);
   const [description, setDescription] = useState(existing?.description || "");
+  const copyController = useRef(createCreationCopyController());
+  const currentCopy = useRef({ title, description });
+  currentCopy.current = { title, description };
+  function changeTitle(value: string) {
+    copyController.current.edit("title");
+    currentCopy.current = { ...currentCopy.current, title: value };
+    setTitle(value);
+  }
+  function changeDescription(value: string) {
+    copyController.current.edit("description");
+    currentCopy.current = { ...currentCopy.current, description: value };
+    setDescription(value);
+  }
   const [tags, setTags] = useState(existing?.tags.join(", ") || "");
   const [city, setCity] = useState(existing?.city || "");
   const [start, setStart] = useState(String(existing?.trim_start || 0));
@@ -695,6 +713,20 @@ export function ComposerScreen({
   const mainLocalUri = file?.uri ||
     (guest && base.media_url && isRetainedDraftMedia(base.media_url) ? base.media_url : undefined);
   const photoPreviewUri = selectedPhoto ? selectedPhoto.localUri : mainLocalUri;
+  const copySourceKey = mainLocalUri || mediaId || base.media_url || base.cover;
+  const autofill = useCreationAutofill({
+    sourceKey: copySourceKey,
+    visual: photoIndex === 0 && !!canvas.content_type && /^(image|video)\//.test(canvas.content_type),
+    disabled: busy || !focused,
+    needsCopy: copyController.current.needs(copySourceKey, { title, description }),
+    capture: titleCapture,
+    onFill: (copy) => {
+      const next = copyController.current.apply(copySourceKey, currentCopy.current, copy);
+      currentCopy.current = next;
+      setTitle(next.title);
+      setDescription(next.description);
+    },
+  });
   function fileFromAsset(
     asset: {
       uri: string;
@@ -770,7 +802,6 @@ export function ComposerScreen({
         setFile(selected);
         setPhotos(additional.map((entry) => ({ file: entry, localUri: entry.uri })));
         setMediaId(null);
-        setTitle((current) => current || selected.name.replace(/\.[^.]+$/, ""));
         setTab("Edit");
         if (selected.mimeType.startsWith("video/")) setCategory("video");
         if (selected.mimeType.startsWith("audio/")) setCategory("music");
@@ -795,7 +826,6 @@ export function ComposerScreen({
       setMediaId(null);
       if (!photo) setCategory("video");
     }
-    if (photo) setTitle((current) => current || cameraFile.name.replace(/\.[^.]+$/, ""));
     setSaved(null);
     setError("");
     setPaused(true);
@@ -858,8 +888,9 @@ export function ComposerScreen({
       }
       if (!title.trim()) {
         setTab("Save");
-        throw new Error("Give your creation a title.");
+        throw new Error("A creation title is required. Enter a title or use a suggestion from your media.");
       }
+      requiredCreationTitle(title);
       if (parsedTags.length > 12 || parsedTags.some((t) => t.length > 40))
         throw new Error("Use up to 12 tags, each under 40 characters.");
       validateOverlays(overlays);
@@ -1310,6 +1341,7 @@ export function ComposerScreen({
       }}
     >
       <EditorPreview
+        titleCapture={titleCapture}
         item={photoPreview}
         paused={paused}
         muted={muted}
@@ -1579,14 +1611,15 @@ export function ComposerScreen({
       </View>
       {tab === "Media" && (
         <>
-          <Field
-            label="Creation title"
+          <CreationTitle
             value={title}
-            onChangeText={setTitle}
-            maxLength={140}
-            editable={!busy}
-            placeholder="Give it a name"
+            onChange={changeTitle}
+            disabled={busy}
+            autofill={autofill}
+            showAutofill={!guest && !canvas.content_type?.startsWith("audio/")}
           />
+          <Field label="Description" value={description} onChangeText={changeDescription}
+            multiline maxLength={3000} editable={!busy} placeholder="Describe your creation" />
           {guest && (
             <>
               <Text style={styles.small}>
@@ -1934,12 +1967,12 @@ export function ComposerScreen({
               Save your creation
             </Text>
           </View>
-          <Field
-            label="Creation title"
+          <CreationTitle
             value={title}
-            onChangeText={setTitle}
-            maxLength={140}
-            editable={!busy}
+            onChange={changeTitle}
+            disabled={busy}
+            autofill={autofill}
+            showAutofill={!guest && !canvas.content_type?.startsWith("audio/")}
           />
           <View style={[styles.row, { flexWrap: "wrap" }]}>
             {worlds.filter((w) => isStudioMediaCategory(w.id)).map((w) => (
@@ -1956,7 +1989,7 @@ export function ComposerScreen({
           <Field
             label="Description"
             value={description}
-            onChangeText={setDescription}
+            onChangeText={changeDescription}
             maxLength={3000}
             multiline
             editable={!busy}
@@ -2001,7 +2034,7 @@ export function ComposerScreen({
           />
           <View style={styles.separator} />
           <View style={styles.between}>
-            <Text style={[styles.heading, { fontSize: 20 }]}>Publish to</Text>
+            <HelpLabel label="Publish to" style={[styles.heading, { fontSize: 20 }]} help="Publish Creation makes eligible media visible on Ziipa. Other networks need their own connection, supported media type and publishing approval." />
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Manage connected networks"
@@ -2338,7 +2371,7 @@ export function ComposerScreen({
           ) : (
             <Notice text="Sign in to publish your creation. Your session draft is available in Save." />
           )}
-          {!guest && !iosLimitedTestflight && (file || mediaId) && (
+          {!guest && (file || mediaId) && (
             <>
               <Action
                 title={mintSource ? "Review mint in Wallet" : "Save a draft before minting"}
@@ -2395,7 +2428,9 @@ export function ComposerScreen({
               <Text style={[styles.small, { fontSize: 11 }]}>
                 {busy
                   ? editorSaveLabel(savePhase, progress)
-                  : unsaved
+                    : !title.trim()
+                      ? "Title required"
+                    : unsaved
                     ? "Unsaved changes"
                     : "All changes saved"}{" "}
                 · Non-destructive editor

@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   ArrowLeft,
@@ -46,6 +46,7 @@ export function VisitorProfileScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Profile">) {
   const { desktop } = useDesktopLayout();
+  const insets = useSafeAreaInsets();
   const { session, data, api } = useZiipa();
   const result = useProfileCollections(route.params?.creatorId);
   const profile = result.value;
@@ -90,8 +91,16 @@ export function VisitorProfileScreen({
         ? []
         : profile?.items || [];
   return (
-    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.screen} edges={["bottom"]}>
+      <SafeAreaView edges={["top", "left", "right"]}
+        style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 20,
+          backgroundColor: `${color.bg}A6`, borderBottomWidth: 1, borderBottomColor: `${color.border}66` }}>
+        <View testID="visitor-profile-navigation" style={{ paddingHorizontal: 15, paddingVertical: 5 }}>
+          <FloatButton icon={ArrowLeft} label="Back from creator profile" plain onPress={() => navigation.goBack()} />
+        </View>
+      </SafeAreaView>
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={{
           paddingBottom: 32,
           maxWidth: desktop ? 1000 : undefined,
@@ -101,17 +110,8 @@ export function VisitorProfileScreen({
       >
         <ImageBackground
           source={cover || undefined}
-          style={{ height: desktop ? 220 : 195, backgroundColor: color.panel }}
-        >
-          <View style={{ padding: 12 }}>
-            <FloatButton
-              icon={ArrowLeft}
-              label="Back from creator profile"
-              plain
-              onPress={() => navigation.goBack()}
-            />
-          </View>
-        </ImageBackground>
+          style={{ height: (desktop ? 220 : 195) + 54 + insets.top, backgroundColor: color.panel }}
+        />
         <View style={{ padding: 20, gap: 12 }}>
           <View
             style={{

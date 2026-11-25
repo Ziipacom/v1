@@ -509,7 +509,7 @@ export function StudioScreen({
       >
         {[
           {
-            label: "Dashboard",
+            label: "Profile",
             Icon: LayoutGrid,
             active: !editing,
             action: () =>
@@ -553,7 +553,7 @@ export function StudioScreen({
               size={25}
               color={active ? color.text : color.faint}
               strokeWidth={1.5}
-              fill={label === "Dashboard" && active ? color.text : "none"}
+              fill={label === "Profile" && active ? color.text : "none"}
             />
             <Text
               style={{

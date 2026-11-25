@@ -10,7 +10,33 @@
       "paragraphs": [
         "Niche Labs LLC operates Ziipa. Contact us about this beta, support or privacy at ziipaziipa@gmail.com.",
         "This notice covers Ziipa’s iPhone TestFlight beta and Android Google Play internal test for people aged 18 or older using an existing Ziipa account. Joining either test does not create a Ziipa account. The beta builds connect to the live Ziipa service, so information you save can remain in your account after you leave the test.",
-        "New account registration, new connected-network authorisations/imports, wallet pairing/signing/transactions, minting, voice cloning and remote push enrolment are unavailable in this beta. Existing account records and available disconnection or removal controls may still appear. A capability described as unavailable is not activated by accepting this notice."
+        "New account registration, new social-feed authorisations/imports, voice cloning and remote push enrolment are unavailable in this beta. Existing account records and available disconnection or removal controls may still appear. A capability described as unavailable is not activated by accepting this notice."
+      ]
+    },
+    {
+      "id": "wallet",
+      "title": "Optional test-network Token Wallet",
+      "paragraphs": [
+        "New wallet-enabled beta builds can connect an external EVM wallet through WalletConnect/Reown or a supported browser wallet. Older beta builds may keep wallet actions disabled. Wallet connection requires a configured connector; minting also requires deployed Ziipa test contracts and public media storage. Mainnet is disabled. Ziipa never asks for your seed phrase or private key.",
+        "When you choose to connect, your wallet address and test network are linked to your Ziipa account after you approve an ownership signature. WalletConnect/Reown relays connection and signature requests and can receive connection metadata such as IP addresses and app identity. Your external wallet holds the signing keys and asks you to approve each signature or transaction.",
+        "Minting is separate from saving or publishing a Ziipa post. Before metadata storage, you must explicitly approve making the selected source media and token metadata public through IPFS/Pinata. This can expose the original source file, including embedded file information, even when its Ziipa draft was private. Transaction addresses, hashes and token records are public on the test blockchain. Ziipa keeps wallet links, metadata references and transaction status for your account. Test assets are for testing and have no promised monetary value. Use test gas only.",
+        "You can unlink a wallet or remove your Ziipa account association, but this cannot erase blockchain records, external wallet assets, IPFS pins or copies held by other people. Wallet connection sessions are held in memory and reconnect after restart; a pending transaction reference may be stored locally for recovery. Do not sign again merely because a confirmation is slow."
+      ]
+    },
+    {
+      "id": "marketplace",
+      "title": "Optional marketplace test payments",
+      "paragraphs": [
+        "Wallet-enabled marketplace beta builds can prepare product listings with selected photos, video and audio from uploads or your Ziipa account. Publishing a listing makes its selected source media available as previews; it does not protect a full source file as a paid download. Choose preview copies if your original should remain private.",
+        "Where configured, physical merchandise checkout uses Stripe Connect test mode or PayPal Sandbox. No real charge or real shipment is intended. Seller onboarding happens on the provider’s page; card and banking credentials are not collected by Ziipa. You approve any PayPal connection data sharing before onboarding. We store seller connection identifiers, listing/price snapshots, buyer and seller account associations, order references and verified payment status. Providers handle the payment, address and seller details you enter on their pages. We do not collect financial account information through Plaid in this beta.",
+        "Digital downloads, live payments and native service purchases are not activated by this test checkout. Test seller connections and local order records may be removed with your Ziipa account; provider records are controlled separately by Stripe and PayPal. Never enter real banking details into a sandbox flow."
+      ]
+    },
+    {
+      "id": "publishing",
+      "title": "Optional external publishing connections",
+      "paragraphs": [
+        "In new publishing-enabled beta builds, the product Publish screen can open publishing account connections. You choose a provider, sign in on its page and approve its requested publishing permissions. Ziipa stores the resulting account/destination association and protects provider credentials on the server. Available providers and post formats depend on provider setup and approval. These permissions are distinct from connected-feed imports, which remain disabled in the limited beta. Connecting an account or publishing a Ziipa product listing does not automatically send an external post. External sharing uses its own review and submission controls; provider copies and records are governed by that network."
       ]
     },
     {
@@ -139,5 +165,5 @@
       ]
     }
   ],
-  "version": "2026-11-10"
+  "version": "2026-11-23"
 }

@@ -85,6 +85,7 @@ export function visibleCaption(captions: Caption[] = [], time: number) {
   return captions.find((c) => time >= c.start && time < c.end)?.text;
 }
 export function privateMediaPath(path: string) {
+  if (/^\/api\/store\/listings\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(path)) return true;
   return /^\/api\/creator\/(?:media|profile-images(?:\/[1-9]\d{0,9})?)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
     path,
   );

@@ -46,7 +46,7 @@ export const conceptsEnabled =
   __DEV__ || process.env.EXPO_PUBLIC_ENABLE_CONCEPTS === "true";
 export const policyVersion = "2026-08-31";
 export const legalUrls = {
-  privacy: iosExternalTestflight ? externalBetaPrivacyUrl : process.env.EXPO_PUBLIC_PRIVACY_URL || "",
+  privacy: iosExternalTestflight || androidPlayInternal ? externalBetaPrivacyUrl : process.env.EXPO_PUBLIC_PRIVACY_URL || "",
   terms: process.env.EXPO_PUBLIC_TERMS_URL || "",
   community: process.env.EXPO_PUBLIC_COMMUNITY_URL || "",
 };

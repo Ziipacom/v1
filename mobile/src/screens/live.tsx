@@ -740,7 +740,7 @@ export function LiveScreen({
                 <Text style={styles.body}>{selected.detail}</Text>
                 <Text style={styles.small}>
                   {selected.record
-                    ? "Provider recording was selected. Before going live, open Private recordings and clips to separately enable the private import/excerpt workflow. Provider retention and access remain separate from Ziipa privacy."
+                    ? "Provider recording was selected. Before going live, open Live & recordings to separately enable the private import/excerpt workflow. Provider retention and access remain separate from Ziipa privacy."
                     : "Recording is off for this broadcast. Prepare a new broadcast with recording selected to create a recording; it cannot be added retroactively."}
                 </Text>
               </View>
@@ -749,7 +749,7 @@ export function LiveScreen({
                   broadcast={selected}
                   focused={enabled}
                   disabled={!!busy || attempted.current || selected.status === "ended"}
-                  onConnections={() => navigation.navigate("Publishing")}
+                  onConnections={() => navigation.navigate("Publishing", { tab: "connections" })}
                   onSavingChange={setSavingDestinations}
                 />
               )}

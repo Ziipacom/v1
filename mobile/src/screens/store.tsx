@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   ActivityIndicator,
   Image,
@@ -17,6 +18,7 @@ import * as Crypto from "expo-crypto";
 import {
   Check,
   Package,
+  Pencil,
   RefreshCw,
   ShoppingBag,
   SlidersHorizontal,
@@ -30,19 +32,26 @@ import { FloatButton, Sheet } from "../components/floating";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { Disclosure } from "../components/disclosure";
 import { StoreSellWizard } from "../components/store-sell-wizard";
+import { StoreMediaUploader } from "../components/store-media-uploader";
+import { StoreCategories } from "../components/store-categories";
+import { StoreProductGallery } from "../components/store-product-gallery";
+import {
+  MarketplaceCheckout,
+  MarketplacePaymentSettings,
+} from "../components/marketplace-checkout";
 import { SponsoredAdCard, useSponsoredAd } from "../components/sponsored-ad";
 import { applyListingSuggestion, type SellStep } from "../lib/store-flow";
 import { uploadMedia } from "../lib/api";
-import { iosLimitedTestflight } from "../lib/config";
+import { limitedStoreBeta } from "../lib/config";
 import { useStorePhotoSource } from "../lib/store-photo-source";
 import { serviceOptions, restoreServices } from "../lib/service-purchases";
 import {
   centsFromText,
+  canEditProduct,
   editListing,
   emptyListing,
   marketplaceSearch,
   money,
-  productCategories,
   type Listing,
   type ListingDraft,
   type MarketPage,
@@ -61,7 +70,10 @@ function ProductDisplay({
   large = false,
   tile = false,
 }: {
-  item: Pick<ListingDraft, "title" | "price_cents" | "descriptor" | "overlay">;
+  item: Pick<
+    ListingDraft,
+    "title" | "price_cents" | "descriptor" | "overlay"
+  > & { description?: string };
   path?: string;
   large?: boolean;
   tile?: boolean;
@@ -83,7 +95,7 @@ function ProductDisplay({
     <View
       style={{
         aspectRatio: 1,
-        borderRadius: tile ? 0 : 18,
+        borderRadius: tile ? 12 : 18,
         overflow: "hidden",
         backgroundColor: color.raised,
       }}
@@ -113,6 +125,47 @@ function ProductDisplay({
               : "Your product photo"}
           </Text>
         </View>
+      )}
+      {tile && (
+        <LinearGradient
+          pointerEvents="none"
+          colors={["transparent", "rgba(17,13,28,0.70)", "rgba(17,13,28,0.94)"]}
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            padding: 10,
+            paddingTop: 32,
+            gap: 3,
+          }}
+        >
+          <Text
+            numberOfLines={1}
+            style={{ color: "#D7FF9F", fontFamily: font.bold, fontSize: 17 }}
+          >
+            {money(item.price_cents)}
+          </Text>
+          <Text
+            numberOfLines={1}
+            style={{
+              color: "#FFFFFF",
+              fontFamily: font.semibold,
+              fontSize: 13,
+              lineHeight: 17,
+            }}
+          >
+            {item.title}
+          </Text>
+          {!!(item.description || item.descriptor) && (
+            <Text
+              numberOfLines={2}
+              style={{ color: "#E1DDE8", fontSize: 11, lineHeight: 14 }}
+            >
+              {item.description || item.descriptor}
+            </Text>
+          )}
+        </LinearGradient>
       )}
       {!tile && item.overlay !== "none" && (
         <View
@@ -238,7 +291,7 @@ function ScopedStoreScreen({
 }: NativeStackScreenProps<RootStack, "Store">) {
   useTheme();
   const { desktop } = useDesktopLayout();
-  const { session, guest, api } = useZiipa();
+  const { session, guest, api, data } = useZiipa();
   const [tab, setTab] = useState<"browse" | "sell" | "services">(
     route.params?.tab || "browse",
   );
@@ -266,9 +319,10 @@ function ScopedStoreScreen({
   const [consent, setConsent] = useState(false);
   const [sellStep, setSellStep] = useState<SellStep>("create");
   const [selected, setSelected] = useState<Listing | null>(null);
-  const [selectedPhoto, setSelectedPhoto] = useState(0);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [photoEpoch, setPhotoEpoch] = useState(0);
   const [photoPaths, setPhotoPaths] = useState<Record<string, string>>({});
+  const [mediaTypes, setMediaTypes] = useState<Record<string, string>>({});
   const [purchaseContext, setPurchaseContext] =
     useState<PurchaseContext | null>(null);
   const [options, setOptions] = useState<PurchaseOption[]>([]);
@@ -291,6 +345,18 @@ function ScopedStoreScreen({
   useEffect(() => setTab(route.params?.tab || "browse"), [route.params?.tab]);
   const validFor = (token: string | undefined) =>
     scope.current.alive && scope.current.token === token;
+  useEffect(() => {
+    setMine(null);
+    setStore(null);
+    setDraft(emptyListing());
+    setPrice("");
+    setPrompt("");
+    setPhotoPaths({});
+    setMediaTypes({});
+    setSelected(null);
+    setLibraryOpen(false);
+    createId.current = null;
+  }, [session?.access_token]);
 
   const loadAccount = useCallback(
     async (reloadStore = false) => {
@@ -433,21 +499,57 @@ function ScopedStoreScreen({
     setDraft(editListing(value));
     setMessage(
       status === "published"
-        ? "Listing published to Ziipa Store. Payments and fulfillment are not activated yet."
+        ? "Listing published to Ziipa Store. Sandbox checkout requires completed seller setup; live payments are off."
         : "Listing saved to your account.",
     );
     await loadAccount();
     await loadMarket();
   }
+  function openProductEditor(item: Listing) {
+    if (!canEditProduct(item, session?.user.id, guest)) return;
+    void run("Opening product", async () => {
+      const token = session?.access_token;
+      const current = await api<StoreMine>("/api/store/mine");
+      if (!validFor(token)) return;
+      const owned = current.listings.find(
+        (row) =>
+          row.id === item.id && canEditProduct(row, session?.user.id, false),
+      );
+      if (!owned)
+        throw new Error("This product is no longer available to edit.");
+      setMine(current);
+      setDraft(editListing(owned));
+      setPrice((owned.price_cents / 100).toFixed(2));
+      setPhotoPaths({});
+      setSelected(null);
+      setOpenSellPanel(null);
+      setSellStep("review");
+      switchTab("sell");
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      setMessage(`Editing ${owned.title}.`);
+    });
+  }
   async function uploadPhoto(camera = false) {
-    if (!session || draft.photo_ids.length >= 6) return;
+    if (!session) return;
     const token = session.access_token;
-    let asset: { uri: string; name: string; mimeType?: string; size?: number };
+    const currentCount =
+      draft.photo_ids.length + (draft.media_ids?.length || 0);
+    if (currentCount >= 10)
+      throw new Error("You can add up to 10 media files.");
+    let assets: {
+      uri: string;
+      name: string;
+      mimeType?: string;
+      size?: number;
+    }[];
     if (camera) {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      const permission =
+        Platform.OS === "web"
+          ? { granted: true }
+          : await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted)
         throw new Error(
-          "Camera access was not granted. You can still add a photo from Files.",
+          "Camera access was not granted. You can still choose media from your library or Files.",
         );
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ["images"],
@@ -456,56 +558,93 @@ function ScopedStoreScreen({
         base64: false,
       });
       if (result.canceled || !validFor(token)) return;
-      const photo = result.assets[0];
-      asset = {
-        uri: photo.uri,
-        name: photo.fileName || "product-photo.jpg",
-        mimeType: photo.mimeType || "image/jpeg",
-        size: photo.fileSize,
-      };
+      assets = result.assets.map((asset) => ({
+        uri: asset.uri,
+        name: asset.fileName || "product-photo.jpg",
+        mimeType: asset.mimeType || "image/jpeg",
+        size: asset.fileSize,
+      }));
     } else {
       const result = await pickCreatorMedia(
-        ["image/jpeg", "image/png", "image/webp"],
-        "images",
+        [
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+          "video/mp4",
+          "video/webm",
+          "audio/mpeg",
+          "audio/wav",
+          "audio/mp4",
+          "audio/ogg",
+        ],
+        "media",
         () => validFor(token),
+        true,
       );
       if (result.canceled || !validFor(token)) return;
-      asset = result.assets[0];
+      assets = result.assets;
     }
-    let size = asset.size;
-    if (!size) {
-      if (Platform.OS === "web")
-        size = (await (await fetch(asset.uri)).blob()).size;
-      else {
-        const info = await FileSystem.getInfoAsync(asset.uri);
-        size = info.exists && !info.isDirectory ? info.size : 0;
+    if (currentCount + assets.length > 10)
+      throw new Error(`Choose up to ${10 - currentCount} more files.`);
+    const checked = [];
+    for (const asset of assets) {
+      const mime = asset.mimeType || "";
+      if (
+        ![
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+          "video/mp4",
+          "video/webm",
+          "audio/mpeg",
+          "audio/wav",
+          "audio/mp4",
+          "audio/ogg",
+        ].includes(mime)
+      )
+        throw new Error(
+          "Use JPG, PNG, WebP, MP4, WebM, MP3, WAV, M4A or Ogg media.",
+        );
+      let size = asset.size;
+      if (!size) {
+        if (Platform.OS === "web")
+          size = (await (await fetch(asset.uri)).blob()).size;
+        else {
+          const info = await FileSystem.getInfoAsync(asset.uri);
+          size = info.exists && !info.isDirectory ? info.size : 0;
+        }
       }
+      if (!size || size > (mime.startsWith("image/") ? 10 : 100) * 1024 * 1024)
+        throw new Error(
+          "Photos can be up to 10 MB; video and audio up to 100 MB.",
+        );
+      checked.push({ ...asset, mimeType: mime, size });
     }
-    if (!size || size > 10 * 1024 * 1024)
-      throw new Error("Choose a static product photo up to 10 MB.");
-    const photo = await uploadMedia(
-      {
-        uri: asset.uri,
-        name: asset.name,
-        mimeType: asset.mimeType || "image/jpeg",
-        size,
-      },
-      token,
-      (percent) => {
-        if (validFor(token)) setBusy(`Uploading photo ${percent}%`);
-      },
-    );
-    if (!validFor(token)) return;
-    setPhotoPaths((previous) => ({
-      ...previous,
-      [photo.id]: `/api/creator/media/${photo.id}`,
-    }));
-    setDraft((previous) => ({
-      ...previous,
-      photo_ids: [...previous.photo_ids, photo.id],
-    }));
+    for (const asset of checked) {
+      if (!validFor(token)) return;
+      const media = await uploadMedia(asset, token, (percent) => {
+        if (validFor(token)) setBusy(`Uploading media ${percent}%`);
+      });
+      if (!validFor(token)) return;
+      setPhotoPaths((previous) => ({
+        ...previous,
+        [media.id]: `/api/creator/media/${media.id}`,
+      }));
+      setMediaTypes((previous) => ({
+        ...previous,
+        [media.id]: asset.mimeType,
+      }));
+      setDraft((previous) =>
+        asset.mimeType.startsWith("image/")
+          ? { ...previous, photo_ids: [...previous.photo_ids, media.id] }
+          : {
+              ...previous,
+              media_ids: [...(previous.media_ids || []), media.id],
+            },
+      );
+    }
     setMessage(
-      "Photo uploaded privately. Save the listing to keep it in your storefront.",
+      "Media uploaded privately. Review the selected public previews before publishing the listing.",
     );
   }
 
@@ -552,8 +691,10 @@ function ScopedStoreScreen({
   return (
     <View style={{ flex: 1, backgroundColor: color.bg }}>
       <ScrollView
-        ref={scrollRef}
+        automaticallyAdjustKeyboardInsets
         keyboardShouldPersistTaps="handled"
+        ref={scrollRef}
+
         contentContainerStyle={{
           padding: desktop ? 28 : 18,
           paddingBottom: 70,
@@ -645,6 +786,9 @@ function ScopedStoreScreen({
         {!!error && <Notice text={error} error />}
         {!!message && <Notice text={message} />}
 
+        {(tab === "browse" || tab === "sell") && !guest && (
+          <MarketplacePaymentSettings />
+        )}
         {tab === "browse" && (
           <>
             {sellerStore && (
@@ -681,25 +825,7 @@ function ScopedStoreScreen({
                 onPress={() => setFilters(!filters)}
               />
             </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8 }}
-            >
-              <Pill
-                title="All"
-                active={category === "all"}
-                onPress={() => setCategory("all")}
-              />
-              {productCategories.map((value) => (
-                <Pill
-                  key={value.id}
-                  title={value.title}
-                  active={category === value.id}
-                  onPress={() => setCategory(value.id)}
-                />
-              ))}
-            </ScrollView>
+            <StoreCategories value={category} onChange={setCategory} />
             {filters && (
               <View style={group}>
                 <Text style={styles.label}>Product type</Text>
@@ -807,45 +933,56 @@ function ScopedStoreScreen({
                       <SponsoredAdCard ad={marketplaceAd} tile />
                     </View>
                   )}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`${item.title}, ${money(item.price_cents)}, ${item.store_name}`}
-                    onPress={() => {
-                      setSelectedPhoto(0);
-                      setSelected(item);
-                    }}
+                  <View
                     style={{
                       width: `${100 / columns}%`,
-                      gap: 5,
                       paddingHorizontal: 2,
                       paddingBottom: 8,
+                      position: "relative",
                     }}
                   >
-                    <ProductDisplay
-                      key={`${item.id}:${photoEpoch}`}
-                      tile
-                      item={item}
-                      path={item.photos[0]}
-                    />
-                    <Text
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`${item.title}, ${money(item.price_cents)}, ${item.store_name}`}
+                      onPress={() => {
+                        setSelected(item);
+                      }}
                       style={{
-                        color: color.text,
-                        fontFamily: font.bold,
-                        fontSize: 16,
+                        width: "100%",
+                        gap: 5,
+                        paddingHorizontal: 2,
+                        paddingBottom: 8,
                       }}
                     >
-                      {money(item.price_cents)}
-                    </Text>
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.body, { fontSize: 14, lineHeight: 19 }]}
-                    >
-                      {item.title}
-                    </Text>
-                    <Text numberOfLines={1} style={styles.small}>
-                      {item.store_name}
-                    </Text>
-                  </Pressable>
+                      <ProductDisplay
+                        key={`${item.id}:${photoEpoch}`}
+                        tile
+                        item={item}
+                        path={item.photos[0]}
+                      />
+                    </Pressable>
+                    {canEditProduct(item, session?.user.id, guest) && (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit product ${item.title}`}
+                        disabled={!!busy}
+                        onPress={() => openProductEditor(item)}
+                        style={{
+                          position: "absolute",
+                          top: 6,
+                          right: 8,
+                          width: 44,
+                          height: 44,
+                          borderRadius: 22,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: "rgba(17,13,28,0.72)",
+                        }}
+                      >
+                        <Pencil size={17} color="#FFFFFF" />
+                      </Pressable>
+                    )}
+                  </View>
                 </Fragment>
               ))}
             </View>
@@ -863,6 +1000,7 @@ function ScopedStoreScreen({
         {tab === "sell" && (
           <View style={{ gap: 12 }}>
             <StoreSellWizard
+              onConnect={() => navigation.navigate("Publishing", {tab:"connections"})}
               onNew={() => {
                 if (!operation.current) {
                   newProduct();
@@ -888,6 +1026,60 @@ function ScopedStoreScreen({
               consent={consent}
               onConsent={() => setConsent(!consent)}
               busy={busy}
+              mediaUploader={
+                <StoreMediaUploader
+                  key={`${session?.user.id}:${draft.id || "new"}`}
+                  photos={draft.photo_ids}
+                  media={draft.media_ids || []}
+                  busy={!!busy}
+                  path={(id) =>
+                    photoPaths[id] ||
+                    (draft.id
+                      ? `/api/store/listings/${draft.id}/photos/${id}`
+                      : `/api/creator/media/${id}`)
+                  }
+                  mediaInfo={(id) => ({
+                    path:
+                      photoPaths[id] ||
+                      (draft.id
+                        ? `/api/store/listings/${draft.id}/media/${id}`
+                        : `/api/creator/media/${id}`),
+                    contentType:
+                      mediaTypes[id] ||
+                      mine?.listings
+                        .flatMap((item) => item.media || [])
+                        .find((item) => item.id === id)?.content_type ||
+                      data.drafts.find((item) => item.media_id === id)
+                        ?.content_type ||
+                      "video/mp4",
+                  })}
+                  upload={() => void run("Uploading media", uploadPhoto)}
+                  camera={() =>
+                    void run("Uploading media", () => uploadPhoto(true))
+                  }
+                  library={() => setLibraryOpen(true)}
+                  remove={(id) =>
+                    setDraft((previous) => ({
+                      ...previous,
+                      photo_ids: previous.photo_ids.filter(
+                        (value) => value !== id,
+                      ),
+                      media_ids: (previous.media_ids || []).filter(
+                        (value) => value !== id,
+                      ),
+                    }))
+                  }
+                  cover={(id) =>
+                    setDraft((previous) => ({
+                      ...previous,
+                      photo_ids: [
+                        id,
+                        ...previous.photo_ids.filter((value) => value !== id),
+                      ],
+                    }))
+                  }
+                />
+              }
               preview={
                 <ProductDisplay
                   item={{
@@ -901,7 +1093,8 @@ function ScopedStoreScreen({
                   path={previewPath}
                 />
               }
-              onUpload={() => void run("Uploading photo", uploadPhoto)}
+              onLibrary={() => setLibraryOpen(true)}
+              onUpload={() => void run("Uploading media", uploadPhoto)}
               onCamera={
                 Platform.OS === "web"
                   ? undefined
@@ -1122,7 +1315,7 @@ function ScopedStoreScreen({
               <Disclosure
                 title="Purchases & restore"
                 detail={
-                  services?.billing_enabled && !iosLimitedTestflight
+                  services?.billing_enabled && !limitedStoreBeta
                     ? "Review store prices or restore access"
                     : "Purchases not activated"
                 }
@@ -1134,7 +1327,7 @@ function ScopedStoreScreen({
                   )
                 }
               >
-                {services?.billing_enabled && !iosLimitedTestflight && (
+                {services?.billing_enabled && !limitedStoreBeta && (
                   <View style={group}>
                     <Action
                       title="Load available store prices"
@@ -1193,7 +1386,7 @@ function ScopedStoreScreen({
                   </View>
                 )}
 
-                {(!services?.billing_enabled || iosLimitedTestflight) && (
+                {(!services?.billing_enabled || limitedStoreBeta) && (
                   <Notice text="Purchases are not activated in this build. You can review the proposed packages without being charged." />
                 )}
               </Disclosure>
@@ -1206,9 +1399,31 @@ function ScopedStoreScreen({
           title={
             openSellPanel === "store" ? "Storefront settings" : "Your products"
           }
+          footer={
+            openSellPanel === "store" && store ? (
+              <Action
+                title="Save storefront"
+                icon={Check}
+                busy={busy === "Saving storefront"}
+                disabled={!!busy}
+                secondary
+                onPress={() =>
+                  void run("Saving storefront", async () => {
+                    const saved = await api<Storefront>(
+                      "/api/store/storefront",
+                      store,
+                    );
+                    setStore(saved);
+                    await loadAccount();
+                    setMessage("Storefront saved to your account.");
+                  })
+                }
+              />
+            ) : undefined
+          }
           onClose={() => setOpenSellPanel(null)}
         >
-          <ScrollView contentContainerStyle={{ gap: 12 }}>
+          <View style={{ gap: 12 }}>
             {openSellPanel === "store" ? (
               <View style={{ gap: 12 }}>
                 {" "}
@@ -1249,24 +1464,6 @@ function ScopedStoreScreen({
                       title="Show my published products in Ziipa Store"
                       onChange={() =>
                         setStore({ ...store, enabled: !store.enabled })
-                      }
-                    />
-                    <Action
-                      title="Save storefront"
-                      icon={Check}
-                      busy={busy === "Saving storefront"}
-                      disabled={!!busy}
-                      secondary
-                      onPress={() =>
-                        void run("Saving storefront", async () => {
-                          const saved = await api<Storefront>(
-                            "/api/store/storefront",
-                            store,
-                          );
-                          setStore(saved);
-                          await loadAccount();
-                          setMessage("Storefront saved to your account.");
-                        })
                       }
                     />
                   </>
@@ -1317,28 +1514,103 @@ function ScopedStoreScreen({
                 ))}
               </View>
             )}
-          </ScrollView>
+          </View>
+        </Sheet>
+      )}
+      {libraryOpen && (
+        <Sheet title="Choose from Ziipa" onClose={() => setLibraryOpen(false)}>
+          <Notice text="Choose your saved source media as a product preview. Publishing the listing exposes that source, including an otherwise private draft. Edited exports must be added separately." />
+          {data.drafts
+            .filter(
+              (item) =>
+                item.creator_id === session?.user.id &&
+                !item.demo &&
+                item.media_id &&
+                item.visibility !== "hidden",
+            )
+            .slice(0, 100)
+            .map((item) => (
+              <View key={item.id} style={{ gap: 8 }}>
+                <Text style={styles.body}>{item.title}</Text>
+                <Action
+                  secondary
+                  title={
+                    item.photo_ids?.length
+                      ? `Add photo series (${item.photo_ids.length})`
+                      : "Add source media"
+                  }
+                  disabled={!!busy}
+                  onPress={() => {
+                    const ids = Array.from(
+                      new Set([
+                        ...(item.photo_ids?.length
+                          ? item.photo_ids
+                          : [item.media_id!]),
+                      ]),
+                    );
+                    const image =
+                      item.content_type?.startsWith("image/") ||
+                      !!item.photo_ids?.length;
+                    const fresh = ids.filter(
+                      (id) =>
+                        !draft.photo_ids.includes(id) &&
+                        !(draft.media_ids || []).includes(id),
+                    );
+                    if (
+                      draft.photo_ids.length +
+                        (draft.media_ids?.length || 0) +
+                        fresh.length >
+                      10
+                    ) {
+                      setError("You can add up to 10 preview files in total.");
+                      return;
+                    }
+                    setDraft((previous) =>
+                      image
+                        ? {
+                            ...previous,
+                            photo_ids: [...previous.photo_ids, ...fresh],
+                          }
+                        : {
+                            ...previous,
+                            media_ids: [
+                              ...(previous.media_ids || []),
+                              ...fresh,
+                            ],
+                          },
+                    );
+                    setPhotoPaths((previous) => ({
+                      ...previous,
+                      ...Object.fromEntries(
+                        fresh.map((id) => [id, `/api/creator/media/${id}`]),
+                      ),
+                    }));
+                    setLibraryOpen(false);
+                  }}
+                />
+              </View>
+            ))}
+          {!data.drafts.some(
+            (item) => item.creator_id === session?.user.id && item.media_id,
+          ) && (
+            <Text style={styles.small}>
+              Save a creation to your Ziipa account to add it here.
+            </Text>
+          )}
         </Sheet>
       )}
       {selected && (
         <Sheet title={selected.title} onClose={() => setSelected(null)}>
-          <ProductDisplay
-            large
-            item={selected}
-            path={selected.photos[selectedPhoto]}
-          />
-          {selected.photos.length > 1 && (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-              {selected.photos.map((path, index) => (
-                <Pill
-                  key={path}
-                  title={`Photo ${index + 1}`}
-                  active={selectedPhoto === index}
-                  onPress={() => setSelectedPhoto(index)}
-                />
-              ))}
-            </View>
+          {canEditProduct(selected, session?.user.id, guest) && (
+            <Action
+              secondary
+              title="Edit product"
+              icon={Pencil}
+              disabled={!!busy}
+              onPress={() => openProductEditor(selected)}
+            />
           )}
+          <StoreProductGallery key={selected.id} listing={selected} />
           <Text style={[styles.heading, { fontSize: 27 }]}>
             {money(selected.price_cents)}
           </Text>
@@ -1361,7 +1633,7 @@ function ScopedStoreScreen({
               setTab("browse");
             }}
           />
-          <Notice text="Purchasing is not activated yet. No payment is taken and no paid file is delivered from this listing." />
+          <MarketplaceCheckout key={selected.id} listing={selected} />
           <Action
             title="Report this listing"
             secondary

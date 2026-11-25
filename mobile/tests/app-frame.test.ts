@@ -44,7 +44,7 @@ function frameUI(beta: boolean, initialInsets: Insets) {
         useSafeAreaInsets: () => insets,
         useSafeAreaFrame: () => viewport,
       };
-    if (name === "../lib/config") return { iosLimitedTestflight: beta };
+    if (name === "../lib/config") return { limitedStoreBeta: beta };
     if (name === "../theme")
       return {
         color: { panel: "#211C2C" },

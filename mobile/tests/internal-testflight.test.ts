@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 import ts from "typescript";
 import * as policy from "../src/lib/internal-beta-policy.ts";
+import * as readiness from "../src/lib/wallet-readiness.ts";
 
 const require = createRequire(import.meta.url);
 const root = new URL("../", import.meta.url);
@@ -243,16 +244,11 @@ test("runtime restriction applies only to the explicit iOS binary and blocks nor
   const blocked = [
     "/api/mobile/auth/register",
     "/api/auth/register?x=1",
-    "/api/web3/challenge",
-    "/api/web3/intents",
-    "/api/web3/metadata",
     "/api/social/facebook/connect",
     "/api/social/bluesky/link",
     "/api/social/youtube/sync",
     "/api/social/instagram/import-target",
     "/api/social/oauth/facebook/authorize",
-    "/api/publishing/oauth/tiktok/start",
-    "/api/publishing/connections/youtube/target",
     "/api/os/workflows",
     "/api/os/workflows/old/run",
     "/api/os/workflows/runs/old/retry",
@@ -280,7 +276,13 @@ test("runtime restriction applies only to the explicit iOS binary and blocks nor
     ["/api/social/media/owned/export", "POST"],
     ["/api/social/facebook/disconnect", "POST"],
     ["/api/publishing/connections/tiktok/disconnect", "POST"],
+    ["/api/publishing/oauth/tiktok/start", "POST"],
+    ["/api/publishing/connections/youtube/target", "POST"],
     ["/api/social/hub", "GET"],
+    ["/api/web3/config", "GET"],
+    ["/api/web3/challenge", "POST"],
+    ["/api/web3/metadata", "POST"],
+    ["/api/web3/intents", "POST"],
     ["/api/web3/wallets", "GET"],
     ["/api/web3/wallets/12345678-1234-4123-8123-123456789012/unlink", "POST"],
     ["/api/notifications/preferences", "POST"],
@@ -311,6 +313,7 @@ function evaluate(
       compilerOptions: {
         module: ts.ModuleKind.CommonJS,
         target: ts.ScriptTarget.ES2022,
+        jsx: ts.JsxEmit.ReactJSX,
       },
     },
   ).outputText;
@@ -321,6 +324,38 @@ function evaluate(
   );
   return exports;
 }
+
+test("Wallet route renders the full guarded wallet without starting a connection", () => {
+  let connections = 0;
+  const jsx = (type: any, props: any) => ({ type, props });
+  const wallet = evaluate("src/screens/wallet.tsx", (name) => {
+    if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
+    if (name === "../theme") return { themedStyles: () => ({}) };
+    if (name === "../lib/wallet-connector")
+      return { connectWallet: () => { connections++; } };
+    // Imports are inert here; the child performs its own normal reads only
+    // after React mounts it. Rendering this route must not pair or sign.
+    return {};
+  });
+  const navigation = { navigate() {} };
+  const item = { id: "owned-source" };
+  const view = wallet.WalletScreen({ navigation, initialItem: item });
+  assert.equal(view.type.name, "FullWalletScreen");
+  assert.equal(view.props.navigation, navigation);
+  assert.equal(view.props.initialItem, item);
+  assert.equal(connections, 0);
+});
+
+test("deployed and preview Android beta names share one scope, wallet notice and platform guard", () => {
+  assert.equal(policy.playInternalBetaScope, policy.androidPlayInternalScope);
+  assert.equal(policy.playInternalBetaNotice, policy.androidPlayInternalNotice);
+  assert.match(policy.androidPlayInternalNotice, /Token Wallet supports test networks only/);
+  for (const platform of ["ios", "android", "web"])
+    for (const buildScope of [policy.androidPlayInternalScope, policy.externalBetaScope, undefined]) {
+      assert.equal(policy.isPlayInternalBeta(platform, buildScope), policy.isAndroidPlayInternalBeta(platform, buildScope));
+      assert.equal(policy.isLimitedStoreBeta(platform, buildScope), policy.isIosLimitedBeta(platform, buildScope) || policy.isAndroidPlayInternalBeta(platform, buildScope));
+    }
+});
 
 test("real native request and direct creator transport reject writes before any fetch, while normal sign-in and drafts continue", async () => {
   for (const locked of [true, false]) {
@@ -378,7 +413,7 @@ test("real native request and direct creator transport reject writes before any 
   }
 });
 
-test("wallet exported actions block provider pairing/signing/transactions before external calls; normal connector still works", async () => {
+test("beta and web connector permit explicit testnet wallet actions and reject mainnet before provider calls", async () => {
   for (const locked of [true, false]) {
     const calls: string[] = [];
     const provider = {
@@ -399,54 +434,31 @@ test("wallet exported actions block provider pairing/signing/transactions before
         if (name === "buffer") return require("node:buffer");
         if (name === "react-native") return { Platform: { OS: "ios" } };
         if (name === "./config") return { limitedStoreBeta: locked };
-        if (name === "./internal-beta-policy") return policy;
+        if (name === "./wallet-readiness") return readiness;
         if (name === "./wallet-injected")
           return { injectedWallet: () => provider };
         throw new Error(`Unexpected external wallet import ${name}`);
       },
       {
-        process: { env: { EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID: "synthetic" } },
+        process: { env: { EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID: "a".repeat(32) } },
         __DEV__: false,
       },
     );
     const intent = {
       status: "prepared",
       chain_id: 84532,
-      transaction: { from: "0x" + "1".repeat(40) },
+      transaction: { from: "0x" + "1".repeat(40), chainId: "0x14a34" },
     };
-    if (locked) {
-      assert.equal(wallet.walletConnectConfigured, false);
-      assert.equal(wallet.browserWalletAvailable(), false);
-      await assert.rejects(
-        wallet.connectWallet(84532, "injected", () => {}),
-        /Wallet pairing/,
-      );
-      await assert.rejects(
-        wallet.connectWallet(84532, "walletconnect", () => {}),
-        /Wallet pairing/,
-      );
-      await assert.rejects(
-        wallet.signWalletProof("fixture", intent.transaction.from, 84532),
-        /Wallet pairing/,
-      );
-      await assert.rejects(
-        wallet.sendWalletTransaction(intent),
-        /Wallet pairing/,
-      );
-      assert.equal(wallet.currentWallet(), null);
-      assert.deepEqual(calls, []);
-    } else {
-      await wallet.connectWallet(84532, "injected", () => {});
-      assert.equal(
-        await wallet.signWalletProof("fixture", intent.transaction.from, 84532),
-        "synthetic-signature",
-      );
-      assert.equal(
-        await wallet.sendWalletTransaction(intent),
-        "0x" + "2".repeat(64),
-      );
-      assert.ok(calls.includes("eth_sendTransaction"));
-    }
+    assert.equal(wallet.walletConnectConfigured, true);
+    await assert.rejects(wallet.connectWallet(1, "injected", () => {}), /Mainnet is disabled/);
+    await assert.rejects(wallet.connectWallet(31337, "injected", () => {}), /desktop development/);
+    assert.equal(calls.length, 0);
+    await wallet.connectWallet(84532, "injected", () => {});
+    assert.equal(await wallet.signWalletProof("fixture", intent.transaction.from, 84532), "synthetic-signature");
+    await assert.rejects(wallet.sendWalletTransaction({...intent, transaction: {...intent.transaction, chainId: "0x1"}}), /does not match/);
+    assert.equal(calls.includes("eth_sendTransaction"), false);
+    assert.equal(await wallet.sendWalletTransaction(intent), "0x" + "2".repeat(64));
+    assert.ok(calls.includes("eth_sendTransaction"));
     await wallet.disconnectWallet();
     await wallet.cancelPairing();
   }

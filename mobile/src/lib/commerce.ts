@@ -11,6 +11,7 @@ export type ListingDraft = {
   price_cents: number;
   currency: "USD";
   photo_ids: string[];
+  media_ids: string[];
   descriptor: string;
   overlay: "none" | "price" | "editorial";
   condition: "not_applicable" | "new" | "like_new" | "good" | "fair";
@@ -25,6 +26,7 @@ export type Listing = Omit<ListingDraft, "status"> & {
   seller_id: number;
   store_name: string;
   photos: string[];
+  media?: { id: string; content_type: string; path: string }[];
   checkout_ready: boolean;
   created_at: string;
 };
@@ -98,6 +100,7 @@ export const emptyListing = (): ListingDraft => ({
   price_cents: 0,
   currency: "USD",
   photo_ids: [],
+  media_ids: [],
   descriptor: "",
   overlay: "price",
   condition: "not_applicable",
@@ -111,7 +114,7 @@ export function editListing(value: Listing): ListingDraft {
   return Object.fromEntries(
     Object.keys({ id: undefined, ...fields }).map((key) => [
       key,
-      key === "status" && value.status === "hidden" ? "draft" : value[key as keyof Listing],
+      key === "status" && value.status === "hidden" ? "draft" : key === "media_ids" ? value.media_ids || [] : value[key as keyof Listing],
     ]),
   ) as ListingDraft;
 }
@@ -123,6 +126,10 @@ export function centsFromText(value: string): number | null {
 }
 export const money = (cents: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+
+export function canEditProduct(item: Pick<Listing, "seller_id" | "status">, ownerId: number | undefined, guest: boolean) {
+  return !guest && !!ownerId && item.seller_id === ownerId && item.status !== "hidden";
+}
 const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const photoPath = new RegExp(`^/api/store/listings/${uuid}/photos/${uuid}$`, "i");
 const ownedPhoto = new RegExp(`^/api/creator/media/${uuid}$`, "i");

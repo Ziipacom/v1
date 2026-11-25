@@ -43,6 +43,16 @@ https://frameworks.network/pricing
 Migration guide:
 https://logbook.frameworks.network/migrate/livepeer-studio/
 
+## UI prepared locally
+
+Recordings is now a compact Live & recordings catalogue, with Live now, Events,
+Recordings and Clips. Live cards use fresh verified public streams and validated
+playback endpoints, with no automatic preview playback. Events use actual saved
+stream occurrences. Recordings and clips use owned sources and preserve existing
+consent, revision, preview, retry and cancellation controls. Details and service
+readiness are behind explicit controls. This UI does not itself activate a
+provider, start a stream, enable a worker or change public visibility.
+
 ## Multi-destination beta
 
 The web and native control room use the same destination picker. Ziipa is the

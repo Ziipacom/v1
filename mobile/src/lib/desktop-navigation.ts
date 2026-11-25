@@ -176,6 +176,7 @@ function project(
     case "publishing":
       id("itemId");
       id("renderId");
+      put("tab", choice(input.tab, ["connections"]));
       break;
     case "exports":
       id("itemId");
@@ -186,6 +187,10 @@ function project(
       break;
     case "updates":
       id("deliveryId");
+      put(
+        "tab",
+        choice(input.tab, ["Activity", "Preferences", "Devices", "App"]),
+      );
       break;
     case "wallet":
     case "promote":
@@ -250,7 +255,11 @@ export function destinationSearch(
     if (choice(input.tab, ["overview", "library"]) === invalid) return null;
     view = input.tab === "library" ? "library" : "studio";
   } else if (screen === "Utility") {
-    if (input.kind === "wallet" || input.kind === "promote" || input.kind === "inbox")
+    if (
+      input.kind === "wallet" ||
+      input.kind === "promote" ||
+      input.kind === "inbox"
+    )
       view = input.kind;
   } else {
     view = (Object.keys(screens) as DesktopView[]).find(

@@ -206,7 +206,7 @@ export type RootStack = {
       }
     | undefined;
   Connections: { tab?: "accounts" | "feed" | "people" | "outbox" } | undefined;
-  Publishing: { itemId?: string; renderId?: string } | undefined;
+  Publishing: { itemId?: string; renderId?: string; tab?: "connections" } | undefined;
   Exports: { itemId: string };
   Campaigns: { itemId?: string; campaignId?: string } | undefined;
   Calendar:
@@ -222,7 +222,12 @@ export type RootStack = {
     | { tab?: "watch" | "broadcast"; streamId?: string; watchId?: string }
     | undefined;
   Recordings: { streamId?: string } | undefined;
-  Notifications: { deliveryId?: string } | undefined;
+  Notifications:
+    | {
+        deliveryId?: string;
+        tab?: "Activity" | "Preferences" | "Devices" | "App";
+      }
+    | undefined;
   Settings: undefined;
   Administration: undefined;
   Legal: { kind: "privacy" | "terms" | "community" };

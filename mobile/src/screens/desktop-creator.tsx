@@ -39,6 +39,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  Wallet,
   X,
   type LucideIcon,
 } from "lucide-react-native";
@@ -51,7 +52,7 @@ import { useDesktopLayout } from "../components/desktop-layout";
 import { useZiipa } from "../provider";
 import { themedStyles, themeValue, color, font, headerTitleStyle } from "../theme";
 import type { Category, Item, RootStack } from "../lib/types";
-import { isStudioMediaCategory } from "../lib/editor-source";
+import { isStudioMediaCategory, sourceMintItem } from "../lib/editor-source";
 import {
   creatorConnectionLabel,
   creatorLibrary,
@@ -472,6 +473,17 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
                   <Text style={[s.inlineText, { color: color.danger }]}>Delete</Text>
                 </Pressable>
               )}
+              {!guest && sourceMintItem(item, session?.user.id, false) && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Mint ${item.title} in Token Wallet`}
+                  onPress={() => navigation.navigate("Utility", { kind: "wallet", item })}
+                  style={s.inlineAction}
+                >
+                  <Wallet size={13} color="#C6B1E7" />
+                  <Text style={s.inlineText}>Mint</Text>
+                </Pressable>
+              )}
               {!editable && (
                 <Pressable
                   accessibilityRole="button"
@@ -491,9 +503,9 @@ export function CreatorStudioScreen({ route, navigation }: Props) {
   }
   return (
     <>
-    <ScrollView
+    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
       style={s.screen}
-      keyboardShouldPersistTaps="handled"
+
       showsVerticalScrollIndicator={false}
       scrollEventThrottle={100}
       onScroll={(event) => setScrollY(event.nativeEvent.contentOffset.y)}

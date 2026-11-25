@@ -3,11 +3,16 @@ import { Platform } from "react-native";
 import { injectedWallet } from "./wallet-injected";
 import type { EVMProvider, Intent } from "./wallet-types";
 import type UniversalProvider from "@walletconnect/universal-provider";
-import { limitedStoreBeta } from "./config";
-import { assertInternalBetaAction } from "./internal-beta-policy";
+import {
+  assertWalletIntent,
+  assertWalletNetwork,
+  publicWalletConnectProjectId,
+} from "./wallet-readiness";
 
-export const walletConnectConfigured =
-  !limitedStoreBeta && !!process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID;
+const walletProjectId =
+  process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID ||
+  publicWalletConnectProjectId;
+export const walletConnectConfigured = /^[0-9a-f]{32}$/i.test(walletProjectId);
 const networks: Record<
   number,
   { name: string; rpc: string; explorer?: string }
@@ -25,6 +30,7 @@ const networks: Record<
   31337: { name: "Ziipa Local", rpc: "http://127.0.0.1:8545" },
 };
 let universal: UniversalProvider | null = null;
+let connectionAttempt = 0;
 let connection: {
   provider: EVMProvider;
   address: string;
@@ -43,10 +49,10 @@ export function observeWallet(fn: () => void) {
   };
 }
 export function currentWallet() {
-  return limitedStoreBeta ? null : connection;
+  return connection;
 }
 export function browserWalletAvailable() {
-  return !limitedStoreBeta && !!injectedWallet();
+  return !!injectedWallet();
 }
 
 // Pairing keys live only in memory. The external wallet holds all signing keys;
@@ -72,7 +78,6 @@ function ephemeralStorage() {
   };
 }
 async function walletConnect() {
-  assertInternalBetaAction(limitedStoreBeta, "wallet");
   if (!walletConnectConfigured)
     throw new Error(
       "WalletConnect needs your Reown project ID in the mobile build. A browser wallet can connect without it.",
@@ -81,7 +86,7 @@ async function walletConnect() {
     const { default: Provider } =
       await import("@walletconnect/universal-provider");
     universal = await Provider.init({
-      projectId: process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID,
+      projectId: walletProjectId,
       logger: "silent",
       telemetryEnabled: false,
       storage: ephemeralStorage(),
@@ -103,10 +108,12 @@ async function walletConnect() {
   return universal;
 }
 export async function disconnectWallet() {
+  connectionAttempt++;
   clear();
   if (universal?.session) await universal.disconnect();
 }
 export async function cancelPairing() {
+  connectionAttempt++;
   universal?.abortPairingAttempt();
 }
 export async function connectWallet(
@@ -114,7 +121,7 @@ export async function connectWallet(
   kind: "injected" | "walletconnect",
   onUri: (uri: string) => void,
 ) {
-  assertInternalBetaAction(limitedStoreBeta, "wallet");
+  assertWalletNetwork(chainId, __DEV__, Platform.OS);
   if (!networks[chainId] || (!__DEV__ && chainId === 31337))
     throw new Error("Unsupported test network");
   if (chainId === 31337 && Platform.OS !== "web")
@@ -122,6 +129,7 @@ export async function connectWallet(
       "Ziipa Local is for the desktop browser. Select a deployed public test network on a physical phone.",
     );
   clear();
+  const attempt = ++connectionAttempt;
   let provider: EVMProvider;
   let accounts: string[];
   if (kind === "injected") {
@@ -189,6 +197,8 @@ export async function connectWallet(
   }
   if (!accounts[0] || !/^0x[0-9a-fA-F]{40}$/.test(accounts[0]))
     throw new Error("The wallet did not approve an account on this network.");
+  if (attempt !== connectionAttempt)
+    throw new Error("Wallet connection cancelled. Connect again to continue.");
   connection = { provider, address: accounts[0], chainId, kind };
   return { address: accounts[0], chainId };
 }
@@ -229,7 +239,7 @@ export async function signWalletProof(
   address: string,
   chainId: number,
 ) {
-  assertInternalBetaAction(limitedStoreBeta, "wallet");
+  assertWalletNetwork(chainId, __DEV__, Platform.OS);
   const p = await checkedConnection(address, chainId);
   return (await p.request({
     method: "personal_sign",
@@ -237,7 +247,7 @@ export async function signWalletProof(
   })) as string;
 }
 export async function sendWalletTransaction(intent: Intent) {
-  assertInternalBetaAction(limitedStoreBeta, "wallet");
+  assertWalletIntent(intent, __DEV__, Platform.OS);
   if (intent.status !== "prepared" || intent.tx_hash)
     throw new Error(
       "This transaction has already been submitted. Refresh its status instead.",

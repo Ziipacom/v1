@@ -426,6 +426,8 @@ from narration_api import router as narration_router
 app.include_router(narration_router)
 from caption_api import router as caption_router
 app.include_router(caption_router)
+from title_api import router as title_router
+app.include_router(title_router)
 from agent_api import router as agent_router
 app.include_router(agent_router)
 from creation_campaigns import router as campaign_router
@@ -450,6 +452,12 @@ app.include_router(gallery_owner_router)
 app.include_router(public_gallery_router)
 from marketplace import router as store_router
 app.include_router(store_router)
+from marketplace_payments import router as marketplace_payment_router, webhooks as marketplace_payment_webhooks
+app.include_router(marketplace_payment_router)
+app.include_router(marketplace_payment_webhooks)
+from marketplace_paypal import router as marketplace_paypal_router, webhooks as marketplace_paypal_webhooks
+app.include_router(marketplace_paypal_router)
+app.include_router(marketplace_paypal_webhooks)
 from commerce_billing import router as services_router, webhooks as billing_webhooks
 app.include_router(services_router)
 app.include_router(billing_webhooks)

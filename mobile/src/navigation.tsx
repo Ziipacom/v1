@@ -450,7 +450,7 @@ function NavigationContent() {
               <Stack.Screen
                 name="Publishing"
                 component={PublishingScreen}
-                options={{ title: "Publish to your networks" }}
+                options={({route}) => ({ title: route.params?.tab === "connections" ? "Connect networks" : "Publish to your networks" })}
               />
               <Stack.Screen
                 name="Live"
@@ -460,12 +460,12 @@ function NavigationContent() {
               <Stack.Screen
                 name="Recordings"
                 component={RecordingsScreen}
-                options={{ title: "Private recordings & clips" }}
+                options={{ title: "Live & recordings" }}
               />
               <Stack.Screen
                 name="Notifications"
                 component={NotificationsScreen}
-                options={{ title: "Private updates" }}
+                options={{ title: "Notifications & devices" }}
               />
               <Stack.Screen
                 name="Inbox"

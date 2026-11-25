@@ -1,3 +1,5 @@
+import { InfoTip } from "../components/info-tip";
+import { HelpLabel } from "../components/help-label";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
 import { useCallback, useEffect, useState } from "react";
@@ -28,6 +30,7 @@ import { useZiipa } from "../provider";
 import { color, styles } from "../theme";
 import {
   apiOrigin,
+  androidPlayInternal,
   iosExternalTestflight,
   legalOperatorName,
   legalUrls,
@@ -243,7 +246,7 @@ function ScopedSettingsScreen({
   );
   const privacyPanel = (
     <View style={[styles.panel, desktop && workspace.panel]}>
-      <Text style={styles.heading}>Privacy controls</Text>
+      <HelpLabel label="Privacy controls" style={styles.heading} help="Profile visibility, discovery and feed personalization are separate settings. Review your choices and press Save privacy controls to apply them." />
       <AdPrivacyOptions />
       <Text style={styles.small}>
         Choose who can view your profile and whether Ziipa can use your activity
@@ -271,6 +274,7 @@ function ScopedSettingsScreen({
       ).map(([key, label]) => (
         <View style={styles.between} key={key}>
           <Text style={[styles.body, { flex: 1 }]}>{label}</Text>
+          <InfoTip title={label} content={key === "discoverable" ? "Controls whether your profile can appear in creator discovery. It does not publish private drafts." : key === "personalized_feeds" ? "Controls whether Ziipa uses your activity to personalize your feeds." : "Controls your preference for product and creator emails. Save your privacy controls to apply the change."} />
           <Switch
             accessibilityLabel={label}
             value={privacy[key]}
@@ -342,13 +346,13 @@ function ScopedSettingsScreen({
     </View>
   );
   return (
-    <ScrollView
+    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
       style={styles.screen}
       contentContainerStyle={
         desktop ? [workspace.page, workspace.narrow] : styles.page
       }
-      keyboardShouldPersistTaps="handled"
+
     >
       {desktop ? (
         <WorkspaceHeading
@@ -612,9 +616,9 @@ export function LegalScreen({
   const policy = policies[kind];
   const [error, setError] = useState("");
   const url = legalUrls[kind];
-  const externalBetaPrivacy = iosExternalTestflight && kind === "privacy";
+  const betaPrivacy = (iosExternalTestflight || androidPlayInternal) && kind === "privacy";
   return (
-    <ScrollView
+    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
       style={styles.screen}
       contentContainerStyle={
@@ -626,7 +630,7 @@ export function LegalScreen({
       {url ? (
         <Action
           title={
-            externalBetaPrivacy
+            betaPrivacy
               ? "Open beta privacy notice"
               : "Read the published policy"
           }
@@ -643,7 +647,7 @@ export function LegalScreen({
         />
       )}
       {!!error && <Notice error text={error} />}
-      {externalBetaPrivacy ? (
+      {betaPrivacy ? (
         <Text
           style={styles.body}
         >{`Read the beta privacy notice for details about account data, selected media, permissions and deletion choices. Ziipa is operated by ${legalOperatorName}. Contact ${supportEmail} with privacy questions.`}</Text>
@@ -713,7 +717,7 @@ export function ModerationScreen({
     );
   }
   return (
-    <ScrollView
+    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
       style={styles.screen}
       contentContainerStyle={

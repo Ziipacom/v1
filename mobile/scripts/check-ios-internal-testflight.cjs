@@ -77,5 +77,5 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(
-  "Private owner/team iOS beta preparation only. Existing-account sign-in uses the live Ziipa API; registration, wallet actions, new network imports and remote push are unavailable. Device QA is pending and video rendering is unavailable. Export compliance is intentionally unset: no tester distribution until the owner reviews the final binary inventory and answers Apple's questions. External testing/public release is forbidden. This gate does not verify signing, free quota or upload authorization.",
+  "Private owner/team iOS beta preparation only. Testnet Wallet is available subject to connector/contract/storage setup. Existing-account sign-in uses the live Ziipa API; registration, new network imports and remote push are unavailable. Device QA is pending and video rendering is unavailable. Export compliance is intentionally unset: no tester distribution until the owner reviews the final binary inventory and answers Apple's questions. External testing/public release is forbidden. This gate does not verify signing, free quota or upload authorization.",
 );

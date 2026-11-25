@@ -1,3 +1,6 @@
+import { HelpLabel } from "../components/help-label";
+import { sectionHelp } from "../lib/field-help";
+import { agentOSSections, isAgentOSTab } from "../lib/agent-os-navigation";
 import {
   Children,
   isValidElement,
@@ -9,6 +12,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -21,23 +25,42 @@ import {
   Bell,
   Brain,
   CalendarClock,
+  ChevronDown,
+  ChevronUp,
   Check,
   Clapperboard,
+  File,
   FolderOpen,
   Megaphone,
   Mic,
   Plus,
+  Pencil,
   RefreshCw,
   ShieldCheck,
   Sparkles,
   Trash2,
 } from "lucide-react-native";
-import { Action, Cover, Field, Notice, Pill } from "../components/ui";
+import {
+  Action,
+  Cover,
+  Field,
+  Notice,
+  Pill,
+  allCategories,
+} from "../components/ui";
 import { AgentTasks } from "../components/agent-tasks";
+import { Sheet } from "../components/floating";
+import { sourceMintItem } from "../lib/editor-source";
+import {
+  LibraryGrid,
+  LibrarySection,
+  NetworkLibrary,
+} from "../components/personal-library";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { ApiError } from "../lib/api";
 import { createAutomationChatController } from "../lib/automation-chat";
 import { useAutomationDictation } from "../lib/automation-dictation";
+import { horizontalMouseDrag } from "../lib/horizontal-mouse-drag";
 import {
   authorizationHeaders,
   limitedStoreBeta,
@@ -46,7 +69,7 @@ import {
 } from "../lib/config";
 import { assertInternalBetaRequest } from "../lib/internal-beta-policy";
 import { useZiipa } from "../provider";
-import { color, styles } from "../theme";
+import { color, font, styles } from "../theme";
 import type { Item, RootStack } from "../lib/types";
 import {
   economicTotals,
@@ -80,13 +103,10 @@ type Mutate = (
   body?: unknown,
 ) => Promise<boolean>;
 type WorkspaceTab = MediaOSTab | "Agent";
-const tabs: WorkspaceTab[] = [
+const tabs: (WorkspaceTab | "Agent OS")[] = [
   "Overview",
   "Library",
-  "Memory",
-  "Assistant",
-  "Agent",
-  "Workflows",
+  "Agent OS",
   "Insights",
 ];
 const desktopTitles: Record<WorkspaceTab, { title: string; detail: string }> = {
@@ -99,19 +119,19 @@ const desktopTitles: Record<WorkspaceTab, { title: string; detail: string }> = {
     detail: "Organize owned media, originals and usage rights.",
   },
   Memory: {
-    title: "Personal memory",
+    title: "Memory",
     detail: "Review exactly what Ziipa remembers for you.",
   },
   Assistant: {
-    title: "Assistant",
+    title: "Assist",
     detail: "Plan in conversation. Review changes before they run.",
   },
   Agent: {
-    title: "Agent workspace",
+    title: "Agent",
     detail: "Private tasks, tool permissions and verified receipts.",
   },
   Workflows: {
-    title: "Workflow workbench",
+    title: "Tasks",
     detail: "Configure scheduled work and follow each run.",
   },
   Insights: {
@@ -212,7 +232,11 @@ function Block({
         desktop && { padding: 20, borderRadius: 14, minWidth: 0 },
       ]}
     >
-      <Text style={[styles.heading, desktop && { fontSize: 18 }]}>{title}</Text>
+      <HelpLabel
+        label={title}
+        help={sectionHelp[title]}
+        style={[styles.heading, desktop && { fontSize: 18 }]}
+      />
       {subtitle ? <Text style={styles.small}>{subtitle}</Text> : null}
       {children}
     </View>
@@ -383,6 +407,7 @@ export function MediaOSScreen({
   const { desktop } = useDesktopLayout();
   const focused = useIsFocused();
   const [tab, setTab] = useState<WorkspaceTab>(route.params?.tab || "Overview");
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [workspace, setWorkspace] = useState<Workspace>(emptyWorkspace);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -449,6 +474,12 @@ export function MediaOSScreen({
   const chatController = useRef(createAutomationChatController()).current;
   const chatIdentity = useRef({});
   const contentScroll = useRef<ScrollView>(null);
+  const tabsScroll = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (Platform.OS !== "web" || !focused) return;
+    const node = tabsScroll.current?.getScrollableNode() as HTMLElement | null;
+    return node ? horizontalMouseDrag(node) : undefined;
+  }, [focused]);
   const mutationLock = useRef(false);
   const dictation = useAutomationDictation({
     owner: session?.access_token,
@@ -734,7 +765,15 @@ export function MediaOSScreen({
           }}
         >
           <View style={styles.between}>
-            <Text style={styles.eyebrow}>YOUR PERSONAL MEDIA OS</Text>
+            <Text
+              style={
+                isAgentOSTab(tab)
+                  ? [styles.heading, { fontSize: 22 }]
+                  : styles.eyebrow
+              }
+            >
+              {isAgentOSTab(tab) ? "Agent OS" : "YOUR PERSONAL MEDIA OS"}
+            </Text>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Refresh workspace"
@@ -745,87 +784,92 @@ export function MediaOSScreen({
               <RefreshCw color={color.lime} size={20} />
             </Pressable>
           </View>
-          <Text style={[styles.heading, { fontSize: 29 }]}>
-            Your creative world, connected.
-          </Text>
-          <Text style={styles.small}>
-            Media, memory, plans and a helping hand in one private workspace.
-          </Text>
-          <View
-            accessibilityRole="toolbar"
-            accessibilityLabel="Automate tools"
-            testID="media-os-automate-actions"
-            style={{ flexDirection: "row", gap: 6 }}
-          >
-            {[
-              {
-                label: "Campaigns",
-                description: "Campaigns · create, review and distribute",
-                icon: Megaphone,
-                onPress: () => navigation.navigate("Campaigns"),
-              },
-              {
-                label: "Calendar",
-                description: "Calendar · schedules and stream preflight",
-                icon: CalendarClock,
-                onPress: () => navigation.navigate("Calendar"),
-              },
-              {
-                label: "Recordings",
-                description: "Recordings · private VODs and clips",
-                icon: Clapperboard,
-                onPress: () => navigation.navigate("Recordings"),
-              },
-              ...(session
-                ? [
-                    {
-                      label: "Updates",
-                      description: "Private updates · opt-in notifications",
-                      icon: Bell,
-                      onPress: () => navigation.navigate("Notifications"),
-                    },
-                  ]
-                : []),
-            ].map(({ label, description, icon: Icon, onPress }) => (
-              <Pressable
-                key={label}
-                accessibilityRole="button"
-                accessibilityLabel={description}
-                onPress={onPress}
-                style={({ pressed }) => ({
-                  flex: 1,
-                  minWidth: 0,
-                  minHeight: 60,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 5,
-                  paddingHorizontal: 3,
-                  paddingVertical: 8,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: color.border,
-                  backgroundColor: color.panel,
-                  opacity: pressed ? 0.7 : 1,
-                })}
+          {!isAgentOSTab(tab) ? (
+            <>
+              <Text style={[styles.heading, { fontSize: 29 }]}>
+                Your creative world, connected.
+              </Text>
+              <Text style={styles.small}>
+                Media, memory, plans and a helping hand in one private
+                workspace.
+              </Text>
+              <View
+                accessibilityRole="toolbar"
+                accessibilityLabel="Automate tools"
+                testID="media-os-automate-actions"
+                style={{ flexDirection: "row", gap: 6 }}
               >
-                <Icon size={20} color={color.text} />
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.small,
-                    {
-                      fontSize: 11,
-                      lineHeight: 14,
-                      textAlign: "center",
-                      color: color.text,
-                    },
-                  ]}
-                >
-                  {label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+                {[
+                  {
+                    label: "Campaigns",
+                    description: "Campaigns · create, review and distribute",
+                    icon: Megaphone,
+                    onPress: () => navigation.navigate("Campaigns"),
+                  },
+                  {
+                    label: "Calendar",
+                    description: "Calendar · schedules and stream preflight",
+                    icon: CalendarClock,
+                    onPress: () => navigation.navigate("Calendar"),
+                  },
+                  {
+                    label: "Recordings",
+                    description: "Recordings · private VODs and clips",
+                    icon: Clapperboard,
+                    onPress: () => navigation.navigate("Recordings"),
+                  },
+                  ...(session
+                    ? [
+                        {
+                          label: "Updates",
+                          description: "Notifications & devices",
+                          icon: Bell,
+                          onPress: () => navigation.navigate("Notifications"),
+                        },
+                      ]
+                    : []),
+                ].map(({ label, description, icon: Icon, onPress }) => (
+                  <Pressable
+                    key={label}
+                    accessibilityRole="button"
+                    accessibilityLabel={description}
+                    onPress={onPress}
+                    style={({ pressed }) => ({
+                      flex: 1,
+                      minWidth: 0,
+                      minHeight: 60,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 5,
+                      paddingHorizontal: 3,
+                      paddingVertical: 8,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: color.border,
+                      backgroundColor: color.panel,
+                      opacity: pressed ? 0.7 : 1,
+                    })}
+                  >
+                    <Icon size={20} color={color.text} />
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.small,
+                        {
+                          fontSize: 11,
+                          lineHeight: 14,
+                          textAlign: "center",
+                          color: color.text,
+                        },
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          ) : null}
           <View
             testID="media-os-automation-chat"
             style={{
@@ -963,9 +1007,18 @@ export function MediaOSScreen({
         </View>
       )}
       <ScrollView
+        ref={tabsScroll}
+        testID="media-os-tabs"
         horizontal
-        showsHorizontalScrollIndicator={false}
+        nestedScrollEnabled
+        directionalLockEnabled
+        alwaysBounceHorizontal={false}
+        keyboardShouldPersistTaps="handled"
+        showsHorizontalScrollIndicator
         style={{
+          width: "100%",
+          maxWidth: "100%",
+          minWidth: 0,
           flexGrow: 0,
           flexShrink: 0,
           height: desktop ? 54 : 70,
@@ -978,23 +1031,125 @@ export function MediaOSScreen({
           alignItems: "center",
         }}
       >
-        {tabs.map((value) => (
-          <Pill
-            key={value}
-            title={value}
-            active={tab === value}
-            onPress={() => {
-              setNotice("");
-              setTab(value);
-              if (desktop) navigation.setParams({ tab: value });
-            }}
-          />
-        ))}
+        {tabs.map((value) =>
+          value === "Agent OS" ? (
+            <Pressable
+              key={value}
+              accessibilityRole="button"
+              accessibilityLabel="Agent OS"
+              aria-expanded={agentMenuOpen}
+              aria-controls={agentMenuOpen ? "agent-os-menu" : undefined}
+              accessibilityState={{
+                expanded: agentMenuOpen,
+                selected: isAgentOSTab(tab),
+              }}
+              onPress={() => setAgentMenuOpen((open) => !open)}
+              style={{
+                minHeight: desktop ? 34 : 42,
+                paddingHorizontal: desktop ? 12 : 15,
+                paddingVertical: desktop ? 8 : 10,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                borderRadius: desktop ? 7 : 22,
+                borderWidth: 1,
+                borderColor: isAgentOSTab(tab) ? color.purple : color.border,
+                backgroundColor: isAgentOSTab(tab) ? color.purple : color.panel,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: font.medium,
+                  fontSize: 13,
+                  color: isAgentOSTab(tab) ? color.onAccent : color.text,
+                }}
+              >
+                Agent OS
+              </Text>
+              {agentMenuOpen ? (
+                <ChevronUp
+                  size={14}
+                  color={isAgentOSTab(tab) ? color.onAccent : color.muted}
+                />
+              ) : (
+                <ChevronDown
+                  size={14}
+                  color={isAgentOSTab(tab) ? color.onAccent : color.muted}
+                />
+              )}
+            </Pressable>
+          ) : (
+            <Pill
+              key={value}
+              title={value}
+              active={tab === value}
+              onPress={() => {
+                setNotice("");
+                setAgentMenuOpen(false);
+                setTab(value);
+                if (desktop) navigation.setParams({ tab: value });
+              }}
+            />
+          ),
+        )}
       </ScrollView>
-      <ScrollView
+      {agentMenuOpen ? (
+        <View
+          testID="agent-os-menu"
+          nativeID="agent-os-menu"
+          style={{
+            marginHorizontal: desktop ? 24 : 18,
+            marginBottom: 10,
+            padding: 6,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: color.border,
+            backgroundColor: color.panel,
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 4,
+          }}
+        >
+          {agentOSSections.map((section) => (
+            <Pressable
+              key={section.tab}
+              accessibilityRole="button"
+              accessibilityLabel={`Agent OS ${section.label}`}
+              accessibilityState={{ selected: tab === section.tab }}
+              onPress={() => {
+                setNotice("");
+                setTab(section.tab);
+                setAgentMenuOpen(false);
+                if (desktop) navigation.setParams({ tab: section.tab });
+              }}
+              style={{
+                flexBasis: "47%",
+                flexGrow: 1,
+                minHeight: 40,
+                borderRadius: 8,
+                justifyContent: "center",
+                paddingHorizontal: 14,
+                backgroundColor:
+                  tab === section.tab ? color.purple : "transparent",
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: font.medium,
+                  fontSize: 14,
+                  color: tab === section.tab ? color.onAccent : color.text,
+                }}
+              >
+                {section.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
         ref={contentScroll}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+
         contentContainerStyle={{
           paddingHorizontal: desktop ? 24 : 18,
           paddingTop: desktop ? 12 : 0,
@@ -1075,11 +1230,15 @@ export function MediaOSScreen({
                 busy={busy}
                 mutate={mutate}
                 openItem={openItem}
+                mint={(item) => navigation.navigate("Utility", { kind: "wallet", item })}
                 exports={(id) => navigation.navigate("Exports", { itemId: id })}
                 publish={(id) =>
                   navigation.navigate("Publishing", { itemId: id })
                 }
                 create={() => navigation.navigate("Composer")}
+                networks={() =>
+                  navigation.navigate("Connections", { tab: "accounts" })
+                }
                 useUpload={(upload) =>
                   navigation.navigate("Composer", {
                     upload,
@@ -1486,27 +1645,35 @@ function LibraryPanel({
   busy,
   mutate,
   openItem,
+  mint,
   exports,
   publish,
   create,
+  networks,
   useUpload,
 }: {
   workspace: Workspace;
   busy: boolean;
   mutate: Mutate;
   openItem: (item: Item) => void;
+  mint: (item: Item) => void;
   exports: (id: string) => void;
   publish: (id: string) => void;
   create: () => void;
+  networks: () => void;
   useUpload: (upload: LibraryMedia) => void;
 }) {
-  const { desktop } = useDesktopLayout();
+  const { data, session } = useZiipa();
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const [visibleItems, setVisibleItems] = useState(30);
   const [visibleOriginals, setVisibleOriginals] = useState(30);
-  useEffect(() => setVisibleItems(30), [query, projectFilter]);
+  useEffect(() => {
+    setVisibleItems(30);
+    setVisibleOriginals(30);
+  }, [query, projectFilter]);
   const [selected, setSelected] = useState<LibraryItem | null>(null);
+  const selectedMintItem = sourceMintItem(data.drafts.find((row) => row.id === selected?.id), session?.user.id, false);
   const [meta, setMeta] = useState<AssetMetadata>(emptyAssetMetadata);
   const [tags, setTags] = useState("");
   const [expiry, setExpiry] = useState("");
@@ -1532,7 +1699,7 @@ function LibraryPanel({
       .join(" ")
       .toLowerCase();
     return (
-      (!query || text.includes(query.toLowerCase())) &&
+      (!query || text.includes(query.trim().toLowerCase())) &&
       (!projectFilter ||
         metadata?.project_id === projectFilter ||
         workspace.projects
@@ -1540,10 +1707,29 @@ function LibraryPanel({
           ?.asset_ids.includes(item.id))
     );
   });
-  const originals = (workspace.library.media || []).filter(
-    (media) =>
-      !workspace.library.items.some((item) => item.media_id === media.id),
-  );
+  const originals = (workspace.library.media || [])
+    .filter(
+      (media) =>
+        !workspace.library.items.some(
+          (item) =>
+            item.media_id === media.id || item.photo_ids?.includes(media.id),
+        ),
+    )
+    .filter(
+      (media) =>
+        !projectFilter &&
+        (!query ||
+          [
+            media.name,
+            media.filename,
+            media.original_name,
+            media.content_type,
+            media.id,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(query.trim().toLowerCase())),
+    );
   const save = async () => {
     if (!selected) return;
     try {
@@ -1581,186 +1767,280 @@ function LibraryPanel({
     }
   };
   const libraryToolbar = (
-    <Block
-      title="Your personal library"
-      subtitle="Owned Ziipa media, organized across drafts and published creations. External networks remain in Your networks."
-    >
+    <Block title="Your personal library">
       <Field
         label="Search titles, notes and tags"
         value={query}
         onChangeText={setQuery}
         placeholder="Find an idea or a recording"
       />
-      <ProjectPicker
-        projects={workspace.projects}
-        selected={projectFilter}
-        onChange={setProjectFilter}
-      />
       <Action title="Create or upload media" icon={Plus} onPress={create} />
-      {workspace.library.media?.length ? (
-        <Text style={styles.small}>
-          {workspace.library.media.length} original uploads connected to this
-          library.
-        </Text>
-      ) : null}
     </Block>
   );
-  const originalUploads =
-    !query && !projectFilter && originals.length ? (
-      <Block
-        title="Original uploads"
-        subtitle="Your stored files. Give an upload a title by creating a draft, then add notes and rights."
-      >
+  const originalUploads = originals.length ? (
+    <LibrarySection
+      title="Original uploads"
+      count={originals.length}
+      initiallyOpen={false}
+    >
+      <LibraryGrid>
         {originals.slice(0, visibleOriginals).map((media) => (
-          <View
+          <Pressable
             key={media.id}
+            accessibilityRole="button"
+            accessibilityLabel={`Create draft from ${media.name || media.filename || media.original_name || media.id}`}
+            onPress={() => useUpload(media)}
             style={{
-              gap: 8,
-              paddingTop: 12,
-              borderTopWidth: 1,
+              padding: 14,
+              borderWidth: 1,
               borderColor: color.border,
+              borderRadius: 12,
+              gap: 8,
+              backgroundColor: color.bg,
             }}
           >
-            <Text style={[styles.body, { color: color.text }]}>
-              {media.content_type.startsWith("video/")
-                ? "Video upload"
-                : media.content_type.startsWith("audio/")
-                  ? "Audio upload"
-                  : media.content_type.startsWith("image/")
-                    ? "Image upload"
-                    : "File upload"}{" "}
-              · {media.id.slice(0, 8)}
+            <File size={24} color={color.muted} />
+            <Text
+              numberOfLines={2}
+              style={{
+                fontFamily: font.semibold,
+                fontSize: 15,
+                color: color.text,
+              }}
+            >
+              {media.name ||
+                media.filename ||
+                media.original_name ||
+                (media.content_type.startsWith("video/")
+                  ? "Video upload"
+                  : media.content_type.startsWith("audio/")
+                    ? "Audio upload"
+                    : media.content_type.startsWith("image/")
+                      ? "Image upload"
+                      : "File upload")}
             </Text>
             <Text style={styles.small}>
               {(media.size / 1024 / 1024).toFixed(2)} MB
             </Text>
-            <Action
-              secondary
-              title="Create a draft from this upload"
-              onPress={() => useUpload(media)}
-            />
-          </View>
+            <Text style={styles.small}>Create draft ↗</Text>
+          </Pressable>
         ))}
-        {originals.length > visibleOriginals ? (
-          <Action
-            secondary
-            title="Show more original uploads"
-            onPress={() => setVisibleOriginals((n) => n + 30)}
-          />
-        ) : null}
-      </Block>
-    ) : null;
-  const metadataEditor = selected ? (
-    <Block
-      title={`Organize ${selected.title}`}
-      subtitle="Rights information is your declaration, not independent verification."
-    >
-      <Field
-        label="Private notes"
-        value={meta.notes}
-        onChangeText={(notes) => setMeta((v) => ({ ...v, notes }))}
-        multiline
-      />
-      <Field
-        label="Tags, separated by commas"
-        value={tags}
-        onChangeText={setTags}
-      />
-      <ProjectPicker
-        projects={workspace.projects}
-        selected={meta.project_id}
-        onChange={(project_id) => setMeta((v) => ({ ...v, project_id }))}
-      />
-      <Text style={styles.label}>Rights basis</Text>
-      <Choices
-        options={["original", "licensed", "permission", "unknown"] as const}
-        value={meta.rights.basis}
-        onChange={(basis) =>
-          setMeta((v) => ({ ...v, rights: { ...v.rights, basis } }))
-        }
-      />
-      <Field
-        label="License or permission notes"
-        value={meta.rights.license_note}
-        onChangeText={(license_note) =>
-          setMeta((v) => ({ ...v, rights: { ...v.rights, license_note } }))
-        }
-        multiline
-      />
-      <Field
-        label="Original source URL (optional)"
-        value={meta.rights.source_url}
-        onChangeText={(source_url) =>
-          setMeta((v) => ({ ...v, rights: { ...v.rights, source_url } }))
-        }
-        autoCapitalize="none"
-        keyboardType="url"
-      />
-      <DateField
-        label="Rights expiry (optional)"
-        value={expiry}
-        onChange={setExpiry}
-      />
-      <Toggle
-        title="Allow the assistant to use this media within these rights"
-        value={meta.rights.allow_ai}
-        disabled={busy}
-        onChange={(allow_ai) =>
-          setMeta((v) => ({ ...v, rights: { ...v.rights, allow_ai } }))
-        }
-      />
-      {meta.rights.expired ? (
-        <Notice
-          error
-          text="The recorded rights have expired. Update your permission before reusing this asset."
+      </LibraryGrid>
+      {originals.length > visibleOriginals ? (
+        <Action
+          secondary
+          title="Show more original uploads"
+          onPress={() => setVisibleOriginals((n) => n + 30)}
         />
       ) : null}
-      {error ? <Notice error text={error} /> : null}
-      <Action
-        title="Save media details"
-        busy={busy}
-        onPress={() => void save()}
-      />
-      <Action
-        secondary
-        title="Close media details"
-        onPress={() => setSelected(null)}
-      />
-    </Block>
+    </LibrarySection>
   ) : null;
-  const emptyLibrary = !items.length ? (
-    <Notice
-      text={
-        query || projectFilter
-          ? "No media matches this search."
-          : "Your personal library is empty. Upload or record media to get started."
-      }
-    />
-  ) : null;
-  const mediaCards = items.slice(0, visibleItems).map((item) => (
-    <Block
-      key={item.id}
-      title={item.title}
-      subtitle={`${readableStatus(item.visibility || "draft")} · ${readableStatus(item.category)}`}
+  const metadataEditor = selected ? (
+    <Sheet
+      title="Media details"
+      onClose={() => setSelected(null)}
+      maxWidth={680}
     >
-      <Cover item={item} style={{ height: 160, borderRadius: 18 }} />
-      <Text style={styles.body}>{item.description}</Text>
-      <Text style={styles.small}>
-        {(item.metadata?.tags || item.tags || []).join(" · ") || "No tags yet"}{" "}
-        · Rights: {item.metadata?.rights?.basis || "unknown"}
-      </Text>
-      <Action
-        secondary
-        title="Notes, project and rights"
-        icon={ShieldCheck}
-        onPress={() => choose(item)}
+      <Block
+        title={`Organize ${selected.title}`}
+        subtitle="Rights information is your declaration, not independent verification."
+      >
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          <Pill
+            title="Edit"
+            onPress={() => {
+              setSelected(null);
+              openItem(selected);
+            }}
+          />
+          <Pill
+            title="Exports"
+            onPress={() => {
+              setSelected(null);
+              exports(selected.id);
+            }}
+          />
+          <Pill
+            title="Publishing"
+            onPress={() => {
+              setSelected(null);
+              publish(selected.id);
+            }}
+          />
+          {selectedMintItem ? (
+            <Pill title="Mint" onPress={() => {
+              setSelected(null);
+              mint(selectedMintItem);
+            }} />
+          ) : null}
+        </View>
+        <Field
+          label="Private notes"
+          value={meta.notes}
+          onChangeText={(notes) => setMeta((v) => ({ ...v, notes }))}
+          multiline
+        />
+        <Field
+          label="Tags, separated by commas"
+          value={tags}
+          onChangeText={setTags}
+        />
+        <ProjectPicker
+          projects={workspace.projects}
+          selected={meta.project_id}
+          onChange={(project_id) => setMeta((v) => ({ ...v, project_id }))}
+        />
+        <HelpLabel
+          label="Rights basis"
+          help="Record whether this is original work, licensed media, media used with permission, or unknown. Recording a basis does not verify ownership or grant permission."
+        />
+        <Choices
+          options={["original", "licensed", "permission", "unknown"] as const}
+          value={meta.rights.basis}
+          onChange={(basis) =>
+            setMeta((v) => ({ ...v, rights: { ...v.rights, basis } }))
+          }
+        />
+        <Field
+          label="License or permission notes"
+          value={meta.rights.license_note}
+          onChangeText={(license_note) =>
+            setMeta((v) => ({ ...v, rights: { ...v.rights, license_note } }))
+          }
+          multiline
+        />
+        <Field
+          label="Original source URL (optional)"
+          value={meta.rights.source_url}
+          onChangeText={(source_url) =>
+            setMeta((v) => ({ ...v, rights: { ...v.rights, source_url } }))
+          }
+          autoCapitalize="none"
+          keyboardType="url"
+        />
+        <DateField
+          label="Rights expiry (optional)"
+          value={expiry}
+          onChange={setExpiry}
+        />
+        <Toggle
+          title="Allow the assistant to use this media within these rights"
+          value={meta.rights.allow_ai}
+          disabled={busy}
+          onChange={(allow_ai) =>
+            setMeta((v) => ({ ...v, rights: { ...v.rights, allow_ai } }))
+          }
+        />
+        {meta.rights.expired ? (
+          <Notice
+            error
+            text="The recorded rights have expired. Update your permission before reusing this asset."
+          />
+        ) : null}
+        {error ? <Notice error text={error} /> : null}
+        <Action
+          title="Save media details"
+          busy={busy}
+          onPress={() => void save()}
+        />
+        <Action
+          secondary
+          title="Close media details"
+          onPress={() => setSelected(null)}
+        />
+      </Block>
+    </Sheet>
+  ) : null;
+  const emptyLibrary =
+    !items.length && !originals.length ? (
+      <Notice
+        text={
+          query || projectFilter
+            ? "No media matches this search."
+            : "Your personal library is empty. Upload or record media to get started."
+        }
       />
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        <Pill title="Edit media" onPress={() => openItem(item)} />
-        <Pill title="Rendered exports" onPress={() => exports(item.id)} />
-        <Pill title="Review publishing" onPress={() => publish(item.id)} />
+    ) : null;
+  const mediaCards = items.slice(0, visibleItems).map((item) => (
+    <View
+      key={item.id}
+      style={{
+        borderRadius: 12,
+        overflow: "hidden",
+        borderWidth: 1,
+        borderColor: color.border,
+        backgroundColor: color.bg,
+      }}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Edit ${item.title}`}
+        onPress={() => openItem(item)}
+      >
+        <Cover item={item} style={{ aspectRatio: 1 }} />
+        <View
+          style={{
+            position: "absolute",
+            bottom: 8,
+            left: 8,
+            backgroundColor: color.panel,
+            borderRadius: 7,
+            paddingHorizontal: 7,
+            paddingVertical: 3,
+          }}
+        >
+          <Text style={styles.small}>
+            {item.visibility === "published"
+              ? "Published"
+              : item.visibility === "hidden"
+                ? "Hidden"
+                : "Draft"}
+          </Text>
+        </View>
+      </Pressable>
+      <View style={{ padding: 10, gap: 5 }}>
+        <Text
+          numberOfLines={2}
+          style={{ fontFamily: font.semibold, fontSize: 15, color: color.text }}
+        >
+          {item.title}
+        </Text>
+        <Text numberOfLines={1} style={styles.small}>
+          {allCategories.find((category) => category.id === item.category)
+            ?.title || "Media"}
+        </Text>
+        <View
+          style={{ flexDirection: "row", justifyContent: "flex-end", gap: 4 }}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Edit ${item.title}`}
+            onPress={() => openItem(item)}
+            style={{
+              minWidth: 44,
+              minHeight: 44,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <Pencil size={18} color={color.text} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Notes, project and rights for ${item.title}`}
+            onPress={() => choose(item)}
+            style={{
+              minWidth: 44,
+              minHeight: 44,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <ShieldCheck size={18} color={color.muted} />
+          </Pressable>
+        </View>
       </View>
-    </Block>
+    </View>
   ));
   const moreMedia =
     items.length > visibleItems ? (
@@ -1770,44 +2050,25 @@ function LibraryPanel({
         onPress={() => setVisibleItems((n) => n + 30)}
       />
     ) : null;
-  return desktop ? (
-    <View style={{ gap: 20 }}>
+  return (
+    <View style={{ gap: 16 }}>
       {libraryToolbar}
-      <WorkspaceColumns
-        main={
-          <>
-            {emptyLibrary}
-            <WorkspaceGrid minimum={290}>{mediaCards}</WorkspaceGrid>
-            {moreMedia}
-            {originalUploads}
-          </>
-        }
-        aside={
-          selected ? (
-            metadataEditor
-          ) : (
-            <Block
-              title="Media organization"
-              subtitle="Select Notes, rights & project on a creation to edit its private metadata."
-            >
-              <Text style={styles.small}>
-                Original uploads, editable creations and rendered exports remain
-                separate. Only your owned media can be edited.
-              </Text>
-            </Block>
-          )
-        }
-      />
-    </View>
-  ) : (
-    <>
-      {libraryToolbar}
-      {originalUploads}
       {metadataEditor}
-      {emptyLibrary}
-      {mediaCards}
-      {moreMedia}
-    </>
+      <LibrarySection title="Created in Ziipa" count={items.length}>
+        {workspace.projects.length ? (
+          <ProjectPicker
+            projects={workspace.projects}
+            selected={projectFilter}
+            onChange={setProjectFilter}
+          />
+        ) : null}
+        {emptyLibrary}
+        <LibraryGrid>{mediaCards}</LibraryGrid>
+        {moreMedia}
+        {originalUploads}
+      </LibrarySection>
+      <NetworkLibrary query={query} manage={networks} />
+    </View>
   );
 }
 

@@ -116,19 +116,21 @@ test("internal Play rejects unsigned APK, automatic submission and profile redir
   }
 });
 
-test("Android internal restrictions share guarded actions while iOS-specific flags stay unchanged", () => {
+test("Android internal beta allows testnet wallet access and retains other guarded actions", () => {
   const config = runtime("android", scope);
   assert.equal(config.androidPlayInternal, true);
   assert.equal(config.limitedStoreBeta, true);
   assert.equal(config.iosLimitedTestflight, false);
   assert.equal(config.iosInternalTestflight, false);
-  for (const action of ["registration", "wallet", "network-import", "remote-push", "purchase"] as const)
+  for (const action of ["registration", "network-import", "remote-push", "purchase"] as const)
     assert.throws(() => policy.assertInternalBetaAction(config.limitedStoreBeta, action));
-  for (const route of ["/api/mobile/auth/register", "/api/web3/challenge", "/api/social/youtube/sync", "/api/notifications/devices", "/api/services/purchase-context"])
+  for (const route of ["/api/mobile/auth/register", "/api/social/youtube/sync", "/api/notifications/devices", "/api/services/purchase-context"])
     assert.throws(() => policy.assertInternalBetaRequest(config.limitedStoreBeta, route, "POST"));
+  assert.doesNotThrow(() => policy.assertInternalBetaAction(config.limitedStoreBeta, "wallet"));
   for (const [route, method] of [
     ["/api/mobile/auth/login", "POST"], ["/api/creator/items", "GET"], ["/api/live/streams", "POST"],
     ["/api/social/facebook/disconnect", "POST"], ["/api/os/workflows/old/pause", "POST"],
+    ["/api/web3/config", "GET"], ["/api/web3/challenge", "POST"],
     ["/api/web3/wallets/12345678-1234-4123-8123-123456789012/unlink", "POST"],
   ]) assert.doesNotThrow(() => policy.assertInternalBetaRequest(config.limitedStoreBeta, route, method));
   for (const selected of [policy.internalBetaScope, policy.externalBetaScope]) {

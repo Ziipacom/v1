@@ -17,6 +17,13 @@ test("compact Studio opens the Publishing handoff and preserves its existing ent
     assert.equal(compactStudioEntry(search), "Studio");
 });
 
+test("product Connect preserves its account-only mode across desktop navigation",()=>{
+  const search=destinationSearch("Publishing",{tab:"connections"});
+  assert.equal(search,"?view=publishing&tab=connections");
+  assert.deepEqual(destinationFromSearch(search!),{screen:"Publishing",params:{tab:"connections"}});
+  assert.equal(destinationFromSearch("?view=publishing&tab=unknown"),null);
+});
+
 test("desktop is a web-only finite breakpoint without changing compact or native routing", () => {
   assert.equal(isDesktopPortal("web", 1024), true);
   assert.equal(isDesktopPortal("web", 2560), true);

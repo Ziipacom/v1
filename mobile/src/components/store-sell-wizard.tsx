@@ -12,7 +12,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Store,
-  X,
 } from "lucide-react-native";
 import { Action, Field, Pill } from "./ui";
 import { Disclosure } from "./disclosure";
@@ -38,8 +37,11 @@ type Props = {
   onConsent: () => void;
   busy: string;
   preview: ReactNode;
+  mediaUploader?: ReactNode;
   onUpload: () => void;
   onCamera?: () => void;
+  onLibrary?: () => void;
+  onConnect?: () => void;
   onGenerate: () => void;
   onSave: (status: ListingDraft["status"]) => void;
   onStore: () => void;
@@ -185,30 +187,52 @@ export function StoreSellWizard(props: Props) {
       </View>
       {step === "create" && (
         <View style={{ gap: 12 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <View style={{ width: 106 }}>{props.preview}</View>
-            <View style={{ flex: 1, gap: 8 }}>
-              <Action
-                title={busy.startsWith("Uploading photo") ? busy : "Add photos"}
-                icon={ImagePlus}
-                secondary
-                disabled={!!busy || draft.photo_ids.length >= 6}
-                onPress={props.onUpload}
-              />
-              {props.onCamera && (
+          {props.mediaUploader || (
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 14 }}
+            >
+              <View style={{ width: 106 }}>{props.preview}</View>
+              <View style={{ flex: 1, gap: 8 }}>
                 <Action
-                  title="Take photo"
-                  icon={Camera}
+                  title={busy.startsWith("Uploading") ? busy : "Upload media"}
+                  icon={ImagePlus}
                   secondary
-                  disabled={!!busy || draft.photo_ids.length >= 6}
-                  onPress={props.onCamera}
+                  disabled={
+                    !!busy ||
+                    draft.photo_ids.length + (draft.media_ids?.length || 0) >=
+                      10
+                  }
+                  onPress={props.onUpload}
                 />
-              )}
-              <Text style={styles.small}>
-                {draft.photo_ids.length}/6 photos
-              </Text>
+                {props.onCamera && (
+                  <Action
+                    title="Camera"
+                    icon={Camera}
+                    secondary
+                    disabled={
+                      !!busy ||
+                      draft.photo_ids.length + (draft.media_ids?.length || 0) >=
+                        10
+                    }
+                    onPress={props.onCamera}
+                  />
+                )}
+                {props.onLibrary && (
+                  <Action
+                    secondary
+                    title="Ziipa library"
+                    icon={ImagePlus}
+                    disabled={!!busy}
+                    onPress={props.onLibrary}
+                  />
+                )}
+                <Text style={styles.small}>
+                  {draft.photo_ids.length + (draft.media_ids?.length || 0)}/10
+                  media
+                </Text>
+              </View>
             </View>
-          </View>
+          )}
           <View style={{ flexDirection: "row", gap: 8 }}>
             <Pill
               title="Digital media"
@@ -338,8 +362,8 @@ export function StoreSellWizard(props: Props) {
             )}
           </Disclosure>
           <Disclosure
-            title="Display & photos"
-            detail={`${draft.photo_ids.length} photos · editable overlays`}
+            title="Display & media"
+            detail={`${draft.photo_ids.length} photos · ${draft.media_ids?.length || 0} video/audio`}
             icon={ImagePlus}
             expanded={display}
             onToggle={() => setDisplay(!display)}
@@ -367,39 +391,12 @@ export function StoreSellWizard(props: Props) {
               maxLength={80}
               onChangeText={(descriptor) => onChange({ descriptor })}
             />
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-              {draft.photo_ids.map((id, index) => (
-                <Pressable
-                  key={id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove product photo ${index + 1}`}
-                  disabled={!!busy}
-                  onPress={() =>
-                    onChange({
-                      photo_ids: draft.photo_ids.filter(
-                        (value) => value !== id,
-                      ),
-                    })
-                  }
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: 10,
-                    backgroundColor: color.panel,
-                  }}
-                >
-                  <Text style={styles.small}>Photo {index + 1}</Text>
-                  <X size={15} color={color.text} />
-                </Pressable>
-              ))}
-            </View>
-            <Action
-              title="Add photos"
-              secondary
-              disabled={!!busy || draft.photo_ids.length >= 6}
-              onPress={props.onUpload}
-            />
+            {props.mediaUploader}
+            <Text style={styles.small}>
+              Add a cover photo plus up to 10 photos, video or audio files in
+              total. Listing media are public previews, not protected paid
+              downloads.
+            </Text>
           </Disclosure>
           <Action
             title="Continue to publish"
@@ -411,6 +408,35 @@ export function StoreSellWizard(props: Props) {
       )}
       {step === "publish" && (
         <View style={{ gap: 12 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <Text style={styles.label}>External networks</Text>
+            {props.onConnect && (
+              <Action
+                title="Connect"
+                icon={Plus}
+                secondary
+                disabled={!!busy}
+                onPress={props.onConnect}
+              />
+            )}
+          </View>
+          <Text style={styles.small}>
+            Connect publishing accounts to promote your products. Connecting or
+            publishing a Ziipa listing does not post to another network.
+          </Text>
+          <Text style={styles.small}>
+            Publishing makes the selected source photos, video and audio
+            available as product previews. Use preview copies if your originals
+            or edits should stay private. For merchandise, include shipping in
+            the listed price and explain delivery and returns.
+          </Text>
           <Text style={[styles.body, { fontFamily: font.semibold }]}>
             {draft.title || "Your product"}
           </Text>
@@ -452,7 +478,8 @@ export function StoreSellWizard(props: Props) {
             onPress={props.onEnableStore}
           />
           <Text style={styles.small}>
-            Listing only. Checkout and seller payouts are not available yet.
+            Live payments are off. Physical merchandise test checkout requires
+            seller sandbox setup.
           </Text>
           <Action
             title="Save privately"

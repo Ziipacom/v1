@@ -9,7 +9,7 @@ export type Chain = {
 };
 export type WalletConfig = {
   testnet_only: boolean;
-  storage: "local_ipfs" | "public_ipfs";
+  storage: "local_ipfs" | "public_ipfs" | "pinata_ipfs";
   chains: Chain[];
   inventory_scope: string;
 };

@@ -5,7 +5,7 @@ import {
   useSafeAreaFrame,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { iosLimitedTestflight } from "../lib/config";
+import { limitedStoreBeta } from "../lib/config";
 import { color, useTheme } from "../theme";
 
 /** Keep the beta notice below the notch, outside the navigation content frame. */
@@ -28,7 +28,7 @@ export function AppFrame({
     <View style={{ flex: 1 }}>
       <View
         style={
-          iosLimitedTestflight
+          limitedStoreBeta
             ? {
                 backgroundColor: color.panel,
                 paddingTop: insets.top,
@@ -40,7 +40,7 @@ export function AppFrame({
       >
         {notice}
       </View>
-      {iosLimitedTestflight ? (
+      {limitedStoreBeta ? (
         // Native SafeAreaView reads its closest native provider, not only the
         // JS insets context. This stable provider measures the remaining frame
         // below the notice; its initial top is already consumed above. It stays

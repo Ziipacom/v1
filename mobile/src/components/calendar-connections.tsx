@@ -1,3 +1,4 @@
+import { HelpLabel } from "./help-label";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -220,7 +221,7 @@ function ConnectionPanel({
           justifyContent: "space-between",
         }}
       >
-        <Text style={styles.small}>Calendar accounts</Text>
+        <HelpLabel label="Calendar accounts" style={styles.small} help="Connect a provider account, select a calendar and review the sync direction. Connecting an account does not grant Ziipa permission to publish media or invite guests." />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Refresh calendar connections"
@@ -496,7 +497,7 @@ function ConnectionPanel({
       })}
       {!!state?.device_snapshots?.length && (
         <>
-          <Text style={styles.label}>Saved device calendars</Text>
+          <HelpLabel label="Saved device calendars" help="Device calendars require the installed Ziipa app and your calendar permission. Safari and home-screen web apps cannot read the iPhone calendar directly." />
           {state.device_snapshots.map((snapshot) => (
             <View key={snapshot.id} style={{ gap: 6 }}>
               <Text style={styles.small}>

@@ -1,13 +1,16 @@
 export const internalBetaScope = "ios-internal-testflight";
 export const externalBetaScope = "ios-external-testflight";
 export const androidPlayInternalScope = "android-play-internal";
+// Keep the reviewed preview name compatible with the deployed store profile.
+export const playInternalBetaScope = androidPlayInternalScope;
 export const externalBetaPrivacyUrl = "https://ziipa.com/privacy-beta";
 export const externalBetaNotice =
-  "Limited iPhone beta · existing Ziipa accounts only (18+). Saved uploads and edits use your live account. Wallet actions, new network imports and remote push are unavailable. Video rendering is unavailable.";
+  "Limited iPhone beta · existing Ziipa accounts only (18+). Saved uploads and edits use your live account. Token Wallet supports test networks only, subject to service setup. New network imports and remote push are unavailable. Video rendering is unavailable.";
 export const internalBetaNotice =
-  "Private iPhone beta · existing accounts only. Your live Ziipa account stores saved uploads and edits. Wallet actions, new network imports and remote push are unavailable. Video rendering is unavailable; device acceptance is pending. External testing and public release are not approved.";
+  "Private iPhone beta · existing accounts only. Your live Ziipa account stores saved uploads and edits. Token Wallet supports test networks only, subject to service setup. New network imports and remote push are unavailable. Video rendering is unavailable; device acceptance is pending. External testing and public release are not approved.";
 export const androidPlayInternalNotice =
-  "Internal Android beta · existing Ziipa accounts only. Saved uploads and edits use your live account. Wallet actions, new network imports and remote push are unavailable. Video rendering and device acceptance remain pending.";
+  "Private Google Play beta · existing Ziipa accounts only (18+). Saved uploads and edits use your live account. Token Wallet supports test networks only, subject to service setup. New network imports, remote push and live purchases are unavailable. Merchandise test checkout requires sandbox setup.";
+export const playInternalBetaNotice = androidPlayInternalNotice;
 
 export function isIosInternalBeta(platform: string, scope: string | undefined) {
   return platform === "ios" && scope === internalBetaScope;
@@ -29,16 +32,22 @@ export function isLimitedStoreBeta(platform: string, scope: string | undefined) 
   return isIosLimitedBeta(platform, scope) || isAndroidPlayInternalBeta(platform, scope);
 }
 
+export function isPlayInternalBeta(platform: string, scope: string | undefined) {
+  return isAndroidPlayInternalBeta(platform, scope);
+}
+
 export type InternalBetaAction =
-  "registration" | "wallet" | "network-import" | "remote-push" | "purchase";
+  "registration" | "wallet" | "network-publish" | "network-import" | "remote-push" | "purchase";
 export function assertInternalBetaAction(
   locked: boolean,
   action: InternalBetaAction,
 ) {
-  if (!locked) return;
+  // Wallet testing is explicitly available in the next beta. Its connector and
+  // backend independently enforce test networks and external approval.
+  if (!locked || action === "wallet" || action === "network-publish") return;
   const message = {
     registration:
-      "This private iPhone beta supports existing Ziipa accounts only. New account registration is unavailable.",
+      "This private beta supports existing Ziipa accounts only.",
     wallet:
       "Wallet pairing, signatures and transactions are unavailable in this limited native beta.",
     "network-import":
@@ -73,26 +82,13 @@ export function assertInternalBetaRequest(
     canonical === "/api/notifications/devices"
   )
     assertInternalBetaAction(true, "remote-push");
-  if (/^\/api\/web3(?:\/|$)/.test(canonical)) {
-    // Unlinking a saved server association is privacy cleanup, not pairing.
-    if (method.toUpperCase() === "GET" && canonical === "/api/web3/wallets")
-      return;
-    if (
-      method.toUpperCase() === "POST" &&
-      /^\/api\/web3\/wallets\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/unlink$/.test(
-        canonical,
-      )
-    )
-      return;
-    assertInternalBetaAction(true, "wallet");
-  }
+  // Web3 endpoints are available for explicit testnet wallet testing. Keep all
+  // unrelated beta restrictions and ambiguous-route checks in place.
   if (
     /^\/api\/social\/oauth(?:\/|$)/.test(canonical) ||
     /^\/api\/social\/[^/]+\/(?:connect|link|import-target|sync)(?:\/|$)/.test(
       canonical,
-    ) ||
-    /^\/api\/publishing\/oauth(?:\/|$)/.test(canonical) ||
-    /^\/api\/publishing\/connections\/[^/]+\/target(?:\/|$)/.test(canonical)
+    )
   )
     assertInternalBetaAction(true, "network-import");
   if (

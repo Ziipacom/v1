@@ -1,3 +1,4 @@
+import { HelpLabel } from "../components/help-label";
 import {
   useCallback,
   useEffect,
@@ -187,8 +188,8 @@ function NetworkSheet({
               <X size={18} color={color.text} />
             </Pressable>
           </View>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
+          <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
+
             showsVerticalScrollIndicator={false}
             contentContainerStyle={nd.dialogBody}
           >
@@ -622,9 +623,9 @@ function ScopedConnectionsScreen({
 
   return (
     <View style={styles.screen}>
-      <ScrollView
+      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+
         contentContainerStyle={[
           styles.page,
           { padding: 18, paddingBottom: 38, gap: 18 },
@@ -1382,7 +1383,7 @@ function ScopedConnectionsScreen({
           {!!targetOptions.error && <Notice error text={targetOptions.error} />}
           {targetOptions.rows.length > 0 && (
             <View style={[styles.panel, { gap: 8 }]}>
-              <Text style={styles.label}>Public import target</Text>
+              <HelpLabel label="Public import target" help="Choose the eligible account, Page or channel whose public posts you authorize Ziipa to read. Import permission does not authorize publishing to that network." />
               <Text style={styles.small}>
                 Select one authorized account or Page. Changing the target
                 clears its old imported snapshot; sync is a separate action.

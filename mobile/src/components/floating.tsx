@@ -1,4 +1,10 @@
-import { useEffect, useState, type PropsWithChildren, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PropsWithChildren,
+  type ReactNode,
+} from "react";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -20,7 +26,7 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import { color, font, styles, themedStyles, useTheme } from "../theme";
-import { conceptsEnabled, iosLimitedTestflight } from "../lib/config";
+import { conceptsEnabled, limitedStoreBeta } from "../lib/config";
 import type { Category } from "../lib/types";
 import { useDesktopLayout } from "./desktop-layout";
 
@@ -35,7 +41,7 @@ export const worlds: {
   { id: "music", title: "Music & Film", icon: Music2 },
   { id: "store", title: "Store", icon: Store },
   // Live navigation remains visible in the iPhone beta without enabling a provider.
-].filter((w) => conceptsEnabled || iosLimitedTestflight || !w.concept) as {
+].filter((w) => conceptsEnabled || limitedStoreBeta || !w.concept) as {
   id: Category;
   title: string;
   icon: LucideIcon;
@@ -198,32 +204,63 @@ export function Sheet({
 }>) {
   const insets = useSafeAreaInsets();
   const hasFooter = !!footer;
+  const panel = useRef<View>(null);
   const [keyboardInset, setKeyboardInset] = useState(0);
   useEffect(() => {
-    if (!hasFooter || Platform.OS !== "web" || typeof window === "undefined") return;
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
     const viewport = window.visualViewport;
-    if (!viewport) return;
-    const update = () => setKeyboardInset(
-      Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop),
-    );
-    viewport.addEventListener("resize", update);
-    viewport.addEventListener("scroll", update);
+    let frame = 0;
+    const keepFieldVisible = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const focused = document.activeElement as HTMLElement | null;
+        const container = panel.current as unknown as HTMLElement | null;
+        if (
+          focused &&
+          container?.contains(focused) &&
+          focused.matches("input,textarea,[contenteditable=true]")
+        )
+          focused.scrollIntoView({ block: "nearest", inline: "nearest" });
+      });
+    };
+    const update = () => {
+      setKeyboardInset(
+        viewport
+          ? Math.max(
+              0,
+              window.innerHeight - viewport.height - viewport.offsetTop,
+            )
+          : 0,
+      );
+      keepFieldVisible();
+    };
+    viewport?.addEventListener("resize", update);
+    viewport?.addEventListener("scroll", update);
+    document.addEventListener("focusin", keepFieldVisible);
     update();
     return () => {
-      viewport.removeEventListener("resize", update);
-      viewport.removeEventListener("scroll", update);
+      viewport?.removeEventListener("resize", update);
+      viewport?.removeEventListener("scroll", update);
+      document.removeEventListener("focusin", keepFieldVisible);
+      window.cancelAnimationFrame(frame);
     };
-  }, [hasFooter]);
+  }, []);
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
-        enabled={hasFooter && Platform.OS === "ios"}
-        behavior={hasFooter && Platform.OS === "ios" ? "padding" : undefined}
+        enabled={Platform.OS !== "web"}
+        behavior={
+          Platform.OS === "ios"
+            ? "padding"
+            : Platform.OS === "android"
+              ? "height"
+              : undefined
+        }
         style={{
           flex: 1,
           justifyContent: "flex-end",
           backgroundColor: "#0007",
-          ...(hasFooter && Platform.OS === "web" ? { paddingBottom: keyboardInset } : {}),
+          ...(Platform.OS === "web" ? { paddingBottom: keyboardInset } : {}),
         }}
       >
         <Pressable
@@ -233,12 +270,13 @@ export function Sheet({
           style={StyleSheet.absoluteFill}
         />
         <View
+          ref={panel}
           style={{
             maxHeight: "80%",
             ...(maxWidth
               ? { width: "100%", maxWidth, alignSelf: "center" as const }
               : {}),
-            minHeight: hasFooter ? 0 : 200,
+            minHeight: 0,
             backgroundColor: color.bg,
             borderTopLeftRadius: 27,
             borderTopRightRadius: 27,
@@ -260,7 +298,7 @@ export function Sheet({
           <View
             style={[
               styles.between,
-              { paddingHorizontal: 22, paddingVertical: 10 },
+              { paddingHorizontal: 22, paddingVertical: 10, flexShrink: 0 },
             ]}
           >
             <Text style={[styles.heading, { fontSize: 21 }]}>{title}</Text>
@@ -269,7 +307,11 @@ export function Sheet({
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            style={hasFooter ? { flexShrink: 1 } : undefined}
+            keyboardDismissMode={
+              Platform.OS === "ios" ? "interactive" : "on-drag"
+            }
+            automaticallyAdjustKeyboardInsets={false}
+            style={{ flexShrink: 1 }}
             contentContainerStyle={{
               paddingHorizontal: 22,
               gap: 16,
@@ -285,6 +327,7 @@ export function Sheet({
                 paddingTop: 10,
                 borderTopWidth: 1,
                 borderColor: color.border,
+                flexShrink: 0,
               }}
             >
               {footer}

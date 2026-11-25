@@ -819,7 +819,7 @@ function DesktopWatchLayout({
       style={styles.screen}
       onLayout={(event) => setArea(event.nativeEvent.layout)}
     >
-      <ScrollView
+      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
         style={{ flex: 1 }}
         contentContainerStyle={desktopWatch.page}
         showsVerticalScrollIndicator={false}

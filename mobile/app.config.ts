@@ -122,6 +122,7 @@ const config: ExpoConfig = {
     },
   },
   android: {
+    softwareKeyboardLayoutMode: "resize",
     allowBackup: false,
     package: production ? identifier : `${identifier}.preview`,
     ...(googleServicesFile ? { googleServicesFile } : {}),

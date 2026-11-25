@@ -1,10 +1,10 @@
 import Purchases from "react-native-purchases";
-import { iosLimitedTestflight } from "./config";
+import { limitedStoreBeta } from "./config";
 import type { PurchaseContext, PurchaseOption } from "./commerce";
 
 async function identify(context: PurchaseContext) {
-  if (iosLimitedTestflight)
-    throw new Error("Purchases are unavailable in this limited iPhone beta.");
+  if (limitedStoreBeta)
+    throw new Error("Purchases are unavailable in this limited beta.");
   if (!(await Purchases.isConfigured()))
     Purchases.configure({ apiKey: context.public_key, appUserID: context.app_user_id });
   else if ((await Purchases.getAppUserID()) !== context.app_user_id)

@@ -33,7 +33,7 @@ function categoryUI(limitedBeta: boolean, concepts = false) {
       themedStyles: (fn: () => unknown) => fn(), useTheme() {},
     };
     if (name === "../lib/config") return {
-      conceptsEnabled: concepts, iosLimitedTestflight: limitedBeta,
+      conceptsEnabled: concepts, limitedStoreBeta: limitedBeta,
     };
     if (name === "./desktop-layout") return { useDesktopLayout: () => ({ desktop: false }) };
     throw new Error(`Unexpected category dependency: ${name}`);

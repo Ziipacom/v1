@@ -1,3 +1,4 @@
+import { HelpLabel } from "../components/help-label";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,
@@ -180,7 +181,7 @@ export function PublishingScreen(
   const { session } = useZiipa();
   return (
     <ScopedPublishingScreen
-      key={`${session?.access_token || "guest"}:${props.route.params?.itemId || ""}:${props.route.params?.renderId || ""}`}
+      key={`${session?.access_token || "guest"}:${props.route.params?.itemId || ""}:${props.route.params?.renderId || ""}:${props.route.params?.tab || ""}`}
       {...props}
     />
   );
@@ -667,6 +668,8 @@ function ScopedPublishingScreen({
             <Notice text="Choose a rendered MP4 to include saved editor effects. Ziipa checks that the export still matches your saved edit before sending it." />
             {desktop ? (
               <ScrollView
+                automaticallyAdjustKeyboardInsets
+                keyboardShouldPersistTaps="handled"
                 style={{ maxHeight: 210 }}
                 contentContainerStyle={{ gap: 7 }}
                 nestedScrollEnabled
@@ -798,7 +801,10 @@ function ScopedPublishingScreen({
                     }}
                   />
                 ))}
-              <Text style={styles.label}>Is this video made for kids?</Text>
+              <HelpLabel
+                label="Is this video made for kids?"
+                help="Choose the intended audience for this YouTube video. Review this setting before submitting the post."
+              />
               <Choice
                 disabled={busy}
                 title="Yes, made for kids"
@@ -928,7 +934,10 @@ function ScopedPublishingScreen({
                     / 2,200 caption characters. This changes only the TikTok
                     post text.
                   </Text>
-                  <Text style={styles.label}>Who can watch this post?</Text>
+                  <HelpLabel
+                    label="Who can watch this post?"
+                    help="This selects the audience on the destination network. Review it separately from your Ziipa profile and creation visibility."
+                  />
                   <Pressable
                     accessibilityRole="combobox"
                     accessibilityLabel="TikTok privacy"
@@ -1198,7 +1207,11 @@ function ScopedPublishingScreen({
           </Text>
         </View>
       ) : (
-        <Text style={styles.heading}>Delivery receipts</Text>
+        <HelpLabel
+          label="Delivery receipts"
+          style={styles.heading}
+          help="A receipt tracks a post sent to an external network. Saving or publishing on Ziipa does not by itself confirm that an external post was delivered."
+        />
       )}
       {!jobs.length && (
         <Text style={styles.small}>
@@ -1266,13 +1279,56 @@ function ScopedPublishingScreen({
       </View>
     </>
   );
+  if (route.params?.tab === "connections")
+    return (
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
+        style={styles.screen}
+        contentContainerStyle={[
+          styles.page,
+          desktop && { maxWidth: 760, width: "100%", alignSelf: "center" },
+        ]}
+      >
+        <Action
+          secondary
+          title="Back"
+          onPress={() =>
+            navigation.canGoBack()
+              ? navigation.goBack()
+              : navigation.navigate("Store", { tab: "sell" })
+          }
+        />
+        <Text style={styles.title}>Connect networks</Text>
+        <Text style={styles.small}>
+          Connect your publishing accounts for product promotion, then return to
+          Sell. Connecting an account does not send a post.
+        </Text>
+        <Action
+          secondary
+          title="Refresh connections"
+          icon={RefreshCw}
+          busy={busy}
+          onPress={() => void run(load)}
+        />
+        {!!message && <Notice text={message} />}
+        {providerChoices}
+        {accountControls}
+        {!providers.length && (
+          <Text style={styles.small}>
+            Network setup is unavailable. Refresh to check available providers.
+          </Text>
+        )}
+      </ScrollView>
+    );
   if (desktop)
     return (
       <ScrollView
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
         style={styles.screen}
         contentContainerStyle={dp.page}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
       >
         <View style={dp.workspace}>
           <View style={dp.header}>
@@ -1393,6 +1449,8 @@ function ScopedPublishingScreen({
     );
   return (
     <ScrollView
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
       style={styles.screen}
       contentContainerStyle={styles.page}
       showsVerticalScrollIndicator={false}
@@ -1424,93 +1482,120 @@ function ScopedPublishingScreen({
   );
 }
 
-const dp = themedStyles(() => StyleSheet.create({
-  page: { padding: 28, paddingBottom: 48, alignItems: "center" },
-  workspace: { width: "100%", maxWidth: 1380, gap: 22 },
-  header: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 18,
-    alignItems: "center",
-    paddingBottom: 22,
-    borderBottomWidth: 1,
-    borderBottomColor: color.border,
-  },
-  eyebrow: {
-    color: color.faint,
-    fontFamily: font.medium,
-    fontSize: 10,
-    letterSpacing: 1.7,
-  },
-  title: {
-    color: color.text,
-    fontFamily: font.bold,
-    fontSize: 28,
-    lineHeight: 34,
-    letterSpacing: -0.6,
-  },
-  headerActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  providers: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  provider: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
-    minWidth: 152,
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: themeValue("#191323", color.panel),
-    borderRadius: 9,
-  },
-  providerActive: { borderColor: "#A984E7", backgroundColor: themeValue("#302040", color.accentSoft) },
-  providerMark: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  providerInitial: { color: "white", fontFamily: font.bold, fontSize: 11 },
-  providerName: { color: color.text, fontFamily: font.semibold, fontSize: 13 },
-  providerStatus: {
-    color: color.muted,
-    fontFamily: font.regular,
-    fontSize: 11,
-  },
-  body: { flexDirection: "row", gap: 22, alignItems: "flex-start" },
-  accountRail: { width: 264, gap: 14 },
-  railHeading: {
-    flexDirection: "row",
-    gap: 9,
-    alignItems: "center",
-    minHeight: 25,
-  },
-  railTitle: { color: color.text, fontFamily: font.semibold, fontSize: 14 },
-  workflow: { flex: 1, minWidth: 0, gap: 16 },
-  card: { borderRadius: 11, padding: 18, gap: 12, backgroundColor: themeValue("#191421", color.panel) },
-  sectionTitle: { fontSize: 17, letterSpacing: -0.2, lineHeight: 23 },
-  choice: { borderRadius: 8, backgroundColor: themeValue("#211A2C", color.panel), gap: 0 },
-  footnote: {
-    color: color.faint,
-    fontFamily: font.regular,
-    fontSize: 12,
-    lineHeight: 18,
-    paddingHorizontal: 4,
-  },
-  receipts: {
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: color.border,
-    paddingTop: 22,
-  },
-  receiptTitle: { color: color.text, fontFamily: font.semibold, fontSize: 17 },
-  receiptHeading: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 14,
-    flexWrap: "wrap",
-  },
-  receipt: { padding: 15, borderRadius: 9, gap: 8, backgroundColor: themeValue("#191421", color.panel) },
-}));
+const dp = themedStyles(() =>
+  StyleSheet.create({
+    page: { padding: 28, paddingBottom: 48, alignItems: "center" },
+    workspace: { width: "100%", maxWidth: 1380, gap: 22 },
+    header: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 18,
+      alignItems: "center",
+      paddingBottom: 22,
+      borderBottomWidth: 1,
+      borderBottomColor: color.border,
+    },
+    eyebrow: {
+      color: color.faint,
+      fontFamily: font.medium,
+      fontSize: 10,
+      letterSpacing: 1.7,
+    },
+    title: {
+      color: color.text,
+      fontFamily: font.bold,
+      fontSize: 28,
+      lineHeight: 34,
+      letterSpacing: -0.6,
+    },
+    headerActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    providers: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    provider: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      paddingHorizontal: 13,
+      paddingVertical: 11,
+      minWidth: 152,
+      borderWidth: 1,
+      borderColor: color.border,
+      backgroundColor: themeValue("#191323", color.panel),
+      borderRadius: 9,
+    },
+    providerActive: {
+      borderColor: "#A984E7",
+      backgroundColor: themeValue("#302040", color.accentSoft),
+    },
+    providerMark: {
+      width: 30,
+      height: 30,
+      borderRadius: 8,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    providerInitial: { color: "white", fontFamily: font.bold, fontSize: 11 },
+    providerName: {
+      color: color.text,
+      fontFamily: font.semibold,
+      fontSize: 13,
+    },
+    providerStatus: {
+      color: color.muted,
+      fontFamily: font.regular,
+      fontSize: 11,
+    },
+    body: { flexDirection: "row", gap: 22, alignItems: "flex-start" },
+    accountRail: { width: 264, gap: 14 },
+    railHeading: {
+      flexDirection: "row",
+      gap: 9,
+      alignItems: "center",
+      minHeight: 25,
+    },
+    railTitle: { color: color.text, fontFamily: font.semibold, fontSize: 14 },
+    workflow: { flex: 1, minWidth: 0, gap: 16 },
+    card: {
+      borderRadius: 11,
+      padding: 18,
+      gap: 12,
+      backgroundColor: themeValue("#191421", color.panel),
+    },
+    sectionTitle: { fontSize: 17, letterSpacing: -0.2, lineHeight: 23 },
+    choice: {
+      borderRadius: 8,
+      backgroundColor: themeValue("#211A2C", color.panel),
+      gap: 0,
+    },
+    footnote: {
+      color: color.faint,
+      fontFamily: font.regular,
+      fontSize: 12,
+      lineHeight: 18,
+      paddingHorizontal: 4,
+    },
+    receipts: {
+      gap: 12,
+      borderTopWidth: 1,
+      borderTopColor: color.border,
+      paddingTop: 22,
+    },
+    receiptTitle: {
+      color: color.text,
+      fontFamily: font.semibold,
+      fontSize: 17,
+    },
+    receiptHeading: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 14,
+      flexWrap: "wrap",
+    },
+    receipt: {
+      padding: 15,
+      borderRadius: 9,
+      gap: 8,
+      backgroundColor: themeValue("#191421", color.panel),
+    },
+  }),
+);

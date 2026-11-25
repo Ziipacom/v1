@@ -1,4 +1,5 @@
 const mediaReadPath = /^\/api\/creator\/media\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+const storeMediaReadPath = /^\/api\/store\/listings\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/media\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 /** Only an already-authorized media redirect may reach private R2 storage. */
 function privateStorageLocation(location: string | null): URL | null {
@@ -45,7 +46,7 @@ export async function proxyBackend(request: Request, origin: string, fetcher: ty
       method: request.method, headers, redirect: 'manual', signal: request.signal,
       ...(request.method === 'GET' || request.method === 'HEAD' ? {} : { body: request.body, duplex: 'half' }),
     } as RequestInit);
-    if (upstream.status === 307 && request.method === 'GET' && mediaReadPath.test(incoming.pathname)) {
+    if (upstream.status === 307 && request.method === 'GET' && (mediaReadPath.test(incoming.pathname) || storeMediaReadPath.test(incoming.pathname))) {
       void upstream.body?.cancel().catch(() => {});
       const location = privateStorageLocation(upstream.headers.get('location'));
       if (!location) return Response.json({ detail: 'Media is temporarily unavailable.' }, { status: 502, headers: { 'Cache-Control': 'no-store' } });

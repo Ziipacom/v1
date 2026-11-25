@@ -211,11 +211,11 @@ export function FeedsScreen() {
   );
   if (desktop)
     return (
-      <ScrollView
+      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
         style={styles.screen}
         contentContainerStyle={workspace.page}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+
       >
         <WorkspaceHeading
           title="Feed builder"
@@ -238,10 +238,10 @@ export function FeedsScreen() {
     );
   return (
     <SafeAreaView edges={["top"]} style={styles.screen}>
-      <ScrollView
+      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.page}
-        keyboardShouldPersistTaps="handled"
+
       >
         <Logo />
         <View style={{ gap: 12 }}>
