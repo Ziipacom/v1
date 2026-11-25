@@ -23,11 +23,13 @@ import {
   Coins,
   Copy,
   Gift,
+  FileText,
   Hexagon,
   Link2,
   Plus,
   RefreshCw,
   ShieldCheck,
+  Upload,
   Wallet,
 } from "lucide-react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -38,6 +40,9 @@ import QRCode from "react-native-qrcode-svg";
 import { Action, Notice } from "../components/ui";
 import { Sheet } from "../components/floating";
 import { HelpLabel } from "../components/help-label";
+import { InfoTip } from "../components/info-tip";
+import { Disclosure } from "../components/disclosure";
+import { WorkflowProgress } from "../components/workflow-progress";
 import { StudioDock } from "../components/studio-dock";
 import { themedStyles, themeValue, color, font, styles } from "../theme";
 import { useZiipa } from "../provider";
@@ -89,6 +94,45 @@ export function WalletScreen(props: Props) {
   return <FullWalletScreen {...props} />;
 }
 
+/** Provider diagnostics are not product copy, and can include internal payloads. */
+export function walletErrorMessage(error: unknown) {
+  const value = error as {
+    message?: unknown;
+    code?: unknown;
+    status?: unknown;
+  } | null;
+  const message = typeof value?.message === "string" ? value.message : "";
+  const localMessages = [
+    "Connect and verify a wallet first.",
+    "Sign in before uploading your media.",
+    "Reconnect your verified wallet before preparing a mint.",
+    "Name your token and choose your saved media before minting.",
+    "Approve permanent public metadata storage to continue.",
+    "Royalties must be between 0 and 10%.",
+    "Verify your previous transaction before signing another.",
+    "Reconnect this wallet before sending.",
+    "Curator split must be between 0 and 50%.",
+  ];
+  if (localMessages.includes(message)) return message;
+  if (value?.status === 401)
+    return "Sign in again to continue with your wallet.";
+  if (value?.code === 4001 || /user rejected|user denied/i.test(message))
+    return "Wallet approval was declined. Check Activity before trying again.";
+  if (/insufficient funds/i.test(message))
+    return "Your wallet needs more test funds for this transaction and its network fee.";
+  if (
+    /network.*match|wrong network|select base sepolia|test-network configuration/i.test(
+      message,
+    )
+  )
+    return "Select the matching test network in Ziipa and your wallet.";
+  if (
+    /minting is unavailable|public media storage|minting setup/i.test(message)
+  )
+    return "Minting is unavailable right now. Your creation is still here.";
+  return "This wallet request could not be completed. Check your connection and Activity before trying again.";
+}
+
 export function walletMintAvailability(
   config: WalletConfig | null,
   chainId: number,
@@ -119,6 +163,11 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
   const [view, setView] = useState<"wizard" | "vault">(
     initialItem ? "wizard" : "vault",
   );
+  const [connectorChoice, setConnectorChoice] = useState<
+    "walletconnect" | "injected"
+  >("walletconnect");
+  const [extraDetails, setExtraDetails] = useState(false);
+  const [useIpfs, setUseIpfs] = useState(false);
   const [config, setConfig] = useState<WalletConfig | null>(null);
   const [chainId, setChainId] = useState(84532);
   const [name, setName] = useState(initialItem?.title || "");
@@ -219,10 +268,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
     try {
       await fn();
     } catch (e) {
-      if (owner.current === token)
-        setError(
-          (e as Error).message || "The wallet request was not completed.",
-        );
+      if (owner.current === token) setError(walletErrorMessage(e));
     } finally {
       if (owner.current === token) setBusy(false);
     }
@@ -257,7 +303,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
   useEffect(() => {
     void request<WalletConfig>("/api/web3/config")
       .then(setConfig)
-      .catch((e) => setError(e.message));
+      .catch((e) => setError(walletErrorMessage(e)));
   }, []);
   useEffect(() => {
     if (walletOwner.current !== (session?.user.id || null)) {
@@ -293,7 +339,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
     setConnected(false);
     const token = owner.current;
     void loadAccount().catch((e) => {
-      if (owner.current === token) setError(e.message);
+      if (owner.current === token) setError(walletErrorMessage(e));
     });
   }, [session?.access_token]);
   useEffect(() => observeWallet(() => setConnected(false)), []);
@@ -572,6 +618,25 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
   const ownedMedia = data.drafts.filter((item) =>
     sourceMintItem(item, session?.user.id, false),
   );
+  const connectionNeeded = step === 2 && !linkedConnection;
+  const primaryDisabled =
+    busy ||
+    (step === 0 && !name.trim()) ||
+    (step === 1 && !chain) ||
+    (connectionNeeded &&
+      !!session &&
+      (!config ||
+        (connectorChoice === "walletconnect"
+          ? !walletConnectConfigured
+          : !browserWalletAvailable()))) ||
+    (step === 3 && mintDisabled);
+  const primaryLabel = connectionNeeded
+    ? session
+      ? "Connect & verify"
+      : "Sign in to connect"
+    : step === 3
+      ? "Review mint"
+      : "Continue";
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.screen}>
@@ -638,15 +703,15 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
               },
             ]}
           >
-            {[0, 1, 2, 3].map((i) => (
-              <View
-                key={i}
-                style={[
-                  s.bar,
-                  { backgroundColor: i <= step ? color.purple : "#BCBBC1" },
-                ]}
-              />
-            ))}
+            <WorkflowProgress
+              steps={[
+                { title: "Create", icon: Hexagon },
+                { title: "Network", icon: Link2 },
+                { title: "Wallet", icon: Wallet },
+                { title: "Review", icon: ShieldCheck },
+              ]}
+              activeStep={step}
+            />
           </View>
         )}
         <ScrollView
@@ -682,19 +747,28 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
           {view === "wizard" ? (
             <>
               <View style={{ gap: 8, marginBottom: 14 }}>
-                <Text style={s.chip}>TEST NETWORKS ONLY</Text>
+                <View style={styles.between}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <Text style={s.chip}>TEST NETWORK</Text>
+                    <InfoTip
+                      title="Test assets only"
+                      content="Minting uses test networks only. Test assets have no monetary value. Mainnet is disabled, and every transaction requires approval in your external wallet."
+                    />
+                  </View>
+                  <HelpLabel
+                    label={mintAvailability.label}
+                    style={s.micro}
+                    help={mintAvailability.detail}
+                  />
+                </View>
                 {!!mediaName && (
                   <Text style={s.hint}>Selected creation: {mediaName}</Text>
-                )}
-                {!!mintIssue && <Notice text={mintAvailability.detail} />}
-                {step === 0 && (
-                  <Action
-                    secondary
-                    title="Connect wallet"
-                    icon={Wallet}
-                    disabled={busy}
-                    onPress={() => setStep(2)}
-                  />
                 )}
               </View>
               <View style={s.card}>
@@ -722,13 +796,17 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                           <Pressable
                             key={k}
                             accessibilityRole="button"
-                            accessibilityState={{ selected: kind === k }}
+                            accessibilityState={{
+                              selected: kind === k,
+                              disabled: busy,
+                            }}
+                            disabled={busy}
                             onPress={() => {
                               setKind(k);
                               setIntent(null);
                             }}
                             style={[
-                              s.type,
+                              s.choiceTile,
                               {
                                 borderColor: kind === k ? "#7541C9" : "#302638",
                               },
@@ -736,12 +814,12 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                           >
                             {k === "mint_nft" ? (
                               <Hexagon
-                                size={14}
+                                size={24}
                                 color={kind === k ? "#BA99F2" : "#908398"}
                               />
                             ) : (
                               <Coins
-                                size={14}
+                                size={24}
                                 color={kind === k ? "#BA99F2" : "#908398"}
                               />
                             )}
@@ -762,9 +840,13 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                         <View style={{ gap: 10 }}>
                           <View style={styles.row}>
                             <Gift size={20} color={color.lime} />
-                            <Text style={[s.label, { flex: 1 }]}>
-                              Media Rewards
-                            </Text>
+                            <View style={{ flex: 1 }}>
+                              <HelpLabel
+                                label="Media Rewards"
+                                style={s.label}
+                                help="Reward your community with a creator token. Points and token rewards are managed separately. You will review and enable any reward program after minting."
+                              />
+                            </View>
                             <Switch
                               accessibilityLabel="Include Media Rewards with creator token"
                               value={rewardDraft.enabled}
@@ -774,10 +856,6 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                               trackColor={{ true: color.purple }}
                             />
                           </View>
-                          <Text style={s.hint}>
-                            Reward your community with a creator token. Points
-                            and token rewards are managed separately.
-                          </Text>
                         </View>
                       )}
                     </>
@@ -814,71 +892,79 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                             ? shortAddress(activeLink.address)
                             : "Your keys. Your creations."}
                         </Text>
-                        <Text style={[s.hint, { textAlign: "center" }]}>
-                          {linkedConnection
-                            ? "Connected & ownership verified"
-                            : "Connect an external wallet and sign a message to prove ownership. No spending approval."}
-                        </Text>
+                        <HelpLabel
+                          label={
+                            linkedConnection
+                              ? "Ownership verified"
+                              : "Connect & verify ownership"
+                          }
+                          style={s.hint}
+                          help="Connect an external wallet and sign a message to prove ownership. This signature does not authorize spending. Ziipa never asks for your seed phrase or private key."
+                        />
                       </View>
-                      {!session ? (
+                      {session && !linkedConnection && (
                         <>
-                          <Action
-                            title="Sign in to Ziipa"
-                            onPress={() => navigation.navigate("Login")}
-                          />
-                          <Text style={s.hint}>
-                            Your Ziipa account keeps metadata and transaction
-                            history together.
-                          </Text>
-                        </>
-                      ) : (
-                        <>
-                          {Platform.OS === "web" && (
-                            <Action
-                              secondary
-                              title={
-                                browserWalletAvailable()
-                                  ? "Connect browser wallet"
-                                  : "Browser wallet"
-                              }
-                              busy={busy}
-                              onPress={() =>
-                                void run(() => connect("injected"))
-                              }
-                            />
-                          )}
-                          <Action
-                            title={
-                              linkedConnection
-                                ? "Reconnect wallet"
-                                : "Connect with WalletConnect"
-                            }
-                            busy={busy}
-                            disabled={!walletConnectConfigured || !config}
-                            onPress={() =>
-                              void run(() => connect("walletconnect"))
-                            }
-                          />
-                          {!walletConnectConfigured && (
-                            <Text style={s.hint}>
-                              Wallet connection is unavailable. Try again later.
-                            </Text>
-                          )}
+                          <View style={{ flexDirection: "row", gap: 10 }}>
+                            {(
+                              [
+                                "walletconnect",
+                                ...(Platform.OS === "web" ? ["injected"] : []),
+                              ] as const
+                            ).map((method) => {
+                              const selected = connectorChoice === method;
+                              const available =
+                                method === "walletconnect"
+                                  ? walletConnectConfigured
+                                  : browserWalletAvailable();
+                              return (
+                                <Pressable
+                                  key={method}
+                                  accessibilityRole="radio"
+                                  accessibilityLabel={
+                                    method === "walletconnect"
+                                      ? "Wallet app"
+                                      : "Browser wallet"
+                                  }
+                                  accessibilityState={{
+                                    checked: selected,
+                                    disabled: busy || !available,
+                                  }}
+                                  disabled={busy || !available}
+                                  onPress={() =>
+                                    setConnectorChoice(
+                                      method as "walletconnect" | "injected",
+                                    )
+                                  }
+                                  style={[
+                                    s.choiceTile,
+                                    {
+                                      borderColor: selected
+                                        ? color.lime
+                                        : color.border,
+                                      opacity: available ? 1 : 0.5,
+                                    },
+                                  ]}
+                                >
+                                  {method === "walletconnect" ? (
+                                    <Wallet size={24} color={color.text} />
+                                  ) : (
+                                    <Link2 size={24} color={color.text} />
+                                  )}
+                                  <Text style={s.micro}>
+                                    {method === "walletconnect"
+                                      ? "Wallet app"
+                                      : "Browser"}
+                                  </Text>
+                                  {!available && (
+                                    <Text style={s.micro}>Unavailable</Text>
+                                  )}
+                                </Pressable>
+                              );
+                            })}
+                          </View>
                         </>
                       )}
                     </>
-                  )}
-                  {step === 2 && !linkedConnection && (
-                    <Action
-                      secondary
-                      title="Edit metadata"
-                      onPress={() => {
-                        setStep(3);
-                        setNotice(
-                          "Connect and verify your wallet before storing metadata or minting.",
-                        );
-                      }}
-                    />
                   )}
                   {step === 2 && linkedConnection && (
                     <Action
@@ -905,44 +991,83 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                         maxLength={2000}
                         multiline
                       />
-                      <Input
-                        label="Collection / trait"
-                        value={trait}
-                        onChangeText={(v) => changed(() => setTrait(v))}
-                        maxLength={200}
-                      />
-                      <View style={{ gap: 10 }}>
-                        <Text style={s.label}>Media & storage</Text>
-                        <Action
-                          secondary
-                          title={mediaName || "Upload image, audio or video"}
-                          busy={busy}
-                          onPress={() => void run(upload)}
-                        />
-                        {ownedMedia.length > 0 && (
-                          <Action
-                            secondary
-                            title="Choose a saved creation"
-                            onPress={() => setSheet("media")}
-                          />
-                        )}
+                      <Disclosure
+                        title="Collection"
+                        detail="Optional trait"
+                        icon={FileText}
+                        expanded={extraDetails}
+                        onToggle={() => setExtraDetails(!extraDetails)}
+                      >
                         <Input
-                          label={
-                            mediaId
-                              ? "Or use an IPFS media URI"
-                              : "IPFS media URI"
-                          }
-                          placeholder="ipfs://bafy…"
-                          value={imageUri}
-                          autoCapitalize="none"
-                          onChangeText={(v) =>
-                            changed(() => {
-                              setImageUri(v);
-                              setMediaId("");
-                              setMediaName("");
-                            })
-                          }
+                          label="Collection / trait"
+                          value={trait}
+                          onChangeText={(v) => changed(() => setTrait(v))}
+                          maxLength={200}
                         />
+                      </Disclosure>
+                      <View style={{ gap: 10 }}>
+                        <HelpLabel
+                          label="Media"
+                          style={s.label}
+                          help="Upload a file or choose a saved creation. Your media stays private until you approve public IPFS storage below."
+                        />
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            gap: 8,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <View style={{ flex: 1, minWidth: 110 }}>
+                            <Action
+                              secondary
+                              title="Upload"
+                              icon={Upload}
+                              busy={busy}
+                              onPress={() => void run(upload)}
+                            />
+                          </View>
+                          {ownedMedia.length > 0 && (
+                            <View style={{ flex: 1, minWidth: 110 }}>
+                              <Action
+                                secondary
+                                title="Library"
+                                icon={Hexagon}
+                                disabled={busy}
+                                onPress={() => setSheet("media")}
+                              />
+                            </View>
+                          )}
+                        </View>
+                        {!!mediaName && (
+                          <Text style={s.micro} numberOfLines={2}>
+                            {mediaName}
+                          </Text>
+                        )}
+                        <Disclosure
+                          title="IPFS link"
+                          icon={Link2}
+                          expanded={useIpfs}
+                          onToggle={() => setUseIpfs(!useIpfs)}
+                        >
+                          <Input
+                            label={
+                              mediaId
+                                ? "Or use an IPFS media URI"
+                                : "IPFS media URI"
+                            }
+                            placeholder="ipfs://bafy…"
+                            value={imageUri}
+                            autoCapitalize="none"
+                            onChangeText={(v) =>
+                              changed(() => {
+                                setImageUri(v);
+                                setMediaId("");
+                                setMediaName("");
+                              })
+                            }
+                          />
+                        </Disclosure>
                       </View>
                       {kind === "mint_nft" ? (
                         <>
@@ -952,10 +1077,11 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                             keyboardType="decimal-pad"
                             onChangeText={setRoyalty}
                           />
-                          <Text style={s.hint}>
-                            0–10%. Marketplace support determines whether
-                            royalties are paid.
-                          </Text>
+                          <HelpLabel
+                            label="0–10% royalty"
+                            style={s.micro}
+                            help="This is a suggested resale royalty. Marketplace support determines whether royalties are paid."
+                          />
                         </>
                       ) : (
                         <>
@@ -975,10 +1101,11 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                             onChangeText={setSupply}
                             keyboardType="number-pad"
                           />
-                          <Text style={s.hint}>
-                            All tokens are issued to your wallet once. No
-                            additional minting or platform admin.
-                          </Text>
+                          <HelpLabel
+                            label="Fixed supply"
+                            style={s.micro}
+                            help="All tokens are issued to your wallet once. No additional minting or platform admin."
+                          />
                         </>
                       )}
                       {kind === "create_token" && rewardDraft.enabled && (
@@ -996,7 +1123,11 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                             onChange={setRewardDraft}
                             disabled={busy}
                           />
-                          <Notice text="After your token transaction is confirmed, you can save a paused reward program. Enable points, fund rewards and approve claims separately; no extra tokens are minted." />
+                          <HelpLabel
+                            label="Rewards start paused"
+                            style={s.micro}
+                            help="After your token transaction is confirmed, save a paused reward program. Enable points, fund rewards and approve claims separately; no extra tokens are minted."
+                          />
                         </View>
                       )}
                       <View
@@ -1018,28 +1149,25 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                           and blockchain records cannot be erased.
                         </Text>
                       </View>
-                      <Text style={s.hint}>
-                        {config?.storage === "local_ipfs"
-                          ? "Media is stored locally and is not publicly retrievable."
-                          : config?.storage === "public_ipfs" ||
-                              config?.storage === "pinata_ipfs"
-                            ? "Approved media and metadata are stored publicly on IPFS. Publishing may be permanent."
-                            : "Public media storage is currently unavailable. Your private library is unchanged."}
-                      </Text>
+                      <HelpLabel
+                        label={
+                          config?.storage === "local_ipfs"
+                            ? "Local storage only"
+                            : config?.storage === "public_ipfs" ||
+                                config?.storage === "pinata_ipfs"
+                              ? "Public IPFS storage"
+                              : "Storage unavailable"
+                        }
+                        style={s.micro}
+                        help={
+                          config?.storage === "local_ipfs"
+                            ? "Media is stored locally and is not publicly retrievable."
+                            : "Approved media and metadata are stored publicly on IPFS. Other copies and blockchain records cannot be erased."
+                        }
+                      />
                     </>
                   )}
                 </View>
-              </View>
-              <View style={{ marginTop: 16 }}>
-                <Action
-                  secondary
-                  title="Open Media Rewards"
-                  icon={Gift}
-                  onPress={() => {
-                    setView("vault");
-                    setTab("Rewards");
-                  }}
-                />
               </View>
               {step < 3 && <View style={{ height: 20 }} />}
             </>
@@ -1083,11 +1211,15 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                   </Text>
                   <ChevronDown size={15} color="#AE9ABB" />
                 </Pressable>
-                <Text style={s.hint}>
-                  {balance
-                    ? `Read from block ${balance.block_number}. Test assets have no monetary value.`
-                    : "Sync to read an actual balance. No estimated fiat value."}
-                </Text>
+                <HelpLabel
+                  label={balance ? "Synced balance" : "Sync to view balance"}
+                  style={s.micro}
+                  help={
+                    balance
+                      ? `Read from block ${balance.block_number}. Test assets have no monetary value.`
+                      : "Sync to read your balance from the selected network. Ziipa does not estimate a fiat value for test assets."
+                  }
+                />
                 <View
                   style={{
                     flexDirection: "row",
@@ -1462,10 +1594,11 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                   }
                 />
               )}
-              <Text style={[s.hint, { paddingBottom: 10 }]}>
-                Test networks only. Your external wallet holds your assets;
-                Ziipa never asks for your seed phrase or private key.
-              </Text>
+              <HelpLabel
+                label="Your keys stay in your wallet"
+                style={s.micro}
+                help="Test networks only. Your external wallet holds your assets. Ziipa never asks for your seed phrase or private key."
+              />
             </>
           )}
         </ScrollView>
@@ -1513,30 +1646,34 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
               </Pressable>
             )}
             <Pressable
-              disabled={busy || (step === 3 && mintDisabled)}
+              disabled={primaryDisabled}
               accessibilityRole="button"
               accessibilityLabel={
-                step === 3 ? "Store metadata & review mint" : "Next"
+                step === 3 ? "Store metadata & review mint" : primaryLabel
               }
               accessibilityState={{
-                disabled: busy || (step === 3 && mintDisabled),
+                disabled: primaryDisabled,
               }}
-              onPress={() => (step === 3 ? void run(prepareMint) : next())}
+              onPress={() => {
+                if (primaryDisabled) return;
+                if (connectionNeeded) {
+                  if (!session) navigation.navigate("Login");
+                  else void run(() => connect(connectorChoice));
+                } else if (step === 3) void run(prepareMint);
+                else next();
+              }}
               style={[
                 s.next,
                 {
-                  flex: step > 0 ? 1 : undefined,
-                  width: step === 0 ? 166 : undefined,
-                  opacity: busy || (step === 3 && mintDisabled) ? 0.5 : 1,
+                  flex: 2,
+                  opacity: primaryDisabled ? 0.5 : 1,
                 },
               ]}
             >
               {busy ? (
                 <ActivityIndicator color="white" />
               ) : (
-                <Text style={s.buttonText}>
-                  {step === 3 ? "Review mint" : "Next"}
-                </Text>
+                <Text style={s.buttonText}>{primaryLabel}</Text>
               )}
             </Pressable>
           </View>
@@ -1724,7 +1861,15 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                   Creator token: {intent.result.token_address}
                 </Text>
               )}
-              <Notice text="This is a test-network transaction. Your wallet displays the final gas fee and requests approval. Transactions cannot be undone. Ziipa does not receive your private keys." />
+              <Text style={s.hint}>
+                Test transaction · wallet approval required. Transactions cannot
+                be undone.
+              </Text>
+              <HelpLabel
+                label="Network fee & signing"
+                style={s.micro}
+                help="Your external wallet displays the final network fee before you approve. Ziipa does not receive your private keys."
+              />
               {busy && (
                 <Action
                   secondary
@@ -1949,18 +2094,16 @@ const s = themedStyles(() =>
       letterSpacing: 1.5,
     },
     progress: {
-      flexDirection: "row",
-      gap: 20,
       paddingHorizontal: 25,
-      marginTop: 22,
+      marginTop: 8,
       marginBottom: 15,
     },
     bar: { height: 5, borderRadius: 3, flex: 1 },
     wizard: {
       flexGrow: 1,
-      justifyContent: "center",
+      justifyContent: "flex-start",
       paddingHorizontal: 25,
-      paddingVertical: 30,
+      paddingVertical: 16,
     },
     vault: {
       paddingHorizontal: 23,
@@ -1981,11 +2124,22 @@ const s = themedStyles(() =>
       letterSpacing: 1,
       color: color.text,
       textAlign: "center",
-      paddingVertical: 22,
+      paddingVertical: 17,
       borderBottomWidth: 1,
       borderBottomColor: color.border,
     },
-    cardBody: { padding: 28, gap: 19, minHeight: 158 },
+    cardBody: { padding: 20, gap: 15, minHeight: 158 },
+    choiceTile: {
+      flex: 1,
+      minHeight: 86,
+      padding: 12,
+      borderWidth: 1,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      backgroundColor: color.panel,
+    },
     label: {
       fontFamily: font.medium,
       color: themeValue("#F9F4FC", color.text),

@@ -141,13 +141,24 @@ export function validateRemixFields(
   rights: boolean,
   snapshot: RemixSnapshot,
 ) {
+  const clip = validateRemixClip(mode, startText, secondsText, snapshot);
+  if (!rights)
+    throw new Error("Confirm your rights to both clips before continuing.");
+  const title = titleText.trim();
+  if (!title || title.length > 140)
+    throw new Error("Give your remix a title of 1–140 characters.");
+  return { ...clip, title };
+}
+
+export function validateRemixClip(
+  mode: RemixMode,
+  startText: string,
+  secondsText: string,
+  snapshot: RemixSnapshot,
+) {
   if (!snapshot.available || !snapshot.allowed_modes.includes(mode))
     throw new Error(
       "This remix option is not available right now. Refresh its permissions and status.",
-    );
-  if (!rights)
-    throw new Error(
-      "Confirm your rights to this response and source segment before continuing.",
     );
   const start = Number(startText),
     seconds = Number(secondsText),
@@ -164,12 +175,9 @@ export function validateRemixFields(
     start + seconds > 90
   )
     throw new Error(
-      `Choose a source start from 0 seconds and a ${range.min}–${range.max} second segment ending within 90 seconds.`,
+      `Choose a ${range.min}–${range.max}s clip within the first 90 seconds.`,
     );
-  const title = titleText.trim();
-  if (!title || title.length > 140)
-    throw new Error("Give your remix a title of 1–140 characters.");
-  return { source_start: start, source_seconds: seconds, title };
+  return { source_start: start, source_seconds: seconds };
 }
 export function remixCreate(
   input: Omit<

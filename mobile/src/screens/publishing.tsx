@@ -1,4 +1,6 @@
 import { HelpLabel } from "../components/help-label";
+import { Disclosure } from "../components/disclosure";
+import { WorkflowProgress } from "../components/workflow-progress";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,
@@ -15,11 +17,14 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as Crypto from "expo-crypto";
 import {
   CheckCircle2,
+  ChevronLeft,
+  Film,
+  Link2,
   RefreshCw,
   Send,
   ShieldCheck,
 } from "lucide-react-native";
-import { Action, Field, Notice } from "../components/ui";
+import { Action, Field, IconButton, Notice } from "../components/ui";
 import { MediaPlayer } from "../components/player";
 import { useZiipa } from "../provider";
 import type { Item, RootStack, SocialProvider } from "../lib/types";
@@ -237,6 +242,8 @@ function ScopedPublishingScreen({
   const [reviewError, setReviewError] = useState("");
   const [reviewVersion, setReviewVersion] = useState(0);
   const [privacyExpanded, setPrivacyExpanded] = useState(false);
+  const [publishStep, setPublishStep] = useState(0);
+  const [receiptsExpanded, setReceiptsExpanded] = useState(false);
   const selected = connections.find((c) => c.provider === provider);
   const ready = providers.find((p) => p.provider === provider);
   const ownMedia = data.drafts.filter(
@@ -492,8 +499,7 @@ function ScopedPublishingScreen({
       setAuthUrl(url);
     }
     setMessage(
-      result.detail ||
-        "Connect your account, then return here and refresh.",
+      result.detail || "Connect your account, then return here and refresh.",
     );
   }
   async function publish() {
@@ -552,6 +558,85 @@ function ScopedPublishingScreen({
           postTitle,
           postDescription,
         )));
+  const accountReady =
+    selected?.status === "authorized" &&
+    (provider === "twitch"
+      ? !!selected.selected_target_id
+      : !!selected.can_publish);
+  const mediaReady =
+    !!currentItem && (source === "rendered" ? !!currentRender : original);
+  const deliveryNeedsAttention =
+    submitted || jobs.some((job) => job.status === "uncertain");
+  const moveStep = (value: number) => {
+    if (busy) return;
+    setConsent(false);
+    setPublishStep(value);
+  };
+  const progress = (
+    <WorkflowProgress
+      steps={
+        provider === "twitch"
+          ? [
+              { title: "Account", icon: Link2 },
+              { title: "Live", icon: Send },
+            ]
+          : [
+              { title: "Account", icon: Link2 },
+              { title: "Media", icon: Film },
+              { title: "Review", icon: ShieldCheck },
+            ]
+      }
+      activeStep={publishStep}
+      onStepPress={moveStep}
+    />
+  );
+  const selectionSummary = publishStep > 0 && (
+    <View style={{ gap: 4 }}>
+      <Text style={styles.label}>
+        {ready?.name || provider} ·{" "}
+        {selected?.targets.find(
+          (target) => target.id === selected.selected_target_id,
+        )?.name || "Selected account"}
+      </Text>
+      {publishStep === 2 && (
+        <Text style={styles.small}>
+          {currentItem?.title} ·{" "}
+          {source === "rendered" ? "Exported edit" : "Original file"}
+        </Text>
+      )}
+    </View>
+  );
+  const stepControls = (
+    <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+      {publishStep > 0 && (
+        <IconButton
+          icon={ChevronLeft}
+          label="Previous publishing step"
+          disabled={busy}
+          onPress={() => moveStep(publishStep - 1)}
+        />
+      )}
+      {(publishStep === 0 || (publishStep === 1 && provider !== "twitch")) && (
+        <View style={{ flex: 1 }}>
+          <Action
+            title={
+              publishStep === 0
+                ? provider === "twitch"
+                  ? "Open live channel"
+                  : "Choose media"
+                : "Review post"
+            }
+            icon={publishStep === 0 ? Film : ShieldCheck}
+            disabled={busy || (publishStep === 0 ? !accountReady : !mediaReady)}
+            onPress={() => {
+              if (publishStep === 0 ? accountReady : mediaReady)
+                moveStep(publishStep + 1);
+            }}
+          />
+        </View>
+      )}
+    </View>
+  );
   const accountControls = (
     <>
       {ready && (
@@ -563,7 +648,7 @@ function ScopedPublishingScreen({
           />
           <Text style={styles.small}>
             {selected?.status === "authorized"
-              ? "Account connected. Choose the channel you control below."
+              ? "Connected · select your channel"
               : ready.configured
                 ? "Connect the account you want to publish from."
                 : "Connection unavailable. Refresh status or choose another network."}
@@ -665,493 +750,470 @@ function ScopedPublishingScreen({
         />
       ) : (
         <>
-          <View style={[styles.panel, desktop && dp.card]}>
-            <Text style={[styles.heading, desktop && dp.sectionTitle]}>
-              1. Your source media
-            </Text>
-            <Notice text="Choose an exported video to include your saved trim, captions, overlays and soundtrack." />
-            {desktop ? (
-              <ScrollView
-                automaticallyAdjustKeyboardInsets
-                keyboardShouldPersistTaps="handled"
-                style={{ maxHeight: 210 }}
-                contentContainerStyle={{ gap: 7 }}
-                nestedScrollEnabled
-              >
-                {ownMedia.map((item) => (
-                  <Choice
-                    disabled={busy}
-                    key={item.id}
-                    title={`${item.title} · ${item.visibility || "draft"}`}
-                    active={itemId === item.id}
-                    onPress={() => {
-                      setItemId(item.id);
-                      setOriginal(false);
-                      setRenderedId("");
-                      resetApproval();
-                    }}
-                  />
-                ))}
-              </ScrollView>
-            ) : (
-              <>
-                {ownMedia.map((item) => (
-                  <Choice
-                    disabled={busy}
-                    key={item.id}
-                    title={`${item.title} · ${item.visibility || "draft"}`}
-                    active={itemId === item.id}
-                    onPress={() => {
-                      setItemId(item.id);
-                      setOriginal(false);
-                      setRenderedId("");
-                      resetApproval();
-                    }}
-                  />
-                ))}
-              </>
-            )}
-            {!ownMedia.length && (
-              <Action
-                title="Create and upload media"
-                secondary
-                onPress={() => navigation.navigate("Composer")}
+          {publishStep === 1 && (
+            <View style={[styles.panel, desktop && dp.card]}>
+              <HelpLabel
+                label="Your media"
+                style={[styles.heading, desktop && dp.sectionTitle]}
+                help="Choose an exported video to include saved trim, captions, overlays and soundtrack. Only your published Ziipa creations appear here; private drafts are excluded."
               />
-            )}
-            <Text style={styles.small}>
-              Publish the creation in Ziipa first to make it available here.
-              Private drafts are excluded.
-            </Text>
-            <Choice
-              disabled={busy}
-              title="Rendered edit — includes captions, overlays, trim and soundtrack"
-              active={source === "rendered"}
-              onPress={() => {
-                setSource("rendered");
-                resetApproval();
-              }}
-            />
-            <Choice
-              disabled={busy}
-              title="Original file — excludes Ziipa editor effects"
-              active={source === "original"}
-              onPress={() => {
-                setSource("original");
-                resetApproval();
-              }}
-            />
-            {source === "rendered" && (
-              <>
-                {renders
-                  .filter((job) => readyRender(job, itemId))
-                  .map((job) => (
+              {desktop ? (
+                <ScrollView
+                  automaticallyAdjustKeyboardInsets
+                  keyboardShouldPersistTaps="handled"
+                  style={{ maxHeight: 210 }}
+                  contentContainerStyle={{ gap: 7 }}
+                  nestedScrollEnabled
+                >
+                  {ownMedia.map((item) => (
                     <Choice
                       disabled={busy}
-                      key={job.id}
-                      title={`MP4 · ${new Date(job.created_at).toLocaleString()}`}
-                      active={renderedId === job.id}
+                      key={item.id}
+                      title={`${item.title} · ${item.visibility || "draft"}`}
+                      active={itemId === item.id}
                       onPress={() => {
-                        setRenderedId(job.id);
+                        setItemId(item.id);
+                        setOriginal(false);
+                        setRenderedId("");
                         resetApproval();
                       }}
                     />
                   ))}
-                {currentItem && (
-                  <Action
-                    title="Render or review saved exports"
-                    secondary
-                    onPress={() => navigation.navigate("Exports", { itemId })}
-                  />
-                )}
-                {!currentRender && (
-                  <Text style={styles.small}>
-                    Select a ready export. Stale exports cannot be published.
-                  </Text>
-                )}
-              </>
-            )}
-            {source === "original" && (
-              <Consent
+                </ScrollView>
+              ) : (
+                <>
+                  {ownMedia.map((item) => (
+                    <Choice
+                      disabled={busy}
+                      key={item.id}
+                      title={`${item.title} · ${item.visibility || "draft"}`}
+                      active={itemId === item.id}
+                      onPress={() => {
+                        setItemId(item.id);
+                        setOriginal(false);
+                        setRenderedId("");
+                        resetApproval();
+                      }}
+                    />
+                  ))}
+                </>
+              )}
+              {!ownMedia.length && (
+                <Action
+                  title="Create and upload media"
+                  secondary
+                  onPress={() => navigation.navigate("Composer")}
+                />
+              )}
+              <Choice
                 disabled={busy}
-                title="I approve sharing this original file. I understand that Ziipa editor effects are not rendered into it."
-                value={original}
-                onChange={(v) => {
-                  setOriginal(v);
+                title="Rendered edit — includes captions, overlays, trim and soundtrack"
+                active={source === "rendered"}
+                onPress={() => {
+                  setSource("rendered");
                   resetApproval();
                 }}
               />
-            )}
-          </View>
-          {provider === "youtube" && (
-            <View style={[styles.panel, desktop && dp.card]}>
-              <Text style={[styles.heading, desktop && dp.sectionTitle]}>
-                2. YouTube audience
-              </Text>
-              {(["private", "unlisted", "public"] as const)
-                .filter(
-                  (v) =>
-                    !ready?.allowed_privacy ||
-                    ready.allowed_privacy.includes(v),
-                )
-                .map((v) => (
+              <Choice
+                disabled={busy}
+                title="Original file — excludes Ziipa editor effects"
+                active={source === "original"}
+                onPress={() => {
+                  setSource("original");
+                  resetApproval();
+                }}
+              />
+              {source === "rendered" && (
+                <>
+                  {renders
+                    .filter((job) => readyRender(job, itemId))
+                    .map((job) => (
+                      <Choice
+                        disabled={busy}
+                        key={job.id}
+                        title={`MP4 · ${new Date(job.created_at).toLocaleString()}`}
+                        active={renderedId === job.id}
+                        onPress={() => {
+                          setRenderedId(job.id);
+                          resetApproval();
+                        }}
+                      />
+                    ))}
+                  {currentItem && (
+                    <Action
+                      title="Render or review saved exports"
+                      secondary
+                      onPress={() => navigation.navigate("Exports", { itemId })}
+                    />
+                  )}
+                  {!currentRender && (
+                    <Text style={styles.small}>
+                      Select a ready export. Stale exports cannot be published.
+                    </Text>
+                  )}
+                </>
+              )}
+              {source === "original" && (
+                <Consent
+                  disabled={busy}
+                  title="I approve sharing this original file. I understand that Ziipa editor effects are not rendered into it."
+                  value={original}
+                  onChange={(v) => {
+                    setOriginal(v);
+                    resetApproval();
+                  }}
+                />
+              )}
+            </View>
+          )}
+          {publishStep === 2 && (
+            <>
+              {provider === "youtube" && (
+                <View style={[styles.panel, desktop && dp.card]}>
+                  <Text style={[styles.heading, desktop && dp.sectionTitle]}>
+                    YouTube audience
+                  </Text>
+                  {(["private", "unlisted", "public"] as const)
+                    .filter(
+                      (v) =>
+                        !ready?.allowed_privacy ||
+                        ready.allowed_privacy.includes(v),
+                    )
+                    .map((v) => (
+                      <Choice
+                        disabled={busy}
+                        key={v}
+                        title={v}
+                        active={privacy === v}
+                        onPress={() => {
+                          setPrivacy(v);
+                          resetApproval();
+                        }}
+                      />
+                    ))}
+                  <HelpLabel
+                    label="Is this video made for kids?"
+                    help="Choose the intended audience for this YouTube video. Review this setting before submitting the post."
+                  />
                   <Choice
                     disabled={busy}
-                    key={v}
-                    title={v}
-                    active={privacy === v}
+                    title="Yes, made for kids"
+                    active={madeForKids === true}
                     onPress={() => {
-                      setPrivacy(v);
+                      setMadeForKids(true);
                       resetApproval();
                     }}
                   />
-                ))}
-              <HelpLabel
-                label="Is this video made for kids?"
-                help="Choose the intended audience for this YouTube video. Review this setting before submitting the post."
-              />
-              <Choice
-                disabled={busy}
-                title="Yes, made for kids"
-                active={madeForKids === true}
-                onPress={() => {
-                  setMadeForKids(true);
-                  resetApproval();
-                }}
-              />
-              <Choice
-                disabled={busy}
-                title="No, not made for kids"
-                active={madeForKids === false}
-                onPress={() => {
-                  setMadeForKids(false);
-                  resetApproval();
-                }}
-              />
-            </View>
-          )}
-          {provider === "tiktok" && (
-            <View style={[styles.panel, desktop && dp.card]}>
-              <Text style={[styles.heading, desktop && dp.sectionTitle]}>
-                2. Review your TikTok post
-              </Text>
-              <Text style={styles.small}>
-                Current creator permissions and the actual video are checked
-                when you open this review or change the source. Nothing is sent
-                to TikTok until you approve Publish.
-              </Text>
-              <Action
-                title="Refresh TikTok account and video review"
-                secondary
-                busy={reviewBusy}
-                disabled={
-                  busy ||
-                  selected?.status !== "authorized" ||
-                  !selected.selected_target_id
-                }
-                onPress={() => setReviewVersion((value) => value + 1)}
-              />
-              {reviewBusy && (
-                <Text accessibilityLiveRegion="polite" style={styles.small}>
-                  Checking your TikTok account and selected video…
-                </Text>
-              )}
-              {reviewError && <Notice error text={reviewError} />}
-              {!sourceReview && !reviewBusy && (
-                <Notice text="Choose an original video or a finished export above. Ziipa will check the file before you review and publish it." />
-              )}
-              {creator && (
-                <>
-                  <Text style={styles.label}>
-                    Posting as {creator.creator_nickname}
-                  </Text>
-                  {previewItem && (
-                    <View
-                      style={[
-                        { overflow: "hidden", borderRadius: 18 },
-                        desktop && {
-                          width: 250,
-                          maxWidth: "100%",
-                          alignSelf: "center",
-                        },
-                      ]}
-                    >
-                      <Text style={styles.label}>
-                        {source === "rendered"
-                          ? "Exact rendered MP4"
-                          : "Exact original video — no Ziipa effects"}
-                      </Text>
-                      <MediaPlayer
-                        key={
-                          sourceReview!.source_sha256 +
-                          ":" +
-                          sourceReview!.media_id
-                        }
-                        item={previewItem}
-                      />
-                    </View>
-                  )}
-                  {sourceReview && (
-                    <Text
-                      style={
-                        sourceReview.duration_seconds >
-                        creator.max_video_post_duration_sec
-                          ? styles.error
-                          : styles.small
-                      }
-                    >
-                      Verified video: {sourceReview.duration_seconds.toFixed(2)}{" "}
-                      seconds · account maximum{" "}
-                      {creator.max_video_post_duration_sec} seconds
-                    </Text>
-                  )}
-                  <Field
-                    label="TikTok title"
-                    value={postTitle}
-                    onChangeText={setPostTitle}
-                    editable={!busy}
-                    maxLength={100}
-                  />
-                  <Field
-                    label="TikTok description and hashtags"
-                    value={postDescription}
-                    onChangeText={setPostDescription}
-                    editable={!busy}
-                    multiline
-                    maxLength={2200}
-                  />
-                  <Text
-                    style={
-                      (
-                        postTitle.trim() +
-                        (postDescription ? "\n" + postDescription : "")
-                      ).length > 2200
-                        ? styles.error
-                        : styles.small
-                    }
-                  >
-                    {
-                      (
-                        postTitle.trim() +
-                        (postDescription ? "\n" + postDescription : "")
-                      ).length
-                    }{" "}
-                    / 2,200 caption characters. This changes only the TikTok
-                    post text.
-                  </Text>
-                  <HelpLabel
-                    label="Who can watch this post?"
-                    help="This selects the audience on the destination network. Review it separately from your Ziipa profile and creation visibility."
-                  />
-                  <Pressable
-                    accessibilityRole="combobox"
-                    accessibilityLabel="TikTok privacy"
-                    accessibilityState={{
-                      expanded: privacyExpanded,
-                      disabled: busy || reviewBusy,
+                  <Choice
+                    disabled={busy}
+                    title="No, not made for kids"
+                    active={madeForKids === false}
+                    onPress={() => {
+                      setMadeForKids(false);
+                      resetApproval();
                     }}
-                    disabled={busy || reviewBusy}
-                    onPress={() => setPrivacyExpanded((value) => !value)}
-                    style={[
-                      styles.input,
-                      {
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      },
-                    ]}
-                  >
-                    <Text style={styles.body}>
-                      {privacyLabels[tiktok.privacy_level] ||
-                        "Choose visibility"}
+                  />
+                </View>
+              )}
+              {provider === "tiktok" && (
+                <View style={[styles.panel, desktop && dp.card]}>
+                  <HelpLabel
+                    label="TikTok review"
+                    style={[styles.heading, desktop && dp.sectionTitle]}
+                    help="Current creator permissions and the exact video are checked when you open this review or change the source. Nothing is sent to TikTok until you approve Publish."
+                  />
+                  <Action
+                    title="Refresh TikTok account and video review"
+                    secondary
+                    busy={reviewBusy}
+                    disabled={
+                      busy ||
+                      selected?.status !== "authorized" ||
+                      !selected.selected_target_id
+                    }
+                    onPress={() => setReviewVersion((value) => value + 1)}
+                  />
+                  {reviewBusy && (
+                    <Text accessibilityLiveRegion="polite" style={styles.small}>
+                      Checking your TikTok account and selected video…
                     </Text>
-                    <Text style={styles.body}>
-                      {privacyExpanded ? "⌃" : "⌄"}
-                    </Text>
-                  </Pressable>
-                  {privacyExpanded && (
-                    <View style={{ gap: 8 }}>
-                      {creator.privacy_level_options.map((value) => (
-                        <Choice
-                          key={value}
+                  )}
+                  {reviewError && <Notice error text={reviewError} />}
+                  {!sourceReview && !reviewBusy && (
+                    <Notice text="Choose an original video or a finished export above. Ziipa will check the file before you review and publish it." />
+                  )}
+                  {creator && (
+                    <>
+                      <Text style={styles.label}>
+                        Posting as {creator.creator_nickname}
+                      </Text>
+                      {previewItem && (
+                        <View
+                          style={[
+                            { overflow: "hidden", borderRadius: 18 },
+                            desktop && {
+                              width: 250,
+                              maxWidth: "100%",
+                              alignSelf: "center",
+                            },
+                          ]}
+                        >
+                          <Text style={styles.label}>
+                            {source === "rendered"
+                              ? "Exact rendered MP4"
+                              : "Exact original video — no Ziipa effects"}
+                          </Text>
+                          <MediaPlayer
+                            key={
+                              sourceReview!.source_sha256 +
+                              ":" +
+                              sourceReview!.media_id
+                            }
+                            item={previewItem}
+                          />
+                        </View>
+                      )}
+                      {sourceReview && (
+                        <Text
+                          style={
+                            sourceReview.duration_seconds >
+                            creator.max_video_post_duration_sec
+                              ? styles.error
+                              : styles.small
+                          }
+                        >
+                          Verified video:{" "}
+                          {sourceReview.duration_seconds.toFixed(2)} seconds ·
+                          account maximum {creator.max_video_post_duration_sec}{" "}
+                          seconds
+                        </Text>
+                      )}
+                      <Field
+                        label="TikTok title"
+                        value={postTitle}
+                        onChangeText={setPostTitle}
+                        editable={!busy}
+                        maxLength={100}
+                      />
+                      <Field
+                        label="TikTok description and hashtags"
+                        value={postDescription}
+                        onChangeText={setPostDescription}
+                        editable={!busy}
+                        multiline
+                        maxLength={2200}
+                      />
+                      <Text
+                        style={
+                          (
+                            postTitle.trim() +
+                            (postDescription ? "\n" + postDescription : "")
+                          ).length > 2200
+                            ? styles.error
+                            : styles.small
+                        }
+                      >
+                        {
+                          (
+                            postTitle.trim() +
+                            (postDescription ? "\n" + postDescription : "")
+                          ).length
+                        }{" "}
+                        / 2,200 caption characters. This changes only the TikTok
+                        post text.
+                      </Text>
+                      <HelpLabel
+                        label="Who can watch this post?"
+                        help="This selects the audience on the destination network. Review it separately from your Ziipa profile and creation visibility."
+                      />
+                      <Pressable
+                        accessibilityRole="combobox"
+                        accessibilityLabel="TikTok privacy"
+                        accessibilityState={{
+                          expanded: privacyExpanded,
+                          disabled: busy || reviewBusy,
+                        }}
+                        disabled={busy || reviewBusy}
+                        onPress={() => setPrivacyExpanded((value) => !value)}
+                        style={[
+                          styles.input,
+                          {
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                          },
+                        ]}
+                      >
+                        <Text style={styles.body}>
+                          {privacyLabels[tiktok.privacy_level] ||
+                            "Choose visibility"}
+                        </Text>
+                        <Text style={styles.body}>
+                          {privacyExpanded ? "⌃" : "⌄"}
+                        </Text>
+                      </Pressable>
+                      {privacyExpanded && (
+                        <View style={{ gap: 8 }}>
+                          {creator.privacy_level_options.map((value) => (
+                            <Choice
+                              key={value}
+                              title={
+                                (privacyLabels[value] || value) +
+                                (tiktok.brand_content_toggle &&
+                                value === "SELF_ONLY"
+                                  ? " · unavailable for branded content"
+                                  : "")
+                              }
+                              active={tiktok.privacy_level === value}
+                              disabled={
+                                busy ||
+                                (tiktok.brand_content_toggle &&
+                                  value === "SELF_ONLY")
+                              }
+                              onPress={() => {
+                                setTikTok({ ...tiktok, privacy_level: value });
+                                setPrivacyExpanded(false);
+                                resetApproval();
+                              }}
+                            />
+                          ))}
+                        </View>
+                      )}
+                      {!creator.privacy_level_options.length && (
+                        <Notice
+                          error
+                          text="TikTok is not currently allowing a post from this account. Try again later."
+                        />
+                      )}
+                      <Text style={styles.label}>Allow interactions</Text>
+                      {(
+                        [
+                          [
+                            "disable_comment",
+                            "Allow comments",
+                            creator.comment_disabled,
+                          ],
+                          ["disable_duet", "Allow Duet", creator.duet_disabled],
+                          [
+                            "disable_stitch",
+                            "Allow Stitch",
+                            creator.stitch_disabled,
+                          ],
+                        ] as const
+                      ).map(([key, title, locked]) => (
+                        <Consent
+                          key={key}
+                          disabled={busy || locked}
                           title={
-                            (privacyLabels[value] || value) +
-                            (tiktok.brand_content_toggle &&
-                            value === "SELF_ONLY"
-                              ? " · unavailable for branded content"
+                            title +
+                            (locked
+                              ? " · disabled in TikTok account settings"
                               : "")
                           }
-                          active={tiktok.privacy_level === value}
-                          disabled={
-                            busy ||
-                            (tiktok.brand_content_toggle &&
-                              value === "SELF_ONLY")
-                          }
-                          onPress={() => {
-                            setTikTok({ ...tiktok, privacy_level: value });
-                            setPrivacyExpanded(false);
+                          value={!locked && !tiktok[key]}
+                          onChange={(value) => {
+                            setTikTok({ ...tiktok, [key]: !value });
                             resetApproval();
                           }}
                         />
                       ))}
-                    </View>
-                  )}
-                  {!creator.privacy_level_options.length && (
-                    <Notice
-                      error
-                      text="TikTok is not currently allowing a post from this account. Try again later."
-                    />
-                  )}
-                  <Text style={styles.label}>Allow interactions</Text>
-                  {(
-                    [
-                      [
-                        "disable_comment",
-                        "Allow comments",
-                        creator.comment_disabled,
-                      ],
-                      ["disable_duet", "Allow Duet", creator.duet_disabled],
-                      [
-                        "disable_stitch",
-                        "Allow Stitch",
-                        creator.stitch_disabled,
-                      ],
-                    ] as const
-                  ).map(([key, title, locked]) => (
-                    <Consent
-                      key={key}
-                      disabled={busy || locked}
-                      title={
-                        title +
-                        (locked ? " · disabled in TikTok account settings" : "")
-                      }
-                      value={!locked && !tiktok[key]}
-                      onChange={(value) => {
-                        setTikTok({ ...tiktok, [key]: !value });
-                        resetApproval();
-                      }}
-                    />
-                  ))}
-                  <Consent
-                    title="Disclose commercial content"
-                    disabled={busy}
-                    value={tiktok.content_disclosure_enabled}
-                    onChange={(value) => {
-                      setTikTok({
-                        ...tiktok,
-                        content_disclosure_enabled: value,
-                        brand_content_toggle: false,
-                        brand_organic_toggle: false,
-                        branded_content_policy_confirmed: false,
-                        music_usage_confirmed: false,
-                      });
-                      resetApproval();
-                    }}
-                  />
-                  <Text style={styles.small}>
-                    Enable this if the content promotes you, a brand, product or
-                    service.
-                  </Text>
-                  {tiktok.content_disclosure_enabled && (
-                    <>
-                      <Checkbox
-                        title="Your brand — promoting yourself or your business"
-                        value={tiktok.brand_organic_toggle}
+                      <Consent
+                        title="Disclose commercial content"
                         disabled={busy}
+                        value={tiktok.content_disclosure_enabled}
                         onChange={(value) => {
                           setTikTok({
                             ...tiktok,
-                            brand_organic_toggle: value,
-                            music_usage_confirmed: false,
-                          });
-                          resetApproval();
-                        }}
-                      />
-                      <Checkbox
-                        title="Branded content — promoting a third party"
-                        value={tiktok.brand_content_toggle}
-                        disabled={busy}
-                        onChange={(value) => {
-                          setTikTok({
-                            ...tiktok,
-                            brand_content_toggle: value,
-                            privacy_level:
-                              value && tiktok.privacy_level === "SELF_ONLY"
-                                ? ""
-                                : tiktok.privacy_level,
-                            music_usage_confirmed: false,
+                            content_disclosure_enabled: value,
+                            brand_content_toggle: false,
+                            brand_organic_toggle: false,
                             branded_content_policy_confirmed: false,
+                            music_usage_confirmed: false,
                           });
                           resetApproval();
                         }}
                       />
-                      {!tiktok.brand_content_toggle &&
-                        !tiktok.brand_organic_toggle && (
-                          <Notice
-                            error
-                            text="Indicate whether this content promotes yourself, a third party, or both before publishing."
+                      <Text style={styles.small}>
+                        Enable this if the content promotes you, a brand,
+                        product or service.
+                      </Text>
+                      {tiktok.content_disclosure_enabled && (
+                        <>
+                          <Checkbox
+                            title="Your brand — promoting yourself or your business"
+                            value={tiktok.brand_organic_toggle}
+                            disabled={busy}
+                            onChange={(value) => {
+                              setTikTok({
+                                ...tiktok,
+                                brand_organic_toggle: value,
+                                music_usage_confirmed: false,
+                              });
+                              resetApproval();
+                            }}
                           />
-                        )}
-                      {(tiktok.brand_content_toggle ||
-                        tiktok.brand_organic_toggle) && (
-                        <Text style={styles.small}>
-                          {tiktok.brand_content_toggle
-                            ? "Your video will be labeled Paid partnership. Branded content cannot use Only me visibility."
-                            : "Your video will be labeled Promotional content."}
-                        </Text>
+                          <Checkbox
+                            title="Branded content — promoting a third party"
+                            value={tiktok.brand_content_toggle}
+                            disabled={busy}
+                            onChange={(value) => {
+                              setTikTok({
+                                ...tiktok,
+                                brand_content_toggle: value,
+                                privacy_level:
+                                  value && tiktok.privacy_level === "SELF_ONLY"
+                                    ? ""
+                                    : tiktok.privacy_level,
+                                music_usage_confirmed: false,
+                                branded_content_policy_confirmed: false,
+                              });
+                              resetApproval();
+                            }}
+                          />
+                          {!tiktok.brand_content_toggle &&
+                            !tiktok.brand_organic_toggle && (
+                              <Notice
+                                error
+                                text="Indicate whether this content promotes yourself, a third party, or both before publishing."
+                              />
+                            )}
+                          {(tiktok.brand_content_toggle ||
+                            tiktok.brand_organic_toggle) && (
+                            <Text style={styles.small}>
+                              {tiktok.brand_content_toggle
+                                ? "Your video will be labeled Paid partnership. Branded content cannot use Only me visibility."
+                                : "Your video will be labeled Promotional content."}
+                            </Text>
+                          )}
+                        </>
                       )}
-                    </>
-                  )}
-                  <Consent
-                    title="This content is AI generated"
-                    value={tiktok.is_aigc}
-                    disabled={busy}
-                    onChange={(value) => {
-                      setTikTok({ ...tiktok, is_aigc: value });
-                      resetApproval();
-                    }}
-                  />
-                  <Checkbox
-                    disabled={busy}
-                    title="By posting, I agree to TikTok's Music Usage Confirmation."
-                    value={tiktok.music_usage_confirmed}
-                    onChange={(value) => {
-                      setTikTok({ ...tiktok, music_usage_confirmed: value });
-                      resetApproval();
-                    }}
-                  />
-                  <Action
-                    title="Read TikTok Music Usage Confirmation"
-                    secondary
-                    onPress={() =>
-                      void Linking.openURL(
-                        "https://www.tiktok.com/legal/page/global/music-usage-confirmation/en",
-                      ).catch(() =>
-                        setMessage(
-                          "Could not open TikTok policy. Please check your connection.",
-                        ),
-                      )
-                    }
-                  />
-                  {tiktok.brand_content_toggle && (
-                    <>
+                      <Consent
+                        title="This content is AI generated"
+                        value={tiktok.is_aigc}
+                        disabled={busy}
+                        onChange={(value) => {
+                          setTikTok({ ...tiktok, is_aigc: value });
+                          resetApproval();
+                        }}
+                      />
                       <Checkbox
                         disabled={busy}
-                        title="By posting, I also agree to TikTok's Branded Content Policy."
-                        value={tiktok.branded_content_policy_confirmed}
+                        title="By posting, I agree to TikTok's Music Usage Confirmation."
+                        value={tiktok.music_usage_confirmed}
                         onChange={(value) => {
                           setTikTok({
                             ...tiktok,
-                            branded_content_policy_confirmed: value,
+                            music_usage_confirmed: value,
                           });
                           resetApproval();
                         }}
                       />
                       <Action
-                        title="Read TikTok Branded Content Policy"
+                        title="Read TikTok Music Usage Confirmation"
                         secondary
                         onPress={() =>
                           void Linking.openURL(
-                            "https://www.tiktok.com/legal/page/global/bc-policy/en",
+                            "https://www.tiktok.com/legal/page/global/music-usage-confirmation/en",
                           ).catch(() =>
                             setMessage(
                               "Could not open TikTok policy. Please check your connection.",
@@ -1159,44 +1221,72 @@ function ScopedPublishingScreen({
                           )
                         }
                       />
+                      {tiktok.brand_content_toggle && (
+                        <>
+                          <Checkbox
+                            disabled={busy}
+                            title="By posting, I also agree to TikTok's Branded Content Policy."
+                            value={tiktok.branded_content_policy_confirmed}
+                            onChange={(value) => {
+                              setTikTok({
+                                ...tiktok,
+                                branded_content_policy_confirmed: value,
+                              });
+                              resetApproval();
+                            }}
+                          />
+                          <Action
+                            title="Read TikTok Branded Content Policy"
+                            secondary
+                            onPress={() =>
+                              void Linking.openURL(
+                                "https://www.tiktok.com/legal/page/global/bc-policy/en",
+                              ).catch(() =>
+                                setMessage(
+                                  "Could not open TikTok policy. Please check your connection.",
+                                ),
+                              )
+                            }
+                          />
+                        </>
+                      )}
+                      <HelpLabel
+                        label="Processing & delivery"
+                        help="TikTok may take several minutes to process your post. Check delivery status for confirmation. Ziipa does not automatically add promotional logos or watermarks."
+                      />
                     </>
                   )}
-                  <Text style={styles.small}>
-                    TikTok may take several minutes to process your post. Check
-                    delivery receipts for the confirmed result. Ziipa does not
-                    automatically add promotional logos or watermarks.
-                  </Text>
-                </>
+                </View>
               )}
-            </View>
+              {(provider === "facebook" || provider === "instagram") && (
+                <Notice text="This publishes publicly to the selected Page or professional Instagram account. It does not publish to personal Facebook profiles." />
+              )}
+              {provider === "bluesky" && (
+                <Notice text="Bluesky posts are public and may be indexed or copied by other AT Protocol apps. Deleting a Ziipa account does not delete copies on external networks." />
+              )}
+              <View style={[styles.panel, desktop && dp.card]}>
+                <Text style={[styles.heading, desktop && dp.sectionTitle]}>
+                  Approve this post
+                </Text>
+                <Consent
+                  disabled={busy}
+                  title={`I control the selected ${ready?.name || provider} account and authorize sending this media with the audience and disclosures above. I have the rights to publish it.`}
+                  value={consent}
+                  onChange={setConsent}
+                />
+                <Action
+                  title={`Publish to ${ready?.name || provider}`}
+                  icon={Send}
+                  busy={busy}
+                  disabled={!canPublish || submitted}
+                  onPress={() => void run(publish)}
+                />
+                {submitted && (
+                  <Notice text="Request submitted. Check its status below before trying again. A timeout can mean the network received the upload; Ziipa will not automatically send a duplicate." />
+                )}
+              </View>
+            </>
           )}
-          {(provider === "facebook" || provider === "instagram") && (
-            <Notice text="This publishes publicly to the Page or professional Instagram account you selected above. It does not publish to personal Facebook profiles." />
-          )}
-          {provider === "bluesky" && (
-            <Notice text="Bluesky posts are public and may be indexed or copied by other AT Protocol apps. Deleting a Ziipa account does not delete copies on external networks." />
-          )}
-          <View style={[styles.panel, desktop && dp.card]}>
-            <Text style={[styles.heading, desktop && dp.sectionTitle]}>
-              3. Approve this destination
-            </Text>
-            <Consent
-              disabled={busy}
-              title={`I control the selected ${ready?.name || provider} account and authorize sending this media with the audience and disclosures above. I have the rights to publish it.`}
-              value={consent}
-              onChange={setConsent}
-            />
-            <Action
-              title={`Publish to ${ready?.name || provider}`}
-              icon={Send}
-              busy={busy}
-              disabled={!canPublish || submitted}
-              onPress={() => void run(publish)}
-            />
-            {submitted && (
-              <Notice text="Request submitted. Check its status below before trying again. A timeout can mean the network received the upload; Ziipa will not automatically send a duplicate." />
-            )}
-          </View>
         </>
       )}
     </>
@@ -1266,22 +1356,49 @@ function ScopedPublishingScreen({
   );
   const providerChoices = (
     <>
-      <View style={{ gap: 10 }}>
-        {providers.map((p) => (
-          <Choice
-            disabled={busy}
-            key={p.provider}
-            title={`${p.name} · ${p.configured ? "Ready to connect" : p.publish_implemented || p.live_implemented ? "Connection unavailable" : "Manual sharing only"}`}
-            active={provider === p.provider}
-            onPress={() => {
-              setProvider(p.provider);
-              setReviewRecord(null);
-              setTikTok(blankTikTok);
-              setAuthUrl("");
-              resetApproval();
-            }}
-          />
-        ))}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {providers.map((p) => {
+          const brand = socialProvider(p.provider);
+          return (
+            <Pressable
+              disabled={busy}
+              key={p.provider}
+              accessibilityRole="radio"
+              accessibilityLabel={p.name}
+              accessibilityState={{
+                checked: provider === p.provider,
+                disabled: busy,
+              }}
+              style={[
+                dp.provider,
+                { flex: 1, minWidth: 130 },
+                provider === p.provider && dp.providerActive,
+              ]}
+              onPress={() => {
+                setProvider(p.provider);
+                setPublishStep(0);
+                setReviewRecord(null);
+                setTikTok(blankTikTok);
+                setAuthUrl("");
+                resetApproval();
+              }}
+            >
+              <View style={[dp.providerMark, { backgroundColor: brand.color }]}>
+                <Text style={dp.providerInitial}>{brand.short}</Text>
+              </View>
+              <View style={{ flex: 1, gap: 3 }}>
+                <Text style={dp.providerName}>{p.name}</Text>
+                <Text style={dp.providerStatus}>
+                  {p.configured
+                    ? "Connect"
+                    : p.publish_implemented || p.live_implemented
+                      ? "Unavailable"
+                      : "Manual sharing"}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
     </>
   );
@@ -1306,10 +1423,10 @@ function ScopedPublishingScreen({
           }
         />
         <Text style={styles.title}>Connect networks</Text>
-        <Text style={styles.small}>
-          Connect your publishing accounts for product promotion, then return to
-          Sell. Connecting an account does not send a post.
-        </Text>
+        <HelpLabel
+          label="Publishing accounts"
+          help="Connect your accounts for product promotion, then return to Sell. Connecting an account does not send a post."
+        />
         <Action
           secondary
           title="Refresh connections"
@@ -1341,10 +1458,6 @@ function ScopedPublishingScreen({
             <View style={{ gap: 6, flex: 1, minWidth: 250 }}>
               <Text style={dp.eyebrow}>SHARE YOUR WORK</Text>
               <Text style={dp.title}>Publish to your networks</Text>
-              <Text style={styles.small}>
-                Choose a channel, review the exact media and approve this
-                destination.
-              </Text>
             </View>
             <View style={dp.headerActions}>
               <Action
@@ -1365,88 +1478,109 @@ function ScopedPublishingScreen({
             <Notice text="Sign in to connect accounts and share your own media. Sample media cannot be published." />
           )}
           {message ? <Notice text={message} /> : null}
-          <View
-            style={dp.providers}
-            accessibilityRole="radiogroup"
-            accessibilityLabel="Publishing network"
-          >
-            {providers.map((entry) => {
-              const brand = socialProvider(entry.provider);
-              const connection = connections.find(
-                (row) => row.provider === entry.provider,
-              );
-              const active = provider === entry.provider;
-              return (
-                <Pressable
-                  key={entry.provider}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: active, disabled: busy }}
-                  disabled={busy}
-                  onPress={() => {
-                    setProvider(entry.provider);
-                    setReviewRecord(null);
-                    setTikTok(blankTikTok);
-                    setAuthUrl("");
-                    resetApproval();
-                  }}
-                  style={[dp.provider, active && dp.providerActive]}
-                >
-                  <View
-                    style={[dp.providerMark, { backgroundColor: brand.color }]}
+          {progress}
+          {selectionSummary}
+          {publishStep === 0 && (
+            <View
+              style={dp.providers}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Publishing network"
+            >
+              {providers.map((entry) => {
+                const brand = socialProvider(entry.provider);
+                const connection = connections.find(
+                  (row) => row.provider === entry.provider,
+                );
+                const active = provider === entry.provider;
+                return (
+                  <Pressable
+                    key={entry.provider}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: active, disabled: busy }}
+                    disabled={busy}
+                    onPress={() => {
+                      setProvider(entry.provider);
+                      setPublishStep(0);
+                      setReviewRecord(null);
+                      setTikTok(blankTikTok);
+                      setAuthUrl("");
+                      resetApproval();
+                    }}
+                    style={[dp.provider, active && dp.providerActive]}
                   >
-                    <Text style={dp.providerInitial}>{brand.short}</Text>
-                  </View>
-                  <View style={{ gap: 3 }}>
-                    <Text style={dp.providerName}>{entry.name}</Text>
-                    <Text style={dp.providerStatus}>
-                      {connection?.status === "authorized"
-                        ? "Authorized"
-                        : entry.configured
-                          ? "Ready to connect"
-                          : "Connection unavailable"}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-            {!providers.length && (
-              <Text style={styles.small}>
-                Connections could not be loaded. Refresh status to try again.
-              </Text>
-            )}
-          </View>
-          <View style={dp.body}>
-            <View style={dp.accountRail}>
-              <View style={dp.railHeading}>
-                <ShieldCheck size={17} color={color.lime} />
-                <Text style={dp.railTitle}>Destination account</Text>
-              </View>
-              {accountControls}
-              {!ready && (
+                    <View
+                      style={[
+                        dp.providerMark,
+                        { backgroundColor: brand.color },
+                      ]}
+                    >
+                      <Text style={dp.providerInitial}>{brand.short}</Text>
+                    </View>
+                    <View style={{ gap: 3 }}>
+                      <Text style={dp.providerName}>{entry.name}</Text>
+                      <Text style={dp.providerStatus}>
+                        {connection?.status === "authorized"
+                          ? "Authorized"
+                          : entry.configured
+                            ? "Ready to connect"
+                            : "Connection unavailable"}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+              {!providers.length && (
                 <Text style={styles.small}>
-                  Select a network to connect your account and see sharing options.
+                  Connections could not be loaded. Refresh status to try again.
                 </Text>
               )}
-              <Text style={dp.footnote}>
-                Review and approve each post before sharing.
-              </Text>
             </View>
-            <View
-              style={[
-                dp.workflow,
-                { maxWidth: contentWidth > 1450 ? 920 : undefined },
-              ]}
-            >
-              <View style={dp.railHeading}>
-                <Send size={17} color={color.lime} />
-                <Text style={dp.railTitle}>
-                  {provider === "twitch" ? "Live channel" : "Prepare your post"}
-                </Text>
+          )}
+          <View style={dp.body}>
+            {publishStep === 0 && (
+              <View style={[dp.accountRail, { width: "100%", maxWidth: 760 }]}>
+                <View style={dp.railHeading}>
+                  <ShieldCheck size={17} color={color.lime} />
+                  <Text style={dp.railTitle}>Destination account</Text>
+                </View>
+                {accountControls}
+                {!ready && (
+                  <Text style={styles.small}>
+                    Select a network to connect your account and see sharing
+                    options.
+                  </Text>
+                )}
               </View>
-              {publishingWorkflow}
-            </View>
+            )}
+            {publishStep > 0 && (
+              <View
+                style={[
+                  dp.workflow,
+                  { maxWidth: contentWidth > 1450 ? 920 : undefined },
+                ]}
+              >
+                <View style={dp.railHeading}>
+                  <Send size={17} color={color.lime} />
+                  <Text style={dp.railTitle}>
+                    {provider === "twitch"
+                      ? "Live channel"
+                      : "Prepare your post"}
+                  </Text>
+                </View>
+                {publishingWorkflow}
+              </View>
+            )}
           </View>
-          <View style={dp.receipts}>{deliveryReceipts}</View>
+          {stepControls}
+          <Disclosure
+            title="Delivery status"
+            detail={`${jobs.length} posts`}
+            icon={CheckCircle2}
+            expanded={receiptsExpanded || deliveryNeedsAttention}
+            onToggle={() => setReceiptsExpanded(!receiptsExpanded)}
+          >
+            {deliveryReceipts}
+          </Disclosure>
         </View>
       </ScrollView>
     );
@@ -1458,29 +1592,39 @@ function ScopedPublishingScreen({
       contentContainerStyle={styles.page}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.panel}>
-        <ShieldCheck size={26} color={color.lime} />
-        <Text style={styles.title}>Publish beyond Ziipa</Text>
-        <Text style={styles.small}>
-          Connect your account, choose your media and review each destination
-          before publishing.
-        </Text>
+      <View style={[styles.row, { justifyContent: "space-between" }]}>
+        <Text style={[styles.title, { flex: 1 }]}>Publish</Text>
+        <IconButton
+          label="Refresh accounts and delivery status"
+          icon={RefreshCw}
+          disabled={busy}
+          onPress={() => void run(load)}
+        />
       </View>
       {guest ? (
         <Notice text="Sign in to connect accounts and share your own media. Sample media cannot be published." />
       ) : null}
-      <Action
-        title="Refresh accounts and delivery status"
-        secondary
-        icon={RefreshCw}
-        busy={busy}
-        onPress={() => void run(load)}
-      />
       {message ? <Notice text={message} /> : null}
-      {providerChoices}
-      {accountControls}
-      {publishingWorkflow}
-      {deliveryReceipts}
+      {progress}
+      {selectionSummary}
+      {publishStep === 0 ? (
+        <>
+          {providerChoices}
+          {accountControls}
+        </>
+      ) : (
+        publishingWorkflow
+      )}
+      {stepControls}
+      <Disclosure
+        title="Delivery status"
+        detail={`${jobs.length} posts`}
+        icon={CheckCircle2}
+        expanded={receiptsExpanded || deliveryNeedsAttention}
+        onToggle={() => setReceiptsExpanded(!receiptsExpanded)}
+      >
+        {deliveryReceipts}
+      </Disclosure>
     </ScrollView>
   );
 }

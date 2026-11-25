@@ -1,4 +1,5 @@
 import { ApiError } from "./api";
+import { apiFailureMessage } from "./api-feedback";
 import { authorizationHeaders, limitedStoreBeta, portalMode, validateOrigin } from "./config";
 import { assertInternalBetaRequest } from "./internal-beta-policy";
 
@@ -29,9 +30,7 @@ export async function creatorRequest<T>(
     const result = await response.json().catch(() => null);
     if (!response.ok)
       throw new ApiError(
-        typeof result?.detail === "string"
-          ? result.detail
-          : "This action could not complete. Refresh and try again.",
+        apiFailureMessage(result, response.status),
         response.status,
       );
     return result as T;

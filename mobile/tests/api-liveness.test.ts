@@ -4,6 +4,7 @@ import test from "node:test";
 import ts from "typescript";
 import * as desktopNavigation from "../src/lib/desktop-navigation.ts";
 import * as internalBetaPolicy from "../src/lib/internal-beta-policy.ts";
+import * as apiFeedback from "../src/lib/api-feedback.ts";
 
 function deferred<T = any>() {
   let resolve!: (value: T) => void, reject!: (error: unknown) => void;
@@ -115,6 +116,7 @@ function harness(
     (name) => {
       if (name === "./desktop-navigation") return desktopNavigation;
       if (name === "./request-deadline") return deadline;
+      if (name === "./api-feedback") return apiFeedback;
       if (name === "./internal-beta-policy") return internalBetaPolicy;
       if (name === "./config")
         return {

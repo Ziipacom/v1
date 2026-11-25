@@ -1,6 +1,7 @@
 import type { Session } from "./types";
 import { validateOrigin, portalMode, authorizationHeaders } from "./config";
 import { compactStudioEntry } from "./desktop-navigation";
+import { apiFailureMessage } from "./api-feedback";
 import {
   ApiRequestError,
   OperationTimeoutError,
@@ -92,14 +93,7 @@ export async function request<T>(
           return null;
         });
         if (!response.ok)
-          throw new ApiError(
-            typeof body?.detail === "string"
-              ? body.detail
-              : Array.isArray(body?.detail)
-                ? body.detail.map((d: { msg: string }) => d.msg).join("\n")
-                : "Request failed",
-            response.status,
-          );
+          throw new ApiError(apiFailureMessage(body, response.status), response.status);
         return body as T;
       },
       path === "/api/web3/metadata" ? 120000 : 30000,
@@ -109,7 +103,7 @@ export async function request<T>(
   } catch (e) {
     if (e instanceof ApiError) throw e;
     if (failureStatus !== undefined)
-      throw new ApiError("Request failed", failureStatus);
+      throw new ApiError(apiFailureMessage(null, failureStatus), failureStatus);
     throw new ApiRequestError(
       data === undefined ? "unavailable" : "unconfirmed",
       e instanceof OperationTimeoutError,
@@ -233,10 +227,7 @@ export async function uploadMedia(
       if (!isActive()) throw timeoutError;
       const body = await response.json().catch(() => null);
       if (!response.ok)
-        throw new ApiError(
-          typeof body?.detail === "string" ? body.detail : "Upload failed",
-          response.status,
-        );
+        throw new ApiError(apiFailureMessage(body, response.status), response.status);
       if (!direct && (!body || typeof body.id !== "string"))
         throw new Error(
           "Ziipa did not confirm the uploaded file. Keep this edit and check your library before trying again.",

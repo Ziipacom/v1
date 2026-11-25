@@ -3,6 +3,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { limitedStoreBeta, validateOrigin } from "./config";
 import { assertInternalBetaRequest } from "./internal-beta-policy";
 import type { Session } from "./types";
+import { apiFailureMessage } from "./api-feedback";
 import {
   ApiRequestError,
   OperationTimeoutError,
@@ -44,20 +45,6 @@ export const writeSession = (session: Session) =>
   });
 export const clearSession = () => SecureStore.deleteItemAsync(SESSION_KEY);
 
-function errorMessage(body: unknown): string {
-  if (body && typeof body === "object" && "detail" in body) {
-    const detail = body.detail;
-    if (typeof detail === "string") return detail;
-    if (Array.isArray(detail))
-      return detail
-        .map(
-          (d) =>
-            `${d.loc?.slice(-1)[0] || "Input"}: ${d.msg || "Invalid value"}`,
-        )
-        .join("\n");
-  }
-  return "The request could not be completed. Please try again.";
-}
 export async function request<T>(
   path: string,
   token?: string,
@@ -94,7 +81,7 @@ export async function request<T>(
           return null;
         });
         if (!response.ok)
-          throw new ApiError(errorMessage(body), response.status);
+          throw new ApiError(apiFailureMessage(body, response.status), response.status);
         return body as T;
       },
       path === "/api/web3/metadata" ||
@@ -107,7 +94,7 @@ export async function request<T>(
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (failureStatus !== undefined)
-      throw new ApiError(errorMessage(null), failureStatus);
+      throw new ApiError(apiFailureMessage(null, failureStatus), failureStatus);
     throw new ApiRequestError(
       data === undefined ? "unavailable" : "unconfirmed",
       error instanceof OperationTimeoutError,
@@ -244,7 +231,7 @@ export async function uploadMedia(
     /* Storage errors need not be JSON. */
   }
   if (response.status < 200 || response.status >= 300)
-    throw new ApiError(errorMessage(body), response.status);
+    throw new ApiError(apiFailureMessage(body, response.status), response.status);
   if (!direct && (!body || typeof body.id !== "string"))
     throw new Error(
       "Ziipa did not confirm the uploaded file. Keep this edit and check your library before trying again.",

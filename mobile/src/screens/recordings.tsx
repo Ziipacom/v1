@@ -1,19 +1,5 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import {
-  AppState,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, Pressable, ScrollView, Text, View } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
@@ -23,8 +9,21 @@ import {
   RefreshCw,
   Radio,
   Settings2,
+  CalendarDays,
+  Play,
+  Pencil,
+  Send,
+  X,
+  Info,
 } from "lucide-react-native";
-import { Action, Cover, Field, Notice, Pill } from "../components/ui";
+import {
+  Action,
+  Cover,
+  Field,
+  IconButton,
+  Notice,
+  Pill,
+} from "../components/ui";
 import { Sheet } from "../components/floating";
 import { LibraryGrid } from "../components/personal-library";
 import {
@@ -58,16 +57,81 @@ import type { Bootstrap, Item, RootStack } from "../lib/types";
 import { color, styles } from "../theme";
 
 type Props = NativeStackScreenProps<RootStack, "Recordings">;
-function DesktopGroup({
-  children,
-  style,
-}: {
-  children: ReactNode;
-  style: StyleProp<ViewStyle>;
-}) {
-  const { desktop } = useDesktopLayout();
-  return desktop ? <View style={style}>{children}</View> : <>{children}</>;
+
+export function recordingScreenError(cause: unknown, loading = false) {
+  const error = cause as { status?: number; outcome?: string } | null;
+  if (error?.outcome === "unconfirmed")
+    return "This change was not confirmed. Refresh the recording before trying again.";
+  if (error?.status === 401) return "Sign in again to view your recordings.";
+  if (error?.status === 403)
+    return "This recording action is unavailable for your account.";
+  if (error?.status === 409)
+    return "This recording changed. Refresh before trying again.";
+  if (error?.status === 413)
+    return "This recording exceeds the supported size.";
+  if (error?.status === 429) return "Please wait a moment before trying again.";
+  if (error?.status === 503)
+    return "Recording processing is unavailable right now.";
+  const local = cause instanceof Error ? cause.message : "";
+  if (local === "Choose between one and three excerpts.")
+    return "Choose 1–3 clips.";
+  if (local === "Each excerpt must be 15 to 90 seconds.")
+    return "Choose a clip length of 15–90 seconds.";
+  return loading
+    ? "Recordings could not be loaded. Refresh to try again."
+    : "That recording action could not be completed. Refresh and try again.";
 }
+export function recordingClipState(status: string) {
+  return (
+    (
+      {
+        ready: "Private clip",
+        queued: "Queued",
+        processing: "Processing",
+        blocked: "Needs attention",
+        failed: "Needs attention",
+        stale: "Needs review",
+        cancelled: "Cancelled",
+      } as Record<string, string>
+    )[status] || "Status unavailable"
+  );
+}
+export function recordingDetail(status: string) {
+  return (
+    (
+      {
+        ready: "Saved privately in your library.",
+        queued: "Waiting to import this recording.",
+        processing: "Saving the recording to your private library.",
+        blocked: "Import needs attention. Check availability before retrying.",
+        failed: "Import could not finish. Check availability before retrying.",
+        cancelled: "Pending recording work was cancelled.",
+      } as Record<string, string>
+    )[status] || "Refresh to check this recording."
+  );
+}
+function RecordingState({
+  label,
+  active = false,
+}: {
+  label: string;
+  active?: boolean;
+}) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+      <View
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: 4,
+          backgroundColor: active ? color.lime : color.muted,
+        }}
+      />
+      <Text style={styles.small}>{label}</Text>
+    </View>
+  );
+}
+
 function Toggle({
   title,
   checked,
@@ -208,12 +272,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
       setRendition(automation?.rendition || "portrait");
       setError("");
     } catch (cause) {
-      if (valid())
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Your recordings could not be loaded. Refresh to try again.",
-        );
+      if (valid()) setError(recordingScreenError(cause, true));
     } finally {
       if (valid()) setLoading(false);
     }
@@ -259,12 +318,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
     try {
       await action(valid);
     } catch (cause) {
-      if (valid())
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "This recording action could not complete.",
-        );
+      if (valid()) setError(recordingScreenError(cause));
     } finally {
       mutation.current = false;
       setBusy(false);
@@ -351,70 +405,114 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
       style={styles.screen}
       contentContainerStyle={[
         styles.page,
-        { width: "100%", maxWidth: 1440, alignSelf: "center" },
+        { width: "100%", maxWidth: 1280, alignSelf: "center", gap: 16 },
         desktop && { paddingHorizontal: 28 },
       ]}
     >
-      <View style={[styles.between, { flexWrap: "wrap" }]}>
-        {desktop ? (
-          <Text style={[styles.heading, { fontSize: 26 }]}>
+      <View style={styles.between}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.heading, { fontSize: desktop ? 26 : 20 }]}>
             Live & recordings
           </Text>
-        ) : null}
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Notification preferences"
-            onPress={() =>
-              navigation.navigate("Notifications", { tab: "Preferences" })
-            }
+          <Text style={styles.small}>Broadcasts, recordings and clips</Text>
+        </View>
+        <IconButton
+          label="Recording settings"
+          icon={Settings2}
+          disabled={busy}
+          onPress={() => setSettingsOpen(true)}
+        />
+        <IconButton
+          label="Refresh recordings"
+          icon={RefreshCw}
+          disabled={busy || loading}
+          onPress={() => {
+            if (tab === "Live now" || tab === "Events")
+              setCatalogueRevision((value) => value + 1);
+            else void load();
+          }}
+        />
+      </View>
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        {[
+          { title: "Recordings", value: config ? receipts.length : "—" },
+          { title: "Clips", value: config ? clips.length : "—" },
+          {
+            title: "Processing",
+            value: config
+              ? receipts.filter(
+                  (receipt) =>
+                    receipt.status === "queued" ||
+                    receipt.status === "processing",
+                ).length
+              : "—",
+          },
+        ].map((metric) => (
+          <View
+            key={metric.title}
             style={{
-              minWidth: 44,
-              minHeight: 44,
-              alignItems: "center",
-              justifyContent: "center",
+              flex: 1,
+              padding: 12,
+              borderWidth: 1,
+              borderColor: color.border,
+              borderRadius: 12,
+              backgroundColor: color.panel,
             }}
           >
-            <Bell size={21} color={color.muted} />
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Recording settings"
-            onPress={() => setSettingsOpen(true)}
-            style={{
-              minWidth: 44,
-              minHeight: 44,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Settings2 size={21} color={color.muted} />
-          </Pressable>
+            <Text style={[styles.heading, { fontSize: 21 }]}>
+              {metric.value}
+            </Text>
+            <Text style={styles.small}>{metric.title}</Text>
+          </View>
+        ))}
+      </View>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Action
+            title="Broadcast"
+            icon={Radio}
+            onPress={() => navigation.navigate("Live", { tab: "broadcast" })}
+          />
           <Action
             secondary
-            title="Refresh"
-            icon={RefreshCw}
-            disabled={busy}
-            busy={loading}
-            onPress={() => {
-              if (tab === "Live now" || tab === "Events")
-                setCatalogueRevision((value) => value + 1);
-              else void load();
-            }}
+            title="Schedule"
+            icon={CalendarDays}
+            onPress={() => navigation.navigate("Calendar", { kind: "stream" })}
           />
         </View>
-      </View>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-        <Action
-          title="Broadcast"
-          icon={Radio}
-          onPress={() => navigation.navigate("Live", { tab: "broadcast" })}
-        />
-        <Action
-          secondary
-          title="Schedule"
-          onPress={() => navigation.navigate("Calendar", { kind: "stream" })}
-        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Recording service status"
+          onPress={() => setServiceOpen(true)}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 7,
+            minHeight: 44,
+          }}
+        >
+          <RecordingState
+            label={
+              config
+                ? importsReady
+                  ? "Auto-save ready"
+                  : "Auto-save unavailable"
+                : loading
+                  ? "Checking service"
+                  : "Status unavailable"
+            }
+            active={importsReady}
+          />
+          <Info size={17} color={color.muted} />
+        </Pressable>
       </View>
       <ScrollView
         ref={tabScroll}
@@ -435,7 +533,9 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
           ),
         )}
       </ScrollView>
-      {!!error && <Notice error text={error} />}
+      {!!error && !settingsOpen && !selectedReceiptId && (
+        <Notice error text={error} />
+      )}
       {!!message && <Notice text={message} />}
       {tab === "Live now" ? (
         <LiveCatalogue
@@ -479,27 +579,9 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
               </Text>
             </Pressable>
           </View>
-          {config && !importsReady ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Recording service status"
-              onPress={() => setServiceOpen(true)}
-              style={{
-                padding: 14,
-                borderRadius: 12,
-                backgroundColor: color.panel,
-                borderWidth: 1,
-                borderColor: color.border,
-              }}
-            >
-              <Text style={styles.small}>
-                Automatic saving is unavailable · View status ›
-              </Text>
-            </Pressable>
-          ) : null}
           {tab === "Recordings" ? (
             <>
-              {!loading && !receipts.length ? (
+              {!loading && !error && !receipts.length ? (
                 <View
                   style={[
                     styles.panel,
@@ -507,16 +589,15 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                   ]}
                 >
                   <Clapperboard size={32} color={color.muted} />
-                  <Text style={styles.heading}>No recordings yet</Text>
+                  <Text style={[styles.heading, { fontSize: 20 }]}>
+                    No recordings yet
+                  </Text>
                   <Text style={[styles.small, { textAlign: "center" }]}>
                     Your saved broadcast recordings will appear here.
                   </Text>
-                  <Action
-                    secondary
-                    title="Broadcast studio"
-                    onPress={() =>
-                      navigation.navigate("Live", { tab: "broadcast" })
-                    }
+                  <InfoTip
+                    title="Saving a broadcast"
+                    content="Choose recording in Broadcast before you go live. Completed recordings are imported only when the recording service is available. Saving and editing do not publish your media."
                   />
                 </View>
               ) : null}
@@ -537,7 +618,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
             </>
           ) : (
             <>
-              {!loading && !clips.length ? (
+              {!loading && !error && !clips.length ? (
                 <View
                   style={[
                     styles.panel,
@@ -545,10 +626,11 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                   ]}
                 >
                   <Clapperboard size={32} color={color.muted} />
-                  <Text style={styles.heading}>No clips yet</Text>
+                  <Text style={[styles.heading, { fontSize: 20 }]}>
+                    No clips yet
+                  </Text>
                   <Text style={[styles.small, { textAlign: "center" }]}>
-                    Open a recording to edit it, or choose Recording settings to
-                    prepare private clips.
+                    Create private clips from your recordings.
                   </Text>
                 </View>
               ) : null}
@@ -561,11 +643,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                       `${receipt.title} · Clip ${index + 1}`
                     }
                     detail={`${clip.end - clip.start}s · ${clip.rendition}`}
-                    status={
-                      clip.status === "ready"
-                        ? "Private clip"
-                        : clip.status.replace(/_/g, " ")
-                    }
+                    status={recordingClipState(clip.status)}
                     label={`Open clip ${index + 1} from ${receipt.title}`}
                     onPress={() => chooseReceipt(receipt.id)}
                   >
@@ -609,10 +687,12 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
               />
             ))}
           </View>
-          <Text style={styles.small}>
-            Select a broadcast to manage its private clips. Recording must be
-            chosen before starting a broadcast.
-          </Text>
+          <InfoTip
+            title="Recording choices"
+            content="Select a broadcast to manage its private clips. Recording must be chosen before starting that broadcast. Automatic clips use its first sequential portions; formats contain the full frame with padding. No recording or clip is published automatically."
+          />
+          {!!error && <Notice error text={error} />}
+          {!!message && <Notice text={message} />}
           {stream && policy && (
             <View
               style={[
@@ -626,9 +706,14 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
               <Text style={styles.body}>
                 {stream.title} · recording {stream.record ? "enabled" : "off"}
               </Text>
-              <Text style={styles.small}>{policy.detail}</Text>
+              <RecordingState
+                label={
+                  policy.enabled ? "Automatic clips on" : "Automatic clips off"
+                }
+                active={policy.enabled}
+              />
               <Toggle
-                title="Create private excerpts when this recording is imported"
+                title="Create clips automatically"
                 checked={enabled}
                 disabled={busy || !stream.record}
                 change={() => {
@@ -636,10 +721,10 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                   setConsent(false);
                 }}
               />
-              <DesktopGroup style={{ flexDirection: "row", gap: 12 }}>
-                <DesktopGroup style={{ flex: 1, minWidth: 0 }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                <View style={{ flex: 1, minWidth: 110 }}>
                   <Field
-                    label="Number of excerpts (1–3)"
+                    label="Clips (1-3)"
                     value={count}
                     onChangeText={(value) => {
                       setCount(value);
@@ -649,10 +734,10 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                     editable={!busy}
                     maxLength={1}
                   />
-                </DesktopGroup>
-                <DesktopGroup style={{ flex: 1, minWidth: 0 }}>
+                </View>
+                <View style={{ flex: 1, minWidth: 110 }}>
                   <Field
-                    label="Seconds per excerpt (15–90)"
+                    label="Length (15-90s)"
                     value={seconds}
                     onChangeText={(value) => {
                       setSeconds(value);
@@ -662,8 +747,8 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                     editable={!busy}
                     maxLength={2}
                   />
-                </DesktopGroup>
-              </DesktopGroup>
+                </View>
+              </View>
               <View style={[styles.row, { flexWrap: "wrap" }]}>
                 {campaignFormats.map((format) => (
                   <Pill
@@ -679,21 +764,21 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                   />
                 ))}
               </View>
-              <Text style={styles.small}>
-                Clips use the first sequential portions of the recording.
-                Formats fit the full frame with padding.
-              </Text>
+              <InfoTip
+                title="Automatic private clips"
+                content="Ziipa imports this recording and creates clips from its first sequential portions, using the length and format you choose. Your rights approval is required. Clips stay private and editable until you separately approve publishing."
+              />
               {enabled && (
                 <Toggle
-                  title="I have the rights to this recording and consent to importing it and generating these private excerpts."
+                  title="I can use this recording and approve private import and clips."
                   checked={consent}
                   disabled={busy}
                   change={() => setConsent(!consent)}
                 />
               )}
               <Action
-                title="Save recording settings"
-                icon={Clapperboard}
+                title="Save settings"
+                icon={Check}
                 disabled={
                   busy ||
                   (enabled && (!config?.enabled || !stream.record || !consent))
@@ -715,7 +800,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                       setPolicy(result);
                       setConsent(false);
                       setMessage(
-                        "Recording settings saved. New recordings and clips stay private until you publish them.",
+                        "Settings saved. Recordings and clips stay private.",
                       );
                     }
                   })
@@ -723,7 +808,8 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
               />
               <Action
                 secondary
-                title="Open broadcast controls"
+                title="Broadcast controls"
+                icon={Radio}
                 disabled={busy}
                 onPress={() => {
                   setSettingsOpen(false);
@@ -736,14 +822,38 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          <Action
-            secondary
-            title="Service status"
-            onPress={() => {
-              setSettingsOpen(false);
-              setServiceOpen(true);
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 12,
             }}
-          />
+          >
+            <InfoTip
+              title="Recording availability"
+              content="Imports depend on recording events and media processing. Check status for current availability. Your originals and existing private recordings are unchanged when automatic saving is unavailable."
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="View recording service status"
+              onPress={() => {
+                setSettingsOpen(false);
+                setServiceOpen(true);
+              }}
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <Text style={styles.small}>View status</Text>
+            </Pressable>
+            <IconButton
+              icon={Bell}
+              label="Notification preferences"
+              onPress={() => {
+                setSettingsOpen(false);
+                navigation.navigate("Notifications", { tab: "Preferences" });
+              }}
+            />
+          </View>
         </Sheet>
       ) : null}
       {serviceOpen ? (
@@ -800,6 +910,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
           }}
           maxWidth={900}
         >
+          {!!error && <Notice error text={error} />}
           {preview && (
             <View
               style={[
@@ -815,9 +926,9 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                 key={`${preview.item.id}:${preview.item.media_id}`}
                 item={preview.item}
               />
-              <Action
-                secondary
-                title="Close preview"
+              <IconButton
+                icon={X}
+                label="Close preview"
                 onPress={() => setPreview(null)}
               />
             </View>
@@ -835,10 +946,10 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                 <Text style={[styles.heading, desktop && { fontSize: 18 }]}>
                   {receipt.title}
                 </Text>
-                <Text style={styles.eyebrow}>
-                  {recordingStatus(receipt)}
+                <Text style={styles.eyebrow}>{recordingStatus(receipt)}</Text>
+                <Text style={styles.small}>
+                  {recordingDetail(receipt.status)}
                 </Text>
-                <Text style={styles.body}>{receipt.detail}</Text>
                 <Text style={styles.small}>
                   {new Date(receipt.created_at).toLocaleString()}
                   {receipt.duration != null
@@ -849,12 +960,13 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                     : ""}
                 </Text>
                 {receipt.item_id && receipt.status === "ready" && (
-                  <DesktopGroup
+                  <View
                     style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}
                   >
                     <Action
                       secondary
-                      title="Preview imported recording (source)"
+                      title="Preview"
+                      icon={Play}
                       disabled={busy}
                       onPress={() =>
                         void run(async (valid) => {
@@ -870,7 +982,8 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                     />
                     <Action
                       secondary
-                      title="Edit full recording"
+                      title="Edit recording"
+                      icon={Pencil}
                       disabled={busy}
                       onPress={() =>
                         void run(async (valid) => {
@@ -883,7 +996,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                         })
                       }
                     />
-                  </DesktopGroup>
+                  </View>
                 )}
                 {receipt.clips.map((clip) => (
                   <View
@@ -897,19 +1010,15 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                   >
                     <Text style={styles.body}>
                       Excerpt {clip.start}s–{clip.end}s · {clip.rendition} ·{" "}
-                      {clip.status}
+                      {recordingClipState(clip.status)}
                     </Text>
-                    <Text style={styles.small}>{clip.detail}</Text>
-                    <DesktopGroup
-                      style={{
-                        flexDirection: "row",
-                        flexWrap: "wrap",
-                        gap: 10,
-                      }}
+                    <View
+                      style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
                     >
                       {clip.status === "ready" && clip.render_id && (
                         <Action
-                          title="Preview exported clip"
+                          title="Preview"
+                          icon={Play}
                           secondary
                           disabled={busy}
                           onPress={() =>
@@ -918,7 +1027,8 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                         />
                       )}
                       <Action
-                        title="Review clip in editor"
+                        title="Edit clip"
+                        icon={Pencil}
                         secondary
                         disabled={busy}
                         onPress={() =>
@@ -933,7 +1043,8 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                         }
                       />
                       <Action
-                        title="Create a publication campaign"
+                        title="Campaign"
+                        icon={Send}
                         disabled={busy || clip.status !== "ready"}
                         onPress={() =>
                           void run(async (valid) => {
@@ -948,17 +1059,18 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                           })
                         }
                       />
-                    </DesktopGroup>
-                    <Text style={styles.small}>
-                      Your clip stays private and editable. Review its rendered
-                      version and approve sharing in Campaigns.
-                    </Text>
+                    </View>
+                    <InfoTip
+                      title="Review before sharing"
+                      content="This clip stays private and editable. Preview checks the real rendered MP4. Edit opens the saved creation; Campaign opens a separate review and approval flow and never publishes automatically."
+                    />
                   </View>
                 ))}
                 {["blocked", "failed"].includes(receipt.status) && (
                   <Action
                     secondary
-                    title="Retry recording import"
+                    title="Retry import"
+                    icon={RefreshCw}
                     disabled={busy || !config?.worker_ready}
                     onPress={() =>
                       void run(async (valid) => {
@@ -979,7 +1091,8 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                 {["queued", "processing"].includes(receipt.status) && (
                   <Action
                     secondary
-                    title="Cancel pending recording work"
+                    title="Cancel work"
+                    icon={X}
                     disabled={busy}
                     onPress={() =>
                       void run(async (valid) => {

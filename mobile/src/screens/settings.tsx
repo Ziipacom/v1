@@ -1,12 +1,14 @@
 import { InfoTip } from "../components/info-tip";
 import { HelpLabel } from "../components/help-label";
+import { Sheet } from "../components/floating";
 import { useDesktopLayout } from "../components/desktop-layout";
-import { workspace, WorkspaceHeading } from "../components/desktop-workspace";
+import { workspace } from "../components/desktop-workspace";
 import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Alert,
   Linking,
+  Pressable,
   ScrollView,
   Share,
   Switch,
@@ -15,21 +17,27 @@ import {
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
+  ChevronRight,
+  Download,
+  FileText,
   FolderOpen,
   Link2,
   LogOut,
+  Mail,
+  Monitor,
+  SlidersHorizontal,
   ShieldCheck,
   Trash2,
   UserRound,
+  type LucideIcon,
 } from "lucide-react-native";
-import { Action, Field, Notice } from "../components/ui";
+import { Action, Field, IconButton, Notice, Pill } from "../components/ui";
 import { SettingsControls } from "../components/settings-controls";
 import { AdPrivacyOptions } from "../components/sponsored-ad";
 import { PublicGallerySettingsPanel } from "../components/public-gallery-settings";
 import { useZiipa } from "../provider";
-import { color, styles } from "../theme";
+import { color, font, styles } from "../theme";
 import {
-  apiOrigin,
   androidPlayInternal,
   iosExternalTestflight,
   legalOperatorName,
@@ -43,6 +51,45 @@ import {
   type AdminIdentity,
 } from "../lib/admin-api";
 
+const settingsTabs = [
+  { label: "Account", Icon: UserRound },
+  { label: "Device", Icon: Monitor },
+  { label: "Privacy", Icon: ShieldCheck },
+  { label: "Feed", Icon: SlidersHorizontal },
+] as const;
+
+function SettingsLink({
+  icon: Icon,
+  label,
+  onPress,
+  disabled,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        ...styles.row,
+        minHeight: 45,
+        paddingVertical: 7,
+        borderBottomWidth: 1,
+        borderBottomColor: color.border,
+        opacity: pressed || disabled ? 0.6 : 1,
+      })}
+    >
+      <Icon size={17} color={color.muted} />
+      <Text style={[styles.label, { flex: 1, marginBottom: 0 }]}>{label}</Text>
+      <ChevronRight size={15} color={color.muted} />
+    </Pressable>
+  );
+}
+
 export function SettingsScreen(
   props: NativeStackScreenProps<RootStack, "Settings">,
 ) {
@@ -54,7 +101,7 @@ export function SettingsScreen(
 function ScopedSettingsScreen({
   navigation,
 }: NativeStackScreenProps<RootStack, "Settings">) {
-  const { desktop, contentWidth } = useDesktopLayout();
+  const { desktop } = useDesktopLayout();
   const { session, data, preferences, refresh, logout, forgetSession, api } =
     useZiipa();
   const [words, setWords] = useState(data.preferences.muted_words.join(", "));
@@ -63,6 +110,8 @@ function ScopedSettingsScreen({
   const [deleting, setDeleting] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] =
+    useState<(typeof settingsTabs)[number]["label"]>("Account");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [administration, setAdministration] = useState<AdminIdentity | null>(
@@ -166,20 +215,12 @@ function ScopedSettingsScreen({
       ],
     );
   }
-  const identityPanel = (
-    <View style={[styles.panel, desktop && workspace.panel]}>
-      <Text style={styles.heading}>{session?.user.name}</Text>
-      <Text style={styles.body}>{session?.user.email}</Text>
-      <Text style={styles.small}>
-        The same account is used in the web portal and mobile app.
-      </Text>
-    </View>
-  );
   const safetyPanel = (
     <View style={[styles.panel, desktop && workspace.panel]}>
-      <Text style={styles.heading}>Your boundaries</Text>
+      <Text style={styles.heading}>Feed preferences</Text>
       <Field
         label="Muted words and phrases"
+        help="Hide posts and comments containing these words or phrases."
         value={words}
         onChangeText={setWords}
         multiline
@@ -187,9 +228,6 @@ function ScopedSettingsScreen({
         placeholder="Separate entries with commas"
         editable={!busy}
       />
-      <Text style={styles.small}>
-        Hide posts and comments containing these words or phrases.
-      </Text>
       <View style={styles.between}>
         <Text style={styles.body}>Show sample collections</Text>
         <Switch
@@ -245,24 +283,31 @@ function ScopedSettingsScreen({
   );
   const privacyPanel = (
     <View style={[styles.panel, desktop && workspace.panel]}>
-      <HelpLabel label="Privacy controls" style={styles.heading} help="Profile visibility, discovery and feed personalization are separate settings. Review your choices and press Save privacy controls to apply them." />
-      <AdPrivacyOptions />
-      <Text style={styles.small}>
-        Control who can find you and how Ziipa personalizes your feeds.
-      </Text>
-      <Action
-        secondary
-        title={`Profile visibility · ${privacy.profile_visibility}`}
-        disabled={busy || !privacyReady}
-        onPress={() => {
-          const values = ["public", "members", "private"];
-          const next =
-            values[
-              (values.indexOf(privacy.profile_visibility) + 1) % values.length
-            ];
-          setPrivacy({ ...privacy, profile_visibility: next });
-        }}
+      <HelpLabel
+        label="Privacy controls"
+        style={styles.heading}
+        help="Profile visibility, discovery and feed personalization are separate settings. Review your choices and press Save privacy controls to apply them."
       />
+      <AdPrivacyOptions />
+      <View style={{ gap: 4 }}>
+        <HelpLabel
+          label="Profile visibility"
+          help="Choose who can see your profile."
+        />
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+          {(["public", "members", "private"] as const).map((value) => (
+            <Pill
+              key={value}
+              title={value[0].toUpperCase() + value.slice(1)}
+              active={privacyReady && privacy.profile_visibility === value}
+              onPress={() => {
+                if (privacyReady && !busy)
+                  setPrivacy({ ...privacy, profile_visibility: value });
+              }}
+            />
+          ))}
+        </View>
+      </View>
       {(
         [
           ["discoverable", "Appear in creator discovery"],
@@ -272,7 +317,16 @@ function ScopedSettingsScreen({
       ).map(([key, label]) => (
         <View style={styles.between} key={key}>
           <Text style={[styles.body, { flex: 1 }]}>{label}</Text>
-          <InfoTip title={label} content={key === "discoverable" ? "Controls whether your profile can appear in creator discovery. It does not publish private drafts." : key === "personalized_feeds" ? "Controls whether Ziipa uses your activity to personalize your feeds." : "Controls your preference for product and creator emails. Save your privacy controls to apply the change."} />
+          <InfoTip
+            title={label}
+            content={
+              key === "discoverable"
+                ? "Controls whether your profile can appear in creator discovery. It does not publish private drafts."
+                : key === "personalized_feeds"
+                  ? "Controls whether Ziipa uses your activity to personalize your feeds."
+                  : "Controls your preference for product and creator emails. Save your privacy controls to apply the change."
+            }
+          />
           <Switch
             accessibilityLabel={label}
             value={privacy[key]}
@@ -297,9 +351,9 @@ function ScopedSettingsScreen({
           })
         }
       />
-      <Action
-        secondary
-        title="Export my Ziipa data"
+      <SettingsLink
+        icon={Download}
+        label="Export my Ziipa data"
         disabled={busy}
         onPress={() =>
           void run(async () => {
@@ -317,12 +371,12 @@ function ScopedSettingsScreen({
   );
   const policyPanel = (
     <View style={[styles.panel, desktop && workspace.panel]}>
-      <Text style={styles.heading}>Good to know</Text>
+      <Text style={styles.heading}>Help & policies</Text>
       {(["privacy", "terms", "community"] as const).map((kind) => (
-        <Action
+        <SettingsLink
           key={kind}
-          secondary
-          title={
+          icon={FileText}
+          label={
             kind === "privacy"
               ? "Privacy information"
               : kind === "terms"
@@ -332,9 +386,9 @@ function ScopedSettingsScreen({
           onPress={() => navigation.navigate("Legal", { kind })}
         />
       ))}
-      <Action
-        secondary
-        title="Contact Ziipa"
+      <SettingsLink
+        icon={Mail}
+        label="Contact Ziipa"
         onPress={() =>
           void Linking.openURL(`mailto:${supportEmail}`).catch(() =>
             setError(`Email ${supportEmail} for help.`),
@@ -343,109 +397,155 @@ function ScopedSettingsScreen({
       />
     </View>
   );
+  const closeDeletion = () => {
+    if (busy) return;
+    setDeleting(false);
+    setPassword("");
+    setConfirmation("");
+    setError("");
+  };
   return (
-    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
+    <ScrollView
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
       style={styles.screen}
       contentContainerStyle={
-        desktop ? [workspace.page, workspace.narrow] : styles.page
+        desktop
+          ? [workspace.page, workspace.narrow]
+          : [styles.page, { gap: 14 }]
       }
-
     >
-      {desktop ? (
-        <WorkspaceHeading
-          title="Account & settings"
-          description="Manage your profile, privacy and safety preferences."
-        />
-      ) : (
-        <Text style={styles.title}>Settings</Text>
-      )}
-      {session && (
-        <View style={{ gap: 7 }}>
-          <Action
-            title="Sign out"
-            secondary
-            icon={LogOut}
-            onPress={() => void run(logout)}
-            busy={busy}
-          />
-        </View>
-      )}
-      {!!error && <Notice error text={error} />}
-      {!!message && <Notice text={message} />}
-      <SettingsControls navigation={navigation} />
-      <View style={[styles.panel, desktop && workspace.panel]}>
+      <View style={styles.between}>
         <Text accessibilityRole="header" style={styles.heading}>
-          Account & connected tools
+          Settings
         </Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          <Action
-            title="Creator profile"
-            icon={UserRound}
-            secondary
-            onPress={() =>
-              navigation.navigate("Profile", { creatorId: undefined })
-            }
-          />
-          <Action
-            title="Connected networks"
-            icon={Link2}
-            secondary
-            onPress={() =>
-              navigation.navigate("Connections", { tab: "accounts" })
-            }
-          />
-          <Action
-            title="Personal library & rights"
-            icon={FolderOpen}
-            secondary
-            onPress={() => navigation.navigate("MediaOS", { tab: "Library" })}
-          />
-        </View>
-      </View>
-      {administration &&
-        administration.role !== "member" &&
-        administration.permissions.length > 0 && (
-          <Action
-            title={
-              administration.role === "owner"
-                ? "Owner administration · manage Ziipa"
-                : "Administration · manage Ziipa"
-            }
-            secondary
-            icon={ShieldCheck}
-            onPress={() => navigation.navigate("Administration")}
+        {session && (
+          <IconButton
+            label="Sign out"
+            icon={LogOut}
+            disabled={busy}
+            onPress={() => void run(logout)}
           />
         )}
-      {desktop ? (
-        <View
-          style={[
-            workspace.columns,
-            contentWidth < 1100 && { flexDirection: "column" },
-          ]}
-        >
-          <View style={workspace.main}>
-            {session && identityPanel}
-            {session && (
-              <PublicGallerySettingsPanel
-                disabled={busy}
-                refreshKey={galleryRefreshKey}
-                onOpenCreations={() =>
-                  navigation.navigate("CreatorStudio", { tab: "library" })
+      </View>
+      <View
+        style={{
+          flexDirection: "row",
+          gap: 5,
+          padding: 4,
+          borderWidth: 1,
+          borderColor: color.border,
+          backgroundColor: color.panel,
+          borderRadius: 13,
+        }}
+      >
+        {settingsTabs.map(({ label, Icon }) => (
+          <Pressable
+            key={label}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === label }}
+            onPress={() => {
+              setTab(label);
+              setMessage("");
+            }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: 46,
+              borderRadius: 9,
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 3,
+              gap: 3,
+              backgroundColor: tab === label ? color.purple : "transparent",
+            }}
+          >
+            <Icon
+              size={16}
+              color={tab === label ? color.onAccent : color.muted}
+            />
+            <Text
+              style={{
+                fontFamily: font.semibold,
+                fontSize: 12,
+                textAlign: "center",
+                color: tab === label ? color.onAccent : color.text,
+              }}
+            >
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      {!!error && !deleting && <Notice error text={error} />}
+      {!!message && (
+        <Text accessibilityLiveRegion="polite" style={styles.small}>
+          {message}
+        </Text>
+      )}
+      {tab === "Account" && (
+        <>
+          {session ? (
+            <View
+              style={[styles.panel, desktop && workspace.panel, { gap: 4 }]}
+            >
+              <Text style={styles.heading}>{session.user.name}</Text>
+              <Text style={styles.small}>{session.user.email}</Text>
+              <SettingsLink
+                icon={UserRound}
+                label="Creator profile"
+                onPress={() =>
+                  navigation.navigate("Profile", { creatorId: undefined })
                 }
               />
-            )}
-            {session && privacyPanel}
-          </View>
-          <View style={workspace.main}>
-            {safetyPanel}
-            {policyPanel}
-          </View>
-        </View>
-      ) : (
-        <>
-          {session && identityPanel}
-          {session && (
+              <SettingsLink
+                icon={Link2}
+                label="Connected networks"
+                onPress={() =>
+                  navigation.navigate("Connections", { tab: "accounts" })
+                }
+              />
+              <SettingsLink
+                icon={FolderOpen}
+                label="Personal library & rights"
+                onPress={() =>
+                  navigation.navigate("MediaOS", { tab: "Library" })
+                }
+              />
+              {administration &&
+                administration.role !== "member" &&
+                administration.permissions.length > 0 && (
+                  <SettingsLink
+                    icon={ShieldCheck}
+                    label="Administration"
+                    onPress={() => navigation.navigate("Administration")}
+                  />
+                )}
+              <SettingsLink
+                icon={Trash2}
+                label="Delete account"
+                disabled={busy}
+                onPress={() => {
+                  setError("");
+                  setDeleting(true);
+                }}
+              />
+            </View>
+          ) : (
+            <Action
+              title="Sign in to Ziipa"
+              onPress={() => navigation.navigate("Login")}
+            />
+          )}
+          {policyPanel}
+        </>
+      )}
+      {tab === "Device" && <SettingsControls navigation={navigation} />}
+      {tab === "Privacy" &&
+        (session ? (
+          <>
+            {privacyPanel}
             <PublicGallerySettingsPanel
               disabled={busy}
               refreshKey={galleryRefreshKey}
@@ -453,81 +553,51 @@ function ScopedSettingsScreen({
                 navigation.navigate("CreatorStudio", { tab: "library" })
               }
             />
-          )}
-          {safetyPanel}
-          {session && privacyPanel}
-        </>
-      )}
-
-      {!desktop && policyPanel}
-
-      {!session && (
-        <Action
-          title="Sign in to Ziipa"
-          onPress={() => navigation.navigate("Login")}
-        />
-      )}
-      {session && (
-        <>
-          <View style={styles.separator} />
-          <Text style={styles.heading}>Account deletion</Text>
-          <Text style={styles.body}>
-            Permanently remove your account and its content from this server.
-            Confirm with your password before anything is deleted.
-          </Text>
-          {!deleting ? (
+          </>
+        ) : (
+          <Action
+            title="Sign in to manage privacy"
+            onPress={() => navigation.navigate("Login")}
+          />
+        ))}
+      {tab === "Feed" && safetyPanel}
+      {session && deleting && (
+        <Sheet
+          title="Delete account"
+          onClose={closeDeletion}
+          footer={
             <Action
-              secondary
-              title="Delete my account…"
+              danger
+              title="Permanently delete account"
               icon={Trash2}
-              disabled={busy}
-              onPress={() => setDeleting(true)}
+              onPress={deleteAccount}
+              busy={busy}
+              disabled={confirmation !== "DELETE" || !password}
             />
-          ) : (
-            <>
-              <Field
-                label="Current password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                maxLength={128}
-                autoCapitalize="none"
-                editable={!busy}
-              />
-              <Field
-                label="Type DELETE to confirm"
-                value={confirmation}
-                onChangeText={setConfirmation}
-                autoCapitalize="characters"
-                maxLength={6}
-                editable={!busy}
-              />
-              <Action
-                danger
-                title="Permanently delete account"
-                icon={Trash2}
-                onPress={deleteAccount}
-                busy={busy}
-                disabled={confirmation !== "DELETE" || !password}
-              />
-              <Action
-                secondary
-                title="Cancel deletion"
-                onPress={() => {
-                  setDeleting(false);
-                  setPassword("");
-                  setConfirmation("");
-                }}
-                disabled={busy}
-              />
-            </>
-          )}
-        </>
-      )}
-      {__DEV__ && (
-        <Notice
-          text={`Development server: ${apiOrigin}`}
-        />
+          }
+        >
+          <Text style={styles.body}>
+            This permanently deletes your Ziipa account and content.
+          </Text>
+          <Field
+            label="Current password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            maxLength={128}
+            autoCapitalize="none"
+            editable={!busy}
+          />
+          <Field
+            label="Type DELETE to confirm"
+            value={confirmation}
+            onChangeText={setConfirmation}
+            autoCapitalize="characters"
+            maxLength={6}
+            editable={!busy}
+          />
+          {!!error && <Notice error text={error} />}
+        </Sheet>
       )}
     </ScrollView>
   );
@@ -606,9 +676,12 @@ export function LegalScreen({
   const policy = policies[kind];
   const [error, setError] = useState("");
   const url = legalUrls[kind];
-  const betaPrivacy = (iosExternalTestflight || androidPlayInternal) && kind === "privacy";
+  const betaPrivacy =
+    (iosExternalTestflight || androidPlayInternal) && kind === "privacy";
   return (
-    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
+    <ScrollView
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
       style={styles.screen}
       contentContainerStyle={
@@ -618,11 +691,7 @@ export function LegalScreen({
       <Text style={styles.title}>{policy.title}</Text>
       {url ? (
         <Action
-          title={
-            betaPrivacy
-              ? "Open beta privacy notice"
-              : "Read on ziipa.com"
-          }
+          title={betaPrivacy ? "Open beta privacy notice" : "Read on ziipa.com"}
           secondary
           onPress={() =>
             void Linking.openURL(url).catch(() =>
@@ -702,7 +771,9 @@ export function ModerationScreen({
     );
   }
   return (
-    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
+    <ScrollView
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
       style={styles.screen}
       contentContainerStyle={

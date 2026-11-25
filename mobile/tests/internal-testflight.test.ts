@@ -8,6 +8,7 @@ import test from "node:test";
 import ts from "typescript";
 import * as policy from "../src/lib/internal-beta-policy.ts";
 import * as readiness from "../src/lib/wallet-readiness.ts";
+import * as apiFeedback from "../src/lib/api-feedback.ts";
 
 const require = createRequire(import.meta.url);
 const root = new URL("../", import.meta.url);
@@ -372,6 +373,7 @@ test("real native request and direct creator transport reject writes before any 
     };
     const imports = (name: string): any => {
       if (name === "./config") return config;
+      if (name === "./api-feedback") return apiFeedback;
       if (name === "./internal-beta-policy") return policy;
       if (name === "./api") return { ApiError: class extends Error {} };
       if (name === "./request-deadline")

@@ -20,15 +20,20 @@ import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as Crypto from "expo-crypto";
 import {
-  CalendarClock,
   Bell,
   CheckCircle2,
+  List,
   Plus,
   Radio,
   RefreshCw,
 } from "lucide-react-native";
 import { Action, Field, IconButton, Notice, Pill } from "../components/ui";
 import { CalendarDayPicker } from "../components/calendar-day-picker";
+import {
+  CalendarEventFlow,
+  validateCalendarDetails,
+  type CalendarEditorStep,
+} from "../components/calendar-event-flow";
 import { CalendarConnections } from "../components/calendar-connections";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { useZiipa } from "../provider";
@@ -180,6 +185,11 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [advancedTime, setAdvancedTime] = useState(false);
+  const [editorStep, setEditorStep] = useState<CalendarEditorStep>(
+    route.params?.eventId ? 2 : 0,
+  );
+  const [agendaOpen, setAgendaOpen] = useState(false);
+  const page = useRef<ScrollView>(null);
   const [preflightClock, setPreflightClock] = useState(Date.now());
   const requestId = useRef(Crypto.randomUUID());
   const requests = useRef(new Set<AbortController>());
@@ -395,7 +405,9 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
     key: K,
     value: CalendarDraft[K],
   ) {
+    if (busy || event?.status === "cancelled") return;
     setDraft((previous) => ({ ...previous, [key]: value }));
+    setError("");
     setNotice("");
   }
   async function save(valid: () => boolean) {
@@ -413,9 +425,8 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
     if (!valid()) return;
     remember(result);
     setSelectedId(result.id);
-    setNotice(
-      "Schedule saved. Occurrences below are plans and reminder receipts; they do not start publishing or a broadcast.",
-    );
+    setEditorStep(2);
+    setNotice("Event saved to your calendar.");
   }
   async function control(
     operation: "pause" | "resume" | "cancel",
@@ -430,16 +441,28 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
     if (valid()) remember(result);
   }
   function newEvent() {
+    if (busy) return;
     setSelectedId(null);
     setEvent(null);
     setDraft(blankDraft());
     requestId.current = Crypto.randomUUID();
     version.current = "";
+    setEditorStep(0);
+    setAdvancedTime(false);
+    setError("");
+    setNotice("");
+    setAgendaOpen(false);
+    page.current?.scrollTo({ y: 0, animated: true });
   }
 
   if (!session || guest)
     return (
-      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" style={styles.screen} contentContainerStyle={styles.page}>
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
+        style={styles.screen}
+        contentContainerStyle={styles.page}
+      >
         <Card title="Calendar">
           <Action
             title="Sign in to your calendar"
@@ -450,7 +473,10 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
     );
 
   return (
-    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
+    <ScrollView
+      ref={page}
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
       style={styles.screen}
       showsVerticalScrollIndicator={false}
 
@@ -532,6 +558,12 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
               />
             </View>
             <IconButton
+              icon={List}
+              label={`${agendaOpen ? "Hide" : "Show"} agenda, ${events.length} events`}
+              active={agendaOpen}
+              onPress={() => setAgendaOpen((value) => !value)}
+            />
+            <IconButton
               icon={Bell}
               label="Notifications & devices"
               onPress={() => navigation.navigate("Notifications")}
@@ -551,7 +583,7 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
           <Text style={styles.small}>Loading your calendar…</Text>
         </View>
       ) : null}
-      {error ? <Notice error text={error} /> : null}
+      {error && selectedId && !event ? <Notice error text={error} /> : null}
       {notice ? <Notice text={notice} /> : null}
       <DesktopGroup
         style={{
@@ -567,311 +599,170 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
             gap: 16,
           }}
         >
-          <Card title="Your agenda">
-            {desktop && (
-              <Text style={styles.small}>
-                {events.length} saved {events.length === 1 ? "event" : "events"}{" "}
-                · select one to review its schedule
-              </Text>
-            )}
-            {!events.length ? (
-              <Text style={styles.small}>
-                No saved events yet. Add your first schedule below.
-              </Text>
-            ) : null}
-            {events.map((entry) => (
-              <Pressable
-                key={entry.id}
-                accessibilityRole="button"
-                accessibilityState={{
-                  selected: selectedId === entry.id,
-                  disabled: busy,
-                }}
-                disabled={busy}
-                onPress={() => {
-                  if (selectedId === entry.id) void load();
-                  else {
-                    setEvent(null);
-                    setSelectedId(entry.id);
-                  }
-                }}
-                style={{
-                  gap: 6,
-                  padding: desktop ? 11 : 14,
-                  borderRadius: desktop ? 9 : 14,
-                  borderWidth: 1,
-                  borderColor:
-                    selectedId === entry.id ? color.lime : color.border,
-                }}
-              >
-                <View style={styles.between}>
-                  <Text style={[styles.label, { flex: 1 }]}>{entry.title}</Text>
-                  <Text style={[styles.small, { color: color.lime }]}>
-                    {campaignLabel(entry.status)}
-                  </Text>
-                </View>
+          {(desktop || agendaOpen) && (
+            <Card title="Your agenda">
+              {desktop && (
                 <Text style={styles.small}>
-                  {campaignLabel(entry.kind)} ·{" "}
-                  {entry.starts_local.replace("T", " ")} · {entry.timezone}
+                  {events.length} saved{" "}
+                  {events.length === 1 ? "event" : "events"} · select one to
+                  review its schedule
                 </Text>
+              )}
+              {!events.length ? (
                 <Text style={styles.small}>
-                  {entry.recurrence.frequency === "none"
-                    ? "One occurrence"
-                    : `Every ${entry.recurrence.interval} ${entry.recurrence.frequency === "daily" ? "day(s)" : "week(s)"} · up to ${entry.recurrence.count} occurrences`}
+                  No saved events yet. Add your first schedule below.
                 </Text>
-              </Pressable>
-            ))}
-            {upcomingConnectedEvents.length ? (
-              <>
-                <Text style={styles.label}>Connected calendars</Text>
-                <Text style={styles.small}>
-                  Last imported events. Use Connect → Sync now to refresh. Plan
-                  media opens an editable AI request; it does not send or
-                  publish anything.
-                </Text>
-                {upcomingConnectedEvents
-                  .slice(0, connectedLimit)
-                  .map((entry) => (
-                    <View
-                      key={entry.id}
-                      style={{
-                        paddingVertical: 10,
-                        gap: 6,
-                        borderTopWidth: 1,
-                        borderTopColor: color.border,
-                      }}
-                    >
-                      <Text style={styles.body}>{entry.title}</Text>
-                      <Text style={styles.small}>
-                        {entry.source} ·{" "}
-                        {entry.all_day
-                          ? `All day · ${entry.starts_at.slice(0, 10)}`
-                          : new Date(entry.starts_at).toLocaleString()}
-                      </Text>
-                      <Action
-                        secondary
-                        title="Plan media with Ziipa"
-                        onPress={() =>
-                          navigation.navigate("MediaOS", {
-                            tab: "Assistant",
-                            prompt: `Help me prepare media for a calendar event. Event title: ${JSON.stringify(entry.title)}. Starts: ${entry.starts_at}. Ask me to review the production plan, draft and destinations before taking action.`,
-                          })
-                        }
-                      />
-                    </View>
-                  ))}
-                {upcomingConnectedEvents.length > connectedLimit && (
-                  <Action
-                    secondary
-                    title="Show more calendar events"
-                    onPress={() => setConnectedLimit((limit) => limit + 20)}
-                  />
-                )}
-              </>
-            ) : null}
-            {campaigns.length ? (
-              <>
-                <Text style={styles.label}>Reviewed campaign schedules</Text>
-                <Text style={styles.small}>
-                  These remain controlled by their campaign approvals. A
-                  calendar link does not reschedule or duplicate a post.
-                </Text>
-                {campaigns.map((entry) => (
-                  <Action
-                    key={entry.id}
-                    secondary
-                    title={`${entry.name || entry.title || "Campaign"} · ${campaignLabel(entry.status)}`}
-                    onPress={() =>
-                      navigation.navigate("Campaigns", { campaignId: entry.id })
+              ) : null}
+              {events.map((entry) => (
+                <Pressable
+                  key={entry.id}
+                  accessibilityRole="button"
+                  accessibilityState={{
+                    selected: selectedId === entry.id,
+                    disabled: busy,
+                  }}
+                  disabled={busy}
+                  onPress={() => {
+                    setEditorStep(2);
+                    setAgendaOpen(false);
+                    page.current?.scrollTo({ y: 0, animated: true });
+                    if (selectedId === entry.id) void load();
+                    else {
+                      setEvent(null);
+                      setSelectedId(entry.id);
                     }
+                  }}
+                  style={{
+                    gap: 6,
+                    padding: desktop ? 11 : 14,
+                    borderRadius: desktop ? 9 : 14,
+                    borderWidth: 1,
+                    borderColor:
+                      selectedId === entry.id ? color.lime : color.border,
+                  }}
+                >
+                  <View style={styles.between}>
+                    <Text style={[styles.label, { flex: 1 }]}>
+                      {entry.title}
+                    </Text>
+                    <Text style={[styles.small, { color: color.lime }]}>
+                      {campaignLabel(entry.status)}
+                    </Text>
+                  </View>
+                  <Text style={styles.small}>
+                    {campaignLabel(entry.kind)} ·{" "}
+                    {entry.starts_local.replace("T", " ")} · {entry.timezone}
+                  </Text>
+                  <Text style={styles.small}>
+                    {entry.recurrence.frequency === "none"
+                      ? "One occurrence"
+                      : `Every ${entry.recurrence.interval} ${entry.recurrence.frequency === "daily" ? "day(s)" : "week(s)"} · up to ${entry.recurrence.count} occurrences`}
+                  </Text>
+                </Pressable>
+              ))}
+              {upcomingConnectedEvents.length ? (
+                <>
+                  <Text style={styles.label}>Connected calendars</Text>
+                  <HelpLabel
+                    label="Imported events"
+                    help="Use Connect to sync your calendars. Plan media opens a draft request for you to review before taking action."
                   />
-                ))}
-              </>
-            ) : null}
-          </Card>
+                  {upcomingConnectedEvents
+                    .slice(0, connectedLimit)
+                    .map((entry) => (
+                      <View
+                        key={entry.id}
+                        style={{
+                          paddingVertical: 10,
+                          gap: 6,
+                          borderTopWidth: 1,
+                          borderTopColor: color.border,
+                        }}
+                      >
+                        <Text style={styles.body}>{entry.title}</Text>
+                        <Text style={styles.small}>
+                          {entry.source} ·{" "}
+                          {entry.all_day
+                            ? `All day · ${entry.starts_at.slice(0, 10)}`
+                            : new Date(entry.starts_at).toLocaleString()}
+                        </Text>
+                        <Action
+                          secondary
+                          title="Plan media with Ziipa"
+                          onPress={() =>
+                            navigation.navigate("MediaOS", {
+                              tab: "Assistant",
+                              prompt: `Help me prepare media for a calendar event. Event title: ${JSON.stringify(entry.title)}. Starts: ${entry.starts_at}. Ask me to review the production plan, draft and destinations before taking action.`,
+                            })
+                          }
+                        />
+                      </View>
+                    ))}
+                  {upcomingConnectedEvents.length > connectedLimit && (
+                    <Action
+                      secondary
+                      title="Show more calendar events"
+                      onPress={() => setConnectedLimit((limit) => limit + 20)}
+                    />
+                  )}
+                </>
+              ) : null}
+              {campaigns.length ? (
+                <>
+                  <Text style={styles.label}>Reviewed campaign schedules</Text>
+                  <HelpLabel
+                    label="Campaign timing"
+                    help="Publishing times and approvals stay in Campaigns. Linking a calendar event does not change a post."
+                  />
+                  {campaigns.map((entry) => (
+                    <Action
+                      key={entry.id}
+                      secondary
+                      title={`${entry.name || entry.title || "Campaign"} · ${campaignLabel(entry.status)}`}
+                      onPress={() =>
+                        navigation.navigate("Campaigns", {
+                          campaignId: entry.id,
+                        })
+                      }
+                    />
+                  ))}
+                </>
+              ) : null}
+            </Card>
+          )}
         </DesktopGroup>
         <DesktopGroup style={{ flex: 1, minWidth: 0, width: "100%", gap: 18 }}>
           {selectedId && !event ? (
             <Notice text="Loading event…" />
           ) : (
             <>
-              <Card title={event ? "Edit schedule" : "Plan an event"}>
-                {event ? (
-                  <Text style={styles.small}>
-                    Revision {event.revision} · {campaignLabel(event.status)}
-                  </Text>
-                ) : null}
-                <Field
-                  label="Event title"
-                  value={draft.title}
-                  editable={!busy && event?.status !== "cancelled"}
-                  maxLength={140}
-                  onChangeText={(value) => change("title", value)}
-                />
-                <View
-                  style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}
-                >
-                  {(["reminder", "campaign", "stream"] as CalendarKind[]).map(
-                    (kind) => (
-                      <Pill
-                        key={kind}
-                        title={campaignLabel(kind)}
-                        active={draft.kind === kind}
-                        onPress={() => {
-                          if (!busy && event?.status !== "cancelled")
-                            change("kind", kind);
-                        }}
-                      />
-                    ),
-                  )}
-                </View>
-                <Field
-                  label="Notes"
-                  value={draft.notes}
-                  multiline
-                  maxLength={2000}
-                  editable={!busy && event?.status !== "cancelled"}
-                  onChangeText={(value) => change("notes", value)}
-                />
-                <DesktopGroup
-                  style={{
-                    flexDirection: contentWidth >= 1260 ? "row" : "column",
-                    gap: 22,
-                    alignItems: "stretch",
+              <Card title={event ? "Your event" : "New event"}>
+                <CalendarEventFlow
+                  key={selectedId || requestId.current}
+                  step={editorStep}
+                  changeStep={(step) => {
+                    setEditorStep(step);
+                    page.current?.scrollTo({ y: 0, animated: true });
                   }}
-                >
-                  <DesktopGroup style={{ flex: 1, minWidth: 0, gap: 14 }}>
-                    <Field
-                      label="Timezone · IANA name"
-                      value={draft.timezone}
-                      autoCapitalize="none"
-                      editable={!busy && event?.status !== "cancelled"}
-                      placeholder="America/New_York"
-                      onChangeText={(value) => change("timezone", value)}
-                    />
-                    <Text style={styles.label}>
-                      Choose a date · {draft.timezone}
-                    </Text>
-                    <CalendarDayPicker
-                      value={day}
-                      disabled={busy || event?.status === "cancelled"}
-                      onChange={(date) =>
-                        change("startsLocal", `${date}T${clockTime || "18:00"}`)
-                      }
-                    />
-                  </DesktopGroup>
-                  <DesktopGroup style={{ flex: 1, minWidth: 0, gap: 14 }}>
-                    <Field
-                      label="Local time · 24-hour HH:mm"
-                      value={clockTime}
-                      editable={!busy && event?.status !== "cancelled"}
-                      placeholder="18:00"
-                      maxLength={5}
-                      onChangeText={(value) =>
-                        change("startsLocal", `${day}T${value}`)
-                      }
-                    />
-                    <Pill
-                      title={
-                        advancedTime
-                          ? "Hide advanced date and time"
-                          : "Advanced date and time"
-                      }
-                      active={advancedTime}
-                      onPress={() => setAdvancedTime((value) => !value)}
-                    />
-                    {advancedTime ? (
+                  busy={busy}
+                  canSave={!event || dirty}
+                  readOnly={event?.status === "cancelled"}
+                  existing={!!event}
+                  error={error}
+                  validateDetails={() => validateCalendarDetails(draft)}
+                  validateSchedule={() => {
+                    calendarInput(draft);
+                  }}
+                  onSave={() => void run(save)}
+                  details={
+                    <>
                       <Field
-                        label="Advanced local date and time · no offset"
-                        value={draft.startsLocal}
+                        label="Event title"
+                        value={draft.title}
                         editable={!busy && event?.status !== "cancelled"}
-                        placeholder="2026-10-20T18:00:00"
-                        onChangeText={(value) => change("startsLocal", value)}
+                        maxLength={140}
+                        onChangeText={(value) => change("title", value)}
                       />
-                    ) : null}
-                    <Text style={styles.small}>
-                      The server applies the selected timezone. A nonexistent
-                      daylight-saving time is rejected; recurring gaps are
-                      skipped.
-                    </Text>
-                    <HelpLabel label="If the clock repeats this hour" help="When clocks move back, the same local time can occur twice. Choose whether your event uses the earlier or later occurrence." />
-                    <View style={{ flexDirection: "row", gap: 8 }}>
-                      <Pill
-                        title="Earlier occurrence"
-                        active={draft.fold === "earlier"}
-                        onPress={() => {
-                          if (!busy) change("fold", "earlier");
-                        }}
-                      />
-                      <Pill
-                        title="Later occurrence"
-                        active={draft.fold === "later"}
-                        onPress={() => {
-                          if (!busy) change("fold", "later");
-                        }}
-                      />
-                    </View>
-                    <Field
-                      label="Planned duration · minutes"
-                      value={draft.duration}
-                      keyboardType="number-pad"
-                      editable={!busy && event?.status !== "cancelled"}
-                      onChangeText={(value) => change("duration", value)}
-                    />
-                    <Field
-                      label="Reminder lead time · minutes before"
-                      value={draft.reminder}
-                      keyboardType="number-pad"
-                      editable={!busy && event?.status !== "cancelled"}
-                      onChangeText={(value) => change("reminder", value)}
-                    />
-                    <Text style={styles.small}>
-                      Reminders appear as saved Ziipa receipts. Email and push
-                      delivery are not implied.
-                    </Text>
-                    <HelpLabel label="Repeat" help="Creates recurring event dates. A scheduled stream is a plan; you must still start the broadcast yourself." />
-                    <View
-                      style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}
-                    >
-                      {(["none", "daily", "weekly"] as const).map(
-                        (frequency) => (
-                          <Pill
-                            key={frequency}
-                            title={campaignLabel(frequency)}
-                            active={draft.frequency === frequency}
-                            onPress={() => {
-                              if (!busy) change("frequency", frequency);
-                            }}
-                          />
-                        ),
-                      )}
-                    </View>
-                    {draft.frequency !== "none" ? (
-                      <>
-                        <Field
-                          label={`Repeat every · ${draft.frequency === "daily" ? "days" : "weeks"}`}
-                          value={draft.interval}
-                          keyboardType="number-pad"
-                          editable={!busy}
-                          onChangeText={(value) => change("interval", value)}
-                        />
-                        <Field
-                          label="Maximum occurrences · 1–52"
-                          value={draft.count}
-                          keyboardType="number-pad"
-                          editable={!busy}
-                          onChangeText={(value) => change("count", value)}
-                        />
-                        <Field
-                          label="Optional last local date · YYYY-MM-DD"
-                          value={draft.until}
-                          editable={!busy}
-                          placeholder="2026-12-31"
-                          onChangeText={(value) => change("until", value)}
-                        />
-                      </>
-                    ) : null}
-                    {draft.frequency === "weekly" ? (
                       <View
                         style={{
                           flexDirection: "row",
@@ -879,99 +770,375 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
                           flexWrap: "wrap",
                         }}
                       >
-                        {calendarWeekdays.map((day, index) => (
+                        {(
+                          ["reminder", "campaign", "stream"] as CalendarKind[]
+                        ).map((kind) => (
                           <Pill
-                            key={day}
-                            title={day}
-                            active={draft.weekdays.includes(index)}
+                            key={kind}
+                            title={campaignLabel(kind)}
+                            active={draft.kind === kind}
                             onPress={() => {
-                              if (!busy)
-                                change(
-                                  "weekdays",
-                                  draft.weekdays.includes(index)
-                                    ? draft.weekdays.filter(
-                                        (value) => value !== index,
-                                      )
-                                    : [...draft.weekdays, index].sort(),
-                                );
+                              if (!busy && event?.status !== "cancelled")
+                                change("kind", kind);
                             }}
                           />
                         ))}
                       </View>
-                    ) : null}
-                  </DesktopGroup>
-                </DesktopGroup>
-                {draft.kind === "campaign" ? (
-                  <>
-                    <Text style={styles.label}>
-                      Optional owned campaign link
-                    </Text>
-                    <Pill
-                      title="No link"
-                      active={!draft.campaignId}
-                      onPress={() => change("campaignId", null)}
-                    />
-                    {campaigns.map((entry) => (
-                      <Pill
-                        key={entry.id}
-                        title={entry.name || entry.title || entry.id}
-                        active={draft.campaignId === entry.id}
-                        onPress={() => {
-                          if (!busy) change("campaignId", entry.id);
-                        }}
+                      <Field
+                        label="Notes"
+                        value={draft.notes}
+                        multiline
+                        maxLength={2000}
+                        editable={!busy && event?.status !== "cancelled"}
+                        onChangeText={(value) => change("notes", value)}
                       />
-                    ))}
-                    <Notice text="Set publishing times in the linked campaign." />
-                  </>
-                ) : null}
-                {draft.kind === "stream" ? (
-                  <>
-                    <Text style={styles.label}>
-                      Optional owned broadcast link
-                    </Text>
-                    <Pill
-                      title="No link yet"
-                      active={!draft.streamId}
-                      onPress={() => change("streamId", null)}
-                    />
-                    {streams.map((stream) => (
-                      <Pill
-                        key={stream.id}
-                        title={`${stream.title} · ${campaignLabel(stream.status)}`}
-                        active={draft.streamId === stream.id}
-                        onPress={() => {
-                          if (!busy) change("streamId", stream.id);
+                      {draft.kind === "campaign" ? (
+                        <>
+                          <Text style={styles.label}>Campaign (optional)</Text>
+                          <Pill
+                            title="No link"
+                            active={!draft.campaignId}
+                            onPress={() => change("campaignId", null)}
+                          />
+                          {campaigns.map((entry) => (
+                            <Pill
+                              key={entry.id}
+                              title={entry.name || entry.title || entry.id}
+                              active={draft.campaignId === entry.id}
+                              onPress={() => {
+                                if (!busy) change("campaignId", entry.id);
+                              }}
+                            />
+                          ))}
+                          <Notice text="Set publishing times in the linked campaign." />
+                        </>
+                      ) : null}
+                      {draft.kind === "stream" ? (
+                        <>
+                          <Text style={styles.label}>Broadcast (optional)</Text>
+                          <Pill
+                            title="No link yet"
+                            active={!draft.streamId}
+                            onPress={() => change("streamId", null)}
+                          />
+                          {streams.map((stream) => (
+                            <Pill
+                              key={stream.id}
+                              title={`${stream.title} · ${campaignLabel(stream.status)}`}
+                              active={draft.streamId === stream.id}
+                              onPress={() => {
+                                if (!busy) change("streamId", stream.id);
+                              }}
+                            />
+                          ))}
+                          <Action
+                            secondary
+                            title="Prepare a broadcast in Live controls"
+                            icon={Radio}
+                            onPress={() =>
+                              navigation.navigate("Live", { tab: "broadcast" })
+                            }
+                          />
+                          <Notice text="Start your broadcast from Live Feed." />
+                        </>
+                      ) : null}
+                    </>
+                  }
+                  schedule={
+                    <>
+                      <DesktopGroup
+                        style={{
+                          flexDirection:
+                            contentWidth >= 1260 ? "row" : "column",
+                          gap: 22,
+                          alignItems: "stretch",
                         }}
+                      >
+                        <DesktopGroup style={{ flex: 1, minWidth: 0, gap: 14 }}>
+                          <Text style={styles.label}>
+                            Choose a date · {draft.timezone}
+                          </Text>
+                          <CalendarDayPicker
+                            value={day}
+                            disabled={busy || event?.status === "cancelled"}
+                            onChange={(date) =>
+                              change(
+                                "startsLocal",
+                                `${date}T${clockTime || "18:00"}`,
+                              )
+                            }
+                          />
+                        </DesktopGroup>
+                        <DesktopGroup style={{ flex: 1, minWidth: 0, gap: 14 }}>
+                          <Field
+                            label="Time (24-hour)"
+                            value={clockTime}
+                            editable={!busy && event?.status !== "cancelled"}
+                            placeholder="18:00"
+                            maxLength={5}
+                            onChangeText={(value) =>
+                              change("startsLocal", `${day}T${value}`)
+                            }
+                          />
+                          <Pill
+                            title={
+                              advancedTime
+                                ? "Hide advanced date and time"
+                                : "Advanced date and time"
+                            }
+                            active={advancedTime}
+                            onPress={() => setAdvancedTime((value) => !value)}
+                          />
+                          {advancedTime ? (
+                            <View style={{ gap: 12 }}>
+                              <Field
+                                label="Timezone"
+                                help="Use a location such as America/New_York or Europe/London. Event times follow that timezone."
+                                value={draft.timezone}
+                                autoCapitalize="none"
+                                editable={
+                                  !busy && event?.status !== "cancelled"
+                                }
+                                placeholder="America/New_York"
+                                onChangeText={(value) =>
+                                  change("timezone", value)
+                                }
+                              />
+                              <Field
+                                label="Exact local date and time"
+                                value={draft.startsLocal}
+                                editable={
+                                  !busy && event?.status !== "cancelled"
+                                }
+                                placeholder="2026-10-20T18:00:00"
+                                onChangeText={(value) =>
+                                  change("startsLocal", value)
+                                }
+                              />
+                              <HelpLabel
+                                label="If the clock repeats this hour"
+                                help="When clocks move back, the same local time can occur twice. Choose whether your event uses the earlier or later occurrence."
+                              />
+                              <View style={{ flexDirection: "row", gap: 8 }}>
+                                <Pill
+                                  title="Earlier occurrence"
+                                  active={draft.fold === "earlier"}
+                                  onPress={() => {
+                                    if (!busy) change("fold", "earlier");
+                                  }}
+                                />
+                                <Pill
+                                  title="Later occurrence"
+                                  active={draft.fold === "later"}
+                                  onPress={() => {
+                                    if (!busy) change("fold", "later");
+                                  }}
+                                />
+                              </View>
+                            </View>
+                          ) : null}
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              flexWrap: "wrap",
+                              gap: 12,
+                            }}
+                          >
+                            <View style={{ flex: 1, minWidth: 130 }}>
+                              <Field
+                                label="Duration (minutes)"
+                                value={draft.duration}
+                                keyboardType="number-pad"
+                                editable={
+                                  !busy && event?.status !== "cancelled"
+                                }
+                                onChangeText={(value) =>
+                                  change("duration", value)
+                                }
+                              />
+                            </View>
+                            <View style={{ flex: 1, minWidth: 130 }}>
+                              <Field
+                                label="Remind me (minutes before)"
+                                value={draft.reminder}
+                                keyboardType="number-pad"
+                                editable={
+                                  !busy && event?.status !== "cancelled"
+                                }
+                                onChangeText={(value) =>
+                                  change("reminder", value)
+                                }
+                              />
+                            </View>
+                          </View>
+                          <HelpLabel
+                            label="Reminder delivery"
+                            help="Ziipa saves your reminders in your account. Device alerts also need your notification preferences and permission."
+                          />
+                          <HelpLabel
+                            label="Repeat"
+                            help="Creates recurring event dates. A scheduled stream is a plan; you must still start the broadcast yourself."
+                          />
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              gap: 8,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            {(["none", "daily", "weekly"] as const).map(
+                              (frequency) => (
+                                <Pill
+                                  key={frequency}
+                                  title={campaignLabel(frequency)}
+                                  active={draft.frequency === frequency}
+                                  onPress={() => {
+                                    if (!busy) change("frequency", frequency);
+                                  }}
+                                />
+                              ),
+                            )}
+                          </View>
+                          {draft.frequency !== "none" ? (
+                            <>
+                              <Field
+                                label={`Repeat every · ${draft.frequency === "daily" ? "days" : "weeks"}`}
+                                value={draft.interval}
+                                keyboardType="number-pad"
+                                editable={!busy}
+                                onChangeText={(value) =>
+                                  change("interval", value)
+                                }
+                              />
+                              <Field
+                                label="Maximum occurrences · 1–52"
+                                value={draft.count}
+                                keyboardType="number-pad"
+                                editable={!busy}
+                                onChangeText={(value) => change("count", value)}
+                              />
+                              <Field
+                                label="Optional last local date · YYYY-MM-DD"
+                                value={draft.until}
+                                editable={!busy}
+                                placeholder="2026-12-31"
+                                onChangeText={(value) => change("until", value)}
+                              />
+                            </>
+                          ) : null}
+                          {draft.frequency === "weekly" ? (
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                gap: 8,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              {calendarWeekdays.map((day, index) => (
+                                <Pill
+                                  key={day}
+                                  title={day}
+                                  active={draft.weekdays.includes(index)}
+                                  onPress={() => {
+                                    if (!busy)
+                                      change(
+                                        "weekdays",
+                                        draft.weekdays.includes(index)
+                                          ? draft.weekdays.filter(
+                                              (value) => value !== index,
+                                            )
+                                          : [...draft.weekdays, index].sort(),
+                                      );
+                                  }}
+                                />
+                              ))}
+                            </View>
+                          ) : null}
+                        </DesktopGroup>
+                      </DesktopGroup>
+                    </>
+                  }
+                  review={
+                    <View style={{ gap: 14 }}>
+                      <View style={{ gap: 5 }}>
+                        <Text style={styles.heading}>
+                          {draft.title || "Untitled event"}
+                        </Text>
+                        <Text style={styles.small}>
+                          {campaignLabel(draft.kind)}
+                          {event
+                            ? ` · ${campaignLabel(event.status)}`
+                            : " · Private plan"}
+                        </Text>
+                      </View>
+                      <View
+                        style={{
+                          padding: 14,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: color.border,
+                          gap: 8,
+                        }}
+                      >
+                        <Text style={styles.label}>
+                          {draft.startsLocal.replace("T", " · ")}
+                        </Text>
+                        <Text style={styles.small}>
+                          {draft.timezone} · {draft.duration} minutes
+                        </Text>
+                        <Text style={styles.body}>
+                          {draft.reminder === "0"
+                            ? "Reminder at the start"
+                            : `Reminder ${draft.reminder} minutes before`}
+                        </Text>
+                        <Text style={styles.small}>
+                          {draft.frequency === "none"
+                            ? "Does not repeat"
+                            : `Every ${draft.interval} ${draft.frequency === "daily" ? "day(s)" : "week(s)"} · up to ${draft.count} dates`}
+                        </Text>
+                        {draft.frequency === "weekly" && (
+                          <Text style={styles.small}>
+                            {draft.weekdays
+                              .map((index) => calendarWeekdays[index])
+                              .join(" · ")}
+                          </Text>
+                        )}
+                        {!!draft.until && draft.frequency !== "none" && (
+                          <Text style={styles.small}>Until {draft.until}</Text>
+                        )}
+                      </View>
+                      {!!draft.notes.trim() && (
+                        <Text style={styles.body}>{draft.notes}</Text>
+                      )}
+                      {draft.kind === "stream" && draft.streamId && (
+                        <Text style={styles.body}>
+                          Broadcast ·{" "}
+                          {streams.find((value) => value.id === draft.streamId)
+                            ?.title || "Linked broadcast"}
+                        </Text>
+                      )}
+                      {draft.kind === "campaign" && draft.campaignId && (
+                        <Text style={styles.body}>
+                          Campaign ·{" "}
+                          {campaigns.find(
+                            (value) => value.id === draft.campaignId,
+                          )?.name ||
+                            campaigns.find(
+                              (value) => value.id === draft.campaignId,
+                            )?.title ||
+                            "Linked campaign"}
+                        </Text>
+                      )}
+                      <HelpLabel
+                        label="Private schedule"
+                        help="Saving an event creates its dates and Ziipa reminders. Broadcasting and publishing still need your separate approval. Choose device notifications in Notifications."
                       />
-                    ))}
-                    <Action
-                      secondary
-                      title="Prepare a broadcast in Live controls"
-                      icon={Radio}
-                      onPress={() =>
-                        navigation.navigate("Live", { tab: "broadcast" })
-                      }
-                    />
-                    <Notice text="Start your broadcast from Live Feed." />
-                  </>
-                ) : null}
-                {dirty ? (
-                  <Notice text="Save your changes to update upcoming reminders." />
-                ) : null}
-                <Action
-                  title={
-                    event ? "Save schedule changes" : "Save calendar event"
+                    </View>
                   }
-                  icon={CalendarClock}
-                  busy={busy}
-                  disabled={
-                    event?.status === "cancelled" || (!!event && !dirty)
-                  }
-                  onPress={() => void run(save)}
                 />
               </Card>
 
-              {event ? (
+              {event && editorStep === 2 ? (
                 <>
                   {event.kind === "stream" ? (
                     <Card title="Broadcast checks">
@@ -1104,12 +1271,15 @@ function ScopedCalendarScreen({ navigation, route }: Props) {
                           {calendarMoment(occurrence.starts_at, event.timezone)}{" "}
                           · {event.timezone}
                         </Text>
+                        <HelpLabel
+                          label={campaignLabel(occurrence.status)}
+                          help={
+                            occurrence.detail || "Your saved reminder status."
+                          }
+                          style={styles.small}
+                        />
                         <Text style={styles.small}>
-                          {campaignLabel(occurrence.status)} ·{" "}
-                          {occurrence.detail}
-                        </Text>
-                        <Text style={styles.small}>
-                          UTC: {occurrence.starts_at} · reminder{" "}
+                          Reminder ·{" "}
                           {calendarMoment(occurrence.remind_at, event.timezone)}
                         </Text>
                         {calendarCanAcknowledge(event, occurrence) ? (

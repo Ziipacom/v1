@@ -10,7 +10,8 @@ import {
   Volume2,
 } from "lucide-react-native";
 import { useDevicePreferences } from "./device-preferences";
-import { Action, Notice, Pill } from "./ui";
+import { Action, IconButton, Notice, Pill } from "./ui";
+import { InfoTip } from "./info-tip";
 import { useDesktopLayout } from "./desktop-layout";
 import { workspace } from "./desktop-workspace";
 import { useZiipa } from "../provider";
@@ -103,9 +104,7 @@ function ScopedSettingsControls({ navigation }: Props) {
       );
       if (valid()) {
         setPreferences(next);
-        setMessage(
-          "Ziipa push notifications are off for your account. Browser/OS permissions and existing device registrations are unchanged.",
-        );
+        setMessage("Account notifications are off.");
       }
     } catch (cause) {
       if (valid())
@@ -126,9 +125,7 @@ function ScopedSettingsControls({ navigation }: Props) {
     setMessage("");
     try {
       await device.update(patch);
-      setMessage(
-        "Device preference saved. This does not change other devices or grant any permissions.",
-      );
+      setMessage("Saved on this device.");
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -140,21 +137,25 @@ function ScopedSettingsControls({ navigation }: Props) {
     }
   }
   return (
-    <View style={{ gap: 20 }}>
+    <View style={{ gap: 12 }}>
       {!!error && <Notice error text={error} />}
       {!!device.error && <Notice error text={device.error} />}
-      {!!message && <Notice text={message} />}
+      {!!message && (
+        <Text accessibilityLiveRegion="polite" style={styles.small}>
+          {message}
+        </Text>
+      )}
       <View style={[styles.panel, desktop && workspace.panel]}>
         <View style={styles.row}>
           <Monitor size={21} color={color.lime} />
           <Text accessibilityRole="header" style={styles.heading}>
             Appearance
           </Text>
+          <InfoTip
+            title="appearance"
+            content="Theme and playback preferences are saved on this device. Videos, editing canvases and overlays keep their actual colors."
+          />
         </View>
-        <Text style={styles.small}>
-          Choose Ziipa's interface theme. Videos, editing canvases and text
-          overlays keep their actual media colors.
-        </Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           {(["system", "dark", "light"] as AppearancePreference[]).map(
             (appearance) => (
@@ -162,7 +163,7 @@ function ScopedSettingsControls({ navigation }: Props) {
                 key={appearance}
                 title={
                   appearance === "system"
-                    ? "Use device setting"
+                    ? "System"
                     : appearance === "dark"
                       ? "Dark"
                       : "Light"
@@ -176,10 +177,6 @@ function ScopedSettingsControls({ navigation }: Props) {
             ),
           )}
         </View>
-        <Text style={styles.small}>
-          Appearance and playback preferences stay on this device/browser. They
-          are not synced to your Ziipa account.
-        </Text>
       </View>
       <View style={[styles.panel, desktop && workspace.panel]}>
         <View style={styles.row}>
@@ -190,14 +187,10 @@ function ScopedSettingsControls({ navigation }: Props) {
         </View>
         {(
           [
-            [
-              "autoplay",
-              "Autoplay media in feeds and galleries",
-              "When off, press Play for each creation.",
-            ],
+            ["autoplay", "Autoplay", "When off, press Play for each creation."],
             [
               "startMuted",
-              "Start feed media muted",
+              "Start muted",
               "Choose the starting audio state when you move to another creation. Your browser may still require a Play gesture.",
             ],
             [
@@ -207,95 +200,91 @@ function ScopedSettingsControls({ navigation }: Props) {
             ],
           ] as const
         ).map(([key, label, detail]) => (
-          <View key={key} style={{ gap: 4 }}>
-            <View style={styles.between}>
-              <Text style={[styles.body, { flex: 1 }]}>{label}</Text>
-              <Switch
-                accessibilityLabel={label}
-                value={device.preferences[key]}
-                disabled={!device.ready || deviceBusy}
-                trackColor={{ true: color.purple }}
-                onValueChange={(value) => void saveDevice({ [key]: value })}
-              />
-            </View>
-            <Text style={styles.small}>{detail}</Text>
+          <View key={key} style={styles.between}>
+            <Text style={[styles.body, { flex: 1 }]}>{label}</Text>
+            <InfoTip title={label} content={detail} />
+            <Switch
+              accessibilityLabel={label}
+              value={device.preferences[key]}
+              disabled={!device.ready || deviceBusy}
+              trackColor={{ true: color.purple }}
+              onValueChange={(value) => void saveDevice({ [key]: value })}
+            />
           </View>
         ))}
       </View>
       <View style={[styles.panel, desktop && workspace.panel]}>
         <View style={styles.row}>
           <Bell size={21} color={color.lime} />
-          <Text accessibilityRole="header" style={styles.heading}>
+          <Text
+            accessibilityRole="header"
+            style={[styles.heading, { flex: 1 }]}
+          >
             Notifications
           </Text>
+          <IconButton
+            label="Refresh notification status"
+            icon={RefreshCw}
+            disabled={loading || !session || busy}
+            onPress={() => void load()}
+          />
         </View>
         <View style={styles.between}>
-          <Text style={[styles.body, { flex: 1 }]}>
-            Push updates for my account
-          </Text>
+          <Text style={[styles.body, { flex: 1 }]}>Account push</Text>
+          <InfoTip
+            title="account push"
+            content="Choose categories and enable your device in Notifications. This control doesn’t request permission or register a device."
+          />
           <Switch
             accessibilityLabel="Push notifications for my account"
             value={preferences?.enabled === true}
             disabled={!session || !preferences || loading || busy}
             trackColor={{ true: color.purple }}
             onValueChange={(value) => {
-              if (value) navigation.navigate("Notifications", {tab: "Preferences"});
+              if (value)
+                navigation.navigate("Notifications", { tab: "Preferences" });
               else void turnOffPush();
             }}
           />
         </View>
         <Text style={styles.small}>
           {!session
-            ? "Sign in to manage account notifications."
+            ? "Sign in to manage notifications."
             : loading
-              ? "Checking your saved preferences…"
+              ? "Checking…"
               : preferences
-                ? `${preferences.enabled ? "On" : "Off"} · ${preferences.categories.length ? preferences.categories.join(", ") : "No categories selected"}. ${devices ? `${devices.filter((value) => value.status === "active").length} registered device(s).` : "Device readiness unavailable."}`
-                : "Notification settings are unavailable. Refresh before changing them."}
-        </Text>
-        <Text style={styles.small}>
-          Turning on opens category consent and explicit “Enable on this device”
-          setup. This switch never requests browser/OS permission or registers a
-          device automatically.
+                ? `${preferences.enabled ? "On" : "Off"} · ${devices ? devices.filter((value) => value.status === "active").length + " registered devices" : "Devices unavailable"}`
+                : "Notifications unavailable"}
         </Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           <Action
-            title="Categories & device permissions"
+            title="Manage notifications"
             icon={Bell}
             secondary
             disabled={busy}
-            onPress={() => navigation.navigate("Notifications", {tab: "Preferences"})}
+            onPress={() =>
+              navigation.navigate("Notifications", { tab: "Preferences" })
+            }
           />
-          <Action
-            title="Refresh notification status"
-            icon={RefreshCw}
-            secondary
-            busy={loading}
-            disabled={!session || busy}
-            onPress={() => void load()}
-          />
+          {Platform.OS === "web" ? (
+            <InfoTip
+              title="browser permissions"
+              content="Use the site controls beside your address bar to check Notifications, Camera and Microphone."
+            />
+          ) : (
+            <IconButton
+              icon={Settings}
+              label="Open device permission settings"
+              onPress={() => {
+                void Linking.openSettings().catch(() =>
+                  setError(
+                    "Open your device Settings app, choose Ziipa, and review permissions there.",
+                  ),
+                );
+              }}
+            />
+          )}
         </View>
-        <Action
-          title={
-            Platform.OS === "web"
-              ? "Browser permission help"
-              : "Open device permission settings"
-          }
-          icon={Settings}
-          secondary
-          onPress={() => {
-            if (Platform.OS === "web")
-              setMessage(
-                "Use the site-controls icon beside your browser address to review Notifications, Camera and Microphone. Ziipa only asks for a permission when you explicitly use its related feature.",
-              );
-            else
-              void Linking.openSettings().catch(() =>
-                setError(
-                  "Open your device Settings app, choose Ziipa, and review permissions there.",
-                ),
-              );
-          }}
-        />
       </View>
     </View>
   );

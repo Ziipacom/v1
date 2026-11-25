@@ -1,4 +1,3 @@
-import { HelpLabel } from "../components/help-label";
 import { useDesktopLayout } from "../components/desktop-layout";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -18,6 +17,14 @@ import {
   ShieldCheck,
   Trash2,
   ArrowUpRight,
+  Smartphone,
+  Monitor,
+  Plus,
+  Settings2,
+  CalendarDays,
+  Clapperboard,
+  Send,
+  Info,
 } from "lucide-react-native";
 import { Action, Field, IconButton, Notice, Pill } from "../components/ui";
 import { Sheet } from "../components/floating";
@@ -39,7 +46,6 @@ import {
   notificationPreferenceInput,
   notificationProviderReadiness,
   notificationRoot,
-  notificationStatus,
   type NotificationCategory,
   type PushConfig,
   type PushDelivery,
@@ -50,6 +56,66 @@ import type { RootStack } from "../lib/types";
 import { color, styles } from "../theme";
 
 type Props = NativeStackScreenProps<RootStack, "Notifications">;
+
+export function notificationScreenError(cause: unknown, loading = false) {
+  const error = cause as { status?: number; outcome?: string } | null;
+  if (error?.outcome === "unconfirmed")
+    return "This change was not confirmed. Refresh its status before trying again.";
+  if (error?.status === 401) return "Sign in again to view your updates.";
+  if (error?.status === 403)
+    return "This notification action is unavailable for your account.";
+  if (error?.status === 404)
+    return "This update or device is no longer available. Refresh to check.";
+  if (error?.status === 409)
+    return "Your preferences changed. Refresh before saving again.";
+  if (error?.status === 429) return "Please wait a moment before trying again.";
+  if (error?.status === 503)
+    return "Device notifications are unavailable right now. In-app updates remain available.";
+  return loading
+    ? "Updates could not be loaded. Refresh to try again."
+    : "That change could not be completed. Refresh and try again.";
+}
+export function notificationScreenStatus(status: string) {
+  const labels: Record<string, string> = {
+    pending: "Queued",
+    queued: "Queued",
+    sending: "Sending",
+    accepted: "Sent to service",
+    provider_accepted: "Sent to service",
+    delivered: "Delivery receipt",
+    opened: "Opened",
+    failed: "Not sent",
+    blocked: "Blocked",
+    disabled: "Off",
+    revoked: "Removed",
+    active: "Registered",
+    uncertain: "Not confirmed",
+    skipped: "Not sent",
+  };
+  return labels[status] || "Status unavailable";
+}
+function NotificationState({
+  label,
+  active = false,
+}: {
+  label: string;
+  active?: boolean;
+}) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+      <View
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: 4,
+          backgroundColor: active ? color.lime : color.muted,
+        }}
+      />
+      <Text style={styles.small}>{label}</Text>
+    </View>
+  );
+}
+
 function Consent({
   text,
   checked,
@@ -131,6 +197,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
     else if (route.params?.tab) setTab(route.params.tab);
   }, [route.params?.deliveryId, route.params?.tab]);
   const [serviceOpen, setServiceOpen] = useState(false);
+  const [enrollmentOpen, setEnrollmentOpen] = useState(false);
   const tabsScroll = useRef<ScrollView>(null);
   useEffect(() => {
     if (Platform.OS !== "web" || !focused) return;
@@ -187,12 +254,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
       setAccountConsent(false);
       setDeviceConsent(false);
     } catch (cause) {
-      if (valid())
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Notifications could not be loaded.",
-        );
+      if (valid()) setError(notificationScreenError(cause, true));
     } finally {
       loading.current = false;
       setBusy(false);
@@ -211,12 +273,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
     try {
       await action(valid);
     } catch (cause) {
-      if (valid())
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "This notification action could not complete.",
-        );
+      if (valid()) setError(notificationScreenError(cause));
     } finally {
       mutation.current = false;
       setBusy(false);
@@ -243,8 +300,8 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
     setAccountConsent(false);
     setMessage(
       result.enabled
-        ? "Your category preferences are saved. Register this device separately to receive push."
-        : "Push is disabled for your account. Browser or OS permissions are managed separately in device settings.",
+        ? "Preferences saved. Enable each device separately."
+        : "Account notifications are off.",
     );
   }
   async function register(valid: () => boolean) {
@@ -267,9 +324,8 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
     ]);
     setCapability(supported);
     setDeviceConsent(false);
-    setMessage(
-      "This device is registered. New notification activity will appear below.",
-    );
+    setMessage("Device registered with Ziipa.");
+    setEnrollmentOpen(false);
   }
   if (!session || guest)
     return (
@@ -309,7 +365,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
           ? "Not enabled"
           : capability?.permission === "unavailable"
             ? "Unavailable"
-            : capability?.permission || "Checking…";
+            : "Checking...";
   const appVersion =
     Application.nativeApplicationVersion ||
     Constants.expoConfig?.version ||
@@ -321,15 +377,20 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
       : Platform.OS === "android"
         ? "Android"
         : "Web";
+  const panel = [styles.panel, { padding: 16, borderRadius: 16, gap: 14 }];
+  const registered = devices.filter((device) => device.status !== "revoked");
+  const unread = deliveries.filter((delivery) => !delivery.opened_at).length;
   const accountPanel = (
-    <View style={styles.panel}>
-      <HelpLabel
-        label="Account preferences"
-        style={styles.heading}
-        help="Choose which Ziipa updates you want. Device registration and operating-system permission are managed separately."
-      />
+    <View style={[...panel, { maxWidth: 760 }]}>
+      <View style={styles.between}>
+        <Text style={[styles.heading, { fontSize: 19 }]}>Preferences</Text>
+        <InfoTip
+          title="Your notification choices"
+          content="Choose the updates Ziipa may send. Saving an opt-in requires your consent. Each device also needs its own registration and system permission; turning this account setting off does not change that system permission."
+        />
+      </View>
       <Consent
-        text="Push notifications"
+        text="Account notifications"
         checked={enabled}
         disabled={busy}
         onPress={() => {
@@ -348,7 +409,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
                 category === "calendar"
                   ? "Calendar reminders"
                   : category === "recordings"
-                    ? "Recordings and clips"
+                    ? "Recordings & clips"
                     : "Publishing updates"
               }
               checked={categories.includes(category)}
@@ -365,63 +426,63 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
           </View>
         ))}
       </View>
-      <Text style={styles.small}>
-        Notifications keep your media, creation titles and calendar notes private.
-      </Text>
       {enabled && (
         <Consent
-          text="I consent to these selected notification categories. I can disable them at any time."
+          text="I agree to receive these selected updates."
           checked={accountConsent}
           disabled={busy}
           onPress={() => setAccountConsent(!accountConsent)}
         />
       )}
-      <Action
-        title="Save preferences"
-        icon={ShieldCheck}
-        disabled={
-          busy ||
-          !preferences ||
-          (enabled && (!accountConsent || !categories.length))
-        }
-        onPress={() => void mutate(save)}
-      />
-    </View>
-  );
-  const devicePanel = (
-    <View style={styles.panel}>
-      <HelpLabel
-        label="This device"
-        style={styles.heading}
-        help="Register this phone or browser only after enabling account preferences and reviewing the device permission request."
-      />
-      <View style={[styles.between, { flexWrap: "wrap" }]}>
-        <Text style={styles.body}>
-          {platformName} · permission {permission}
-        </Text>
-        <InfoTip
-          title="Notification permission"
-          content={
-            capability?.detail ||
-            "Notification permission and saved account preferences are separate. Permission is requested only when you explicitly enable this device."
+      <View style={{ alignSelf: "flex-start" }}>
+        <Action
+          title="Save preferences"
+          icon={ShieldCheck}
+          disabled={
+            busy ||
+            !preferences ||
+            (enabled && (!accountConsent || !categories.length))
           }
+          onPress={() => void mutate(save)}
         />
       </View>
-      {blockedReason ? <Text style={styles.small}>{blockedReason}</Text> : null}
-      {!preferences?.enabled ? (
-        <Action
-          secondary
-          title="Account preferences"
-          onPress={() => setTab("Preferences")}
+    </View>
+  );
+  const enrollment = (
+    <>
+      <View style={styles.between}>
+        <Text style={[styles.heading, { fontSize: 19 }]}>{platformName}</Text>
+        <NotificationState
+          label={permission}
+          active={capability?.permission === "granted"}
         />
-      ) : null}
+      </View>
+      {blockedReason ? <Notice text={blockedReason} /> : null}
+      <InfoTip
+        title="Enable this device"
+        content="Ziipa asks for system permission only after you choose Enable on this device. Account preferences, registration and system permission are separate. Removing a registration stops future Ziipa notifications to that device and does not change its system settings."
+      />
+      {!preferences?.enabled && (
+        <View style={{ alignSelf: "flex-start" }}>
+          <Action
+            secondary
+            title="Choose preferences"
+            icon={Settings2}
+            onPress={() => {
+              setEnrollmentOpen(false);
+              setTab("Preferences");
+            }}
+          />
+        </View>
+      )}
       <Field
-        label="Device name (optional)"
+        label="Device name"
+        help="Optional: a name to recognise this phone or browser."
         value={label}
         onChangeText={setLabel}
         maxLength={60}
         editable={!busy}
-        placeholder="My phone or work browser"
+        placeholder="My phone"
       />
       <Consent
         text="Enable notifications and register this device with my Ziipa account."
@@ -429,36 +490,90 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
         disabled={busy}
         onPress={() => setDeviceConsent(!deviceConsent)}
       />
-      <Action
-        title="Enable on this device"
-        icon={Bell}
-        disabled={
-          busy ||
-          !deviceConsent ||
-          capability?.permission === "denied" ||
-          !preferences?.enabled ||
-          !capability?.supported ||
-          !config?.enabled ||
-          !config.worker_ready ||
-          !(Platform.OS === "web" ? config.web_ready : config.expo_ready)
-        }
-        onPress={() => void mutate(register)}
-      />
-      <Text style={styles.small}>
-        Removing a registration stops Ziipa sending to that device. You can
-        manage system permission in your device or browser settings.
-      </Text>
-    </View>
+      <View style={{ alignSelf: "flex-start" }}>
+        <Action
+          title="Enable on this device"
+          icon={Bell}
+          disabled={
+            busy ||
+            !deviceConsent ||
+            capability?.permission === "denied" ||
+            !preferences?.enabled ||
+            !capability?.supported ||
+            !deviceReady
+          }
+          onPress={() => void mutate(register)}
+        />
+      </View>
+    </>
   );
   const devicesPanel = (
-    <View style={styles.panel}>
-      <HelpLabel
-        label="Registered devices"
-        style={styles.heading}
-        help="These are the devices registered to receive your Ziipa updates. Removing a registration does not change your phone or browser permission settings."
-      />
-      {devices.length === 0 && (
-        <Text style={styles.body}>No devices registered for this account.</Text>
+    <View style={panel}>
+      <View style={styles.between}>
+        <View>
+          <Text style={[styles.heading, { fontSize: 19 }]}>Devices</Text>
+          <Text style={styles.small}>
+            {preferences
+              ? `${registered.length} registered`
+              : error
+                ? "Unavailable"
+                : "Checking devices"}
+          </Text>
+        </View>
+        <IconButton
+          icon={Plus}
+          label="Set up this device"
+          disabled={busy}
+          onPress={() => setEnrollmentOpen(true)}
+        />
+      </View>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          paddingVertical: 10,
+          borderBottomWidth: 1,
+          borderColor: color.border,
+        }}
+      >
+        {Platform.OS === "web" ? (
+          <Monitor size={22} color={color.text} />
+        ) : (
+          <Smartphone size={22} color={color.text} />
+        )}
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.body, { color: color.text }]}>
+            {platformName} · this device
+          </Text>
+          <NotificationState
+            label={permission}
+            active={capability?.permission === "granted"}
+          />
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Manage this device notifications"
+          onPress={() => setEnrollmentOpen(true)}
+          style={{ minHeight: 44, justifyContent: "center" }}
+        >
+          <Text style={[styles.small, { color: color.text }]}>Manage</Text>
+        </Pressable>
+      </View>
+      {!devices.length && (
+        <View style={{ alignItems: "center", gap: 8, paddingVertical: 24 }}>
+          <Smartphone size={27} color={color.muted} />
+          <Text style={[styles.body, { color: color.text }]}>
+            {preferences
+              ? "No devices registered"
+              : error
+                ? "Devices unavailable"
+                : "Checking devices"}
+          </Text>
+          <Text style={styles.small}>
+            Use + to enable this phone or browser.
+          </Text>
+        </View>
       )}
       {devices.map((device) => (
         <View
@@ -466,18 +581,30 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
           style={{
             flexDirection: "row",
             alignItems: "center",
-            gap: 8,
+            gap: 12,
             paddingVertical: 12,
+            borderBottomWidth: 1,
+            borderColor: color.border,
           }}
         >
-          <View style={{ flex: 1, gap: 5 }}>
-            <Text style={styles.body}>
-              {device.label || "Unnamed device"} ·{" "}
-              {device.provider === "web" ? "Browser" : "Ziipa app"}
+          {device.provider === "web" ? (
+            <Monitor size={21} color={color.muted} />
+          ) : (
+            <Smartphone size={21} color={color.muted} />
+          )}
+          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+            <Text
+              numberOfLines={1}
+              style={[styles.body, { color: color.text }]}
+            >
+              {device.label || "Unnamed device"}
             </Text>
+            <NotificationState
+              label={notificationScreenStatus(device.status)}
+              active={device.status === "active"}
+            />
             <Text style={styles.small}>
-              {notificationStatus(device.status)} · last registration{" "}
-              {new Date(device.last_registered_at).toLocaleString()}
+              {new Date(device.last_registered_at).toLocaleDateString()}
             </Text>
           </View>
           <IconButton
@@ -499,56 +626,96 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
                         : value,
                     ),
                   );
-                  setMessage(
-                    "Device removed. Manage its notification permission in your phone or browser settings.",
-                  );
+                  setMessage("Device removed from Ziipa.");
                 }
               })
             }
           />
         </View>
       ))}
+      <InfoTip
+        title="Registered devices"
+        content="A registered device has permission to receive selected Ziipa updates. Registration does not confirm a notification was displayed. Removing a device stops future sends; manage its system permission in the phone or browser settings."
+      />
     </View>
   );
   const receiptsPanel = (
-    <View style={styles.panel}>
-      <HelpLabel
-        label="Activity"
-        style={styles.heading}
-        help="Activity tracks attempts to send your notifications. A sent status does not guarantee that a notification appeared on the device."
-      />
-      {deliveries.length === 0 && (
-        <Text style={styles.body}>
-          {error
-            ? "Activity could not be loaded. Refresh to try again."
-            : "No notifications yet."}
-        </Text>
-      )}
-      {deliveries.map((delivery) => (
-        <View key={delivery.id} style={{ gap: 8, paddingVertical: 12 }}>
-          <Text style={styles.body}>
-            {delivery.category === "calendar"
-              ? "Calendar reminder"
-              : delivery.category === "recordings"
-                ? "Recording or clip update"
-                : "Publishing update"}{" "}
-            · {notificationStatus(delivery.status)}
+    <View style={panel}>
+      <View style={styles.between}>
+        <View>
+          <Text style={[styles.heading, { fontSize: 19 }]}>Recent updates</Text>
+          <Text style={styles.small}>
+            {preferences
+              ? `${unread} unopened`
+              : error
+                ? "Unavailable"
+                : "Checking updates"}
+          </Text>
+        </View>
+        <InfoTip
+          title="Delivery status"
+          content="Queued, sent to service and device display are different stages. A provider receipt or accepted status does not prove a notification appeared on your device. Open an update to review its related Ziipa activity."
+        />
+      </View>
+      {!deliveries.length && (
+        <View style={{ alignItems: "center", gap: 8, paddingVertical: 28 }}>
+          <Bell size={29} color={color.muted} />
+          <Text style={[styles.body, { color: color.text }]}>
+            {error ? "Updates unavailable" : "You're up to date"}
           </Text>
           <Text style={styles.small}>
-            {delivery.provider === "web" ? "Browser" : "Ziipa app"} ·{" "}
-            {new Date(delivery.created_at).toLocaleString()}
-            {delivery.provider_accepted_at
-              ? ` · sent ${new Date(delivery.provider_accepted_at).toLocaleString()}`
-              : ""}
-            {delivery.opened_at
-              ? ` · opened ${new Date(delivery.opened_at).toLocaleString()}`
-              : ""}
+            {error
+              ? "Refresh to check again."
+              : "New reminders and creation updates appear here."}
           </Text>
-          {!!delivery.detail && (
-            <Text style={styles.small}>{delivery.detail}</Text>
-          )}
-          {!delivery.opened_at && (
-            <View style={{ alignSelf: "flex-start" }}>
+        </View>
+      )}
+      {deliveries.map((delivery) => {
+        const Icon =
+          delivery.category === "calendar"
+            ? CalendarDays
+            : delivery.category === "recordings"
+              ? Clapperboard
+              : Send;
+        const title =
+          delivery.category === "calendar"
+            ? "Calendar reminder"
+            : delivery.category === "recordings"
+              ? "Recording update"
+              : "Publishing update";
+        return (
+          <View
+            key={delivery.id}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 12,
+              paddingVertical: 13,
+              borderTopWidth: 1,
+              borderColor: color.border,
+            }}
+          >
+            <Icon size={21} color={color.muted} />
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+              <Text style={[styles.body, { color: color.text }]}>{title}</Text>
+              <NotificationState
+                label={
+                  delivery.opened_at
+                    ? "Opened"
+                    : notificationScreenStatus(delivery.status)
+                }
+                active={!!delivery.opened_at}
+              />
+              <Text style={styles.small}>
+                {new Date(delivery.created_at).toLocaleString()} ·{" "}
+                {delivery.provider === "web" ? "Browser" : "App"}
+              </Text>
+            </View>
+            <InfoTip
+              title={title}
+              content={`Created ${new Date(delivery.created_at).toLocaleString()}.${delivery.provider_accepted_at ? ` Accepted by delivery service ${new Date(delivery.provider_accepted_at).toLocaleString()}.` : ""}${delivery.opened_at ? ` Opened in Ziipa ${new Date(delivery.opened_at).toLocaleString()}.` : ""} Delivery status does not confirm device display.`}
+            />
+            {!delivery.opened_at && (
               <IconButton
                 icon={ArrowUpRight}
                 label="Open update"
@@ -570,10 +737,10 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
                   })
                 }
               />
-            </View>
-          )}
-        </View>
-      ))}
+            )}
+          </View>
+        );
+      })}
     </View>
   );
   return (
@@ -583,18 +750,17 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
       style={styles.screen}
       contentContainerStyle={[
         styles.page,
-        { width: "100%", maxWidth: 1200, alignSelf: "center" },
+        { width: "100%", maxWidth: 1080, alignSelf: "center", gap: 16 },
         desktop && { paddingHorizontal: 28 },
       ]}
     >
-      <View style={[styles.between, { flexWrap: "wrap" }]}>
-        {desktop ? (
-          <Text style={[styles.heading, { fontSize: 26 }]}>
+      <View style={styles.between}>
+        <View>
+          <Text style={[styles.heading, { fontSize: desktop ? 26 : 20 }]}>
             Notifications & devices
           </Text>
-        ) : (
-          <Text style={styles.small}>Your Ziipa account</Text>
-        )}
+          <Text style={styles.small}>Your private updates</Text>
+        </View>
         <IconButton
           label="Refresh notifications"
           icon={RefreshCw}
@@ -605,20 +771,35 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
       <View
         style={{
           flexDirection: "row",
-          flexWrap: "wrap",
-          gap: 12,
           alignItems: "center",
+          flexWrap: "wrap",
+          gap: 14,
         }}
       >
-        <Text style={styles.small}>
-          Notifications:{" "}
-          {preferences ? (preferences.enabled ? "On" : "Off") : "Checking…"}
-        </Text>
-        <Text style={styles.small}>This device: {permission}</Text>
-        <InfoTip
-          title="Notifications and permission"
-          content="Account preferences choose which updates Ziipa may send. Each device must also be registered and have notification permission. Neither setting starts a camera, broadcast or publication."
+        <NotificationState
+          label={
+            preferences
+              ? `Account ${preferences.enabled ? "on" : "off"}`
+              : "Checking account"
+          }
+          active={!!preferences?.enabled}
         />
+        <Text style={styles.small}>
+          {preferences ? `${registered.length} devices` : "Checking devices"}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Notification service status"
+          onPress={() => setServiceOpen(true)}
+          style={{
+            minWidth: 44,
+            minHeight: 44,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Info size={18} color={color.muted} />
+        </Pressable>
       </View>
       <ScrollView
         ref={tabsScroll}
@@ -626,9 +807,9 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
         showsHorizontalScrollIndicator
         keyboardShouldPersistTaps="handled"
         style={{ width: "100%", flexGrow: 0 }}
-        contentContainerStyle={{ gap: 8, paddingBottom: 8 }}
+        contentContainerStyle={{ gap: 8, paddingBottom: 4 }}
       >
-        {(["Activity", "Preferences", "Devices", "App"] as const).map(
+        {(["Activity", "Devices", "Preferences", "App"] as const).map(
           (value) => (
             <Pill
               key={value}
@@ -639,107 +820,104 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
           ),
         )}
       </ScrollView>
-      {!!error && <Notice error text={error} />}
+      {!!error && !enrollmentOpen && !serviceOpen && (
+        <Notice error text={error} />
+      )}
       {!!message && <Notice text={message} />}
       {tab === "Activity" ? receiptsPanel : null}
       {tab === "Preferences" ? accountPanel : null}
-      {tab === "Devices" ? (
-        <>
-          {devicePanel}
-          {devicesPanel}
-        </>
-      ) : null}
-      {tab === "App" ? (
-        <>
-          <View style={styles.panel}>
-            <HelpLabel
-              label="App information"
-              style={styles.heading}
-              help="Your installed Ziipa version and platform. Manage the devices that receive notifications in Devices."
+      {tab === "Devices" ? devicesPanel : null}
+      {tab === "App" && (
+        <View style={panel}>
+          <View style={styles.between}>
+            <Text style={[styles.heading, { fontSize: 19 }]}>Ziipa</Text>
+            <InfoTip
+              title="Version notes"
+              content={releaseNotes
+                .map(
+                  (release) =>
+                    `Ziipa ${release.version}\n${release.changes.join("\n")}`,
+                )
+                .join("\n\n")}
             />
-            <Text style={styles.body}>
-              Ziipa{appVersion ? ` ${appVersion}` : ""}
+          </View>
+          <View style={styles.between}>
+            <Text style={styles.small}>Version</Text>
+            <Text style={[styles.body, { color: color.text }]}>
+              {appVersion || "Not available"}
               {appBuild ? ` (${appBuild})` : ""}
             </Text>
-            <Text style={styles.small}>Platform: {platformName}</Text>
-            {Platform.OS !== "web" ? (
-              <Text style={styles.small}>
-                {Platform.OS === "ios" ? "iOS version" : "Android API level"}:{" "}
-                {String(Platform.Version)}
-              </Text>
-            ) : null}
           </View>
-          <View style={styles.panel}>
-            <Text style={styles.heading}>Version notes</Text>
-            {releaseNotes.map((release) => (
-              <View key={release.version} style={{ gap: 8 }}>
-                <Text style={[styles.label, { marginBottom: 0 }]}>
-                  Ziipa {release.version}
-                </Text>
-                {release.changes.map((change) => (
-                  <Text key={change} style={styles.body}>
-                    • {change}
-                  </Text>
-                ))}
-              </View>
-            ))}
+          <View style={styles.between}>
+            <Text style={styles.small}>Platform</Text>
+            <Text style={[styles.body, { color: color.text }]}>
+              {platformName}
+              {Platform.OS !== "web" ? ` · ${String(Platform.Version)}` : ""}
+            </Text>
           </View>
-        </>
-      ) : null}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Notification service status"
-        onPress={() => setServiceOpen(true)}
-        style={{
-          alignSelf: "flex-start",
-          minHeight: 44,
-          justifyContent: "center",
-        }}
-      >
-        <Text style={styles.small}>Service status ›</Text>
-      </Pressable>
-      {serviceOpen ? (
+        </View>
+      )}
+      {enrollmentOpen && (
         <Sheet
-          title="Notification service"
-          onClose={() => setServiceOpen(false)}
-          maxWidth={620}
+          title="Enable this device"
+          onClose={() => setEnrollmentOpen(false)}
+          maxWidth={560}
         >
-          <Text style={styles.heading}>
-            {deviceReady
-              ? config?.readiness_protocol === 2
+          {!!error && <Notice error text={error} />}
+          {enrollment}
+        </Sheet>
+      )}
+      {serviceOpen && (
+        <Sheet
+          title="Notification status"
+          onClose={() => setServiceOpen(false)}
+          maxWidth={560}
+        >
+          <NotificationState
+            label={
+              deviceReady
                 ? "Device notifications available"
-                : "Delivery status not confirmed"
-              : "Device notifications unavailable"}
-          </Text>
-          <Text style={styles.body}>
-            Your in-app activity remains available even when device
-            notifications are unavailable.
-          </Text>
+                : "Device notifications unavailable"
+            }
+            active={deviceReady}
+          />
+          <Text style={styles.small}>In-app updates remain available.</Text>
           {config ? (
-            <View style={{ gap: 10 }}>
-              <Text style={styles.small}>
-                Device notifications:{" "}
-                {config.enabled ? "Enabled" : "Not enabled"}
-              </Text>
-              <Text style={styles.small}>
-                Processing: {config.worker_ready ? "Available" : "Unavailable"}
-              </Text>
-              <Text style={styles.small}>
-                App delivery: {notificationProviderReadiness(config, "expo")}
-              </Text>
-              <Text style={styles.small}>
-                Browser delivery: {notificationProviderReadiness(config, "web")}
-              </Text>
+            <View style={{ gap: 12 }}>
+              <View style={styles.between}>
+                <Text style={styles.small}>Account service</Text>
+                <Text style={styles.small}>
+                  {config.enabled ? "On" : "Off"}
+                </Text>
+              </View>
+              <View style={styles.between}>
+                <Text style={styles.small}>Processing</Text>
+                <Text style={styles.small}>
+                  {config.worker_ready ? "Available" : "Unavailable"}
+                </Text>
+              </View>
+              <View style={styles.between}>
+                <Text style={styles.small}>App delivery</Text>
+                <Text style={styles.small}>
+                  {notificationProviderReadiness(config, "expo")}
+                </Text>
+              </View>
+              <View style={styles.between}>
+                <Text style={styles.small}>Browser delivery</Text>
+                <Text style={styles.small}>
+                  {notificationProviderReadiness(config, "web")}
+                </Text>
+              </View>
             </View>
           ) : (
-            <Text style={styles.small}>Refresh to load service status.</Text>
+            <Text style={styles.small}>Refresh to load availability.</Text>
           )}
-          <Text style={styles.small}>
-            Sending a notification to the delivery service does not confirm that
-            it appeared on your device.
-          </Text>
+          <InfoTip
+            title="What availability means"
+            content="Account settings, device permission and registration are separate. Sending to a delivery service does not confirm a notification appeared. Ziipa never starts a camera, broadcast or publication when you enable notifications."
+          />
         </Sheet>
-      ) : null}
+      )}
     </ScrollView>
   );
 }

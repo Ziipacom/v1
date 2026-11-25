@@ -220,6 +220,19 @@ function harness(
           Pill: "Pill",
         };
       if (name === "./help-label") return { HelpLabel: "HelpLabel" };
+      if (name === "./info-tip") return { InfoTip: "InfoTip" };
+      if (name === "./workflow-progress")
+        return { WorkflowProgress: "WorkflowProgress" };
+      if (name === "./editor-overlay-controls")
+        return { OverlaySlider: "OverlaySlider" };
+      if (name === "./disclosure")
+        return {
+          Disclosure: (props: any) =>
+            jsx("Disclosure", {
+              ...props,
+              children: props.expanded ? props.children : null,
+            }),
+        };
       if (name === "./player") return { MediaPlayer: "MediaPlayer" };
       if (name === "./recorder") return { Recorder: "Recorder" };
       if (name === "../provider")
@@ -327,7 +340,9 @@ function harness(
     credits,
     action: (title: string) =>
       render().find(
-        (node) => node.type === "Action" && node.props.title.startsWith(title),
+        (node) =>
+          (node.type === "Action" && node.props.title.startsWith(title)) ||
+          (node.type === "IconButton" && node.props.label === title),
       )!,
     pill: (title: string) =>
       render().find(
@@ -357,8 +372,10 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 async function choose(h: ReturnType<typeof harness>) {
   h.render();
   await settle();
+  h.action("Continue to response").props.onPress();
   h.action("Upload").props.onPress();
   await settle();
+  h.action("Review remix").props.onPress();
   h.consent("I have permission").props.onPress();
 }
 
@@ -385,24 +402,15 @@ test("compact Remix controls retain source preview, mode bounds and explicit Zii
     );
     assert.ok(
       nodes.find(
-        (node) =>
-          node.type === "HelpLabel" &&
-          node.props.label === "Ziipa-only remix" &&
-          node.props.help.includes("minting"),
+        (node) => node.type === "Field" && node.props.label === "Start (s)",
       ),
     );
-    for (const label of ["Start (s)", "Length (s)", "Title"])
-      assert.ok(
-        nodes.find(
-          (node) => node.type === "Field" && node.props.label === label,
-        ),
-      );
-    assert.ok(h.action("Upload"));
-    assert.ok(h.action("Camera"));
-    assert.equal(
-      h.consent("I have permission").props.accessibilityLabel,
-      "I have permission to use both clips on Ziipa.",
+    assert.ok(
+      nodes.find(
+        (node) => node.type === "OverlaySlider" && node.props.max === 5,
+      ),
     );
+    assert.equal(h.action("Upload"), undefined);
     nodes
       .find(
         (node) =>
@@ -419,6 +427,33 @@ test("compact Remix controls retain source preview, mode bounds and explicit Zii
       )!.props.accessibilityState.checked,
       true,
     );
+    const slider = nodes.find((node) => node.type === "OverlaySlider")!;
+    assert.equal(slider.props.max, 30);
+    slider.props.onChange(3.2);
+    h.action("Continue to response").props.onPress();
+    assert.ok(h.action("Camera"));
+    assert.equal(h.action("Review remix").props.disabled, true);
+    h.action("Upload").props.onPress();
+    await settle();
+    h.action("Review remix").props.onPress();
+    nodes = h.render();
+    assert.ok(
+      nodes.find(
+        (node) => node.type === "Field" && node.props.label === "Title",
+      ),
+    );
+    assert.ok(
+      nodes.find(
+        (node) =>
+          node.type === "HelpLabel" &&
+          node.props.label === "Ziipa-only remix" &&
+          node.props.help.includes("minting"),
+      ),
+    );
+    assert.equal(
+      h.consent("I have permission").props.accessibilityLabel,
+      "I have permission to use both clips on Ziipa.",
+    );
     assert.equal(h.action("Create private remix").props.disabled, true);
     assert.equal(h.counts().uploads, 0);
   } finally {
@@ -432,7 +467,7 @@ test("Remix upload/create/poll/apply is explicit, private and opens only the app
     h.render();
     await settle();
     assert.equal(h.counts().uploads, 0);
-    assert.equal(h.action("Create private remix").props.disabled, true);
+    assert.equal(h.action("Create private remix"), undefined);
     await choose(h);
     assert.equal(h.counts().uploads, 0);
     h.action("Create private remix").props.onPress();
@@ -459,10 +494,10 @@ test("Remix upload/create/poll/apply is explicit, private and opens only the app
 test("Unavailable matching worker or absent rights cannot upload or submit media", async () => {
   const offline = harness({ snapshot: { ...snapshot(), available: false } });
   try {
-    await choose(offline);
-    assert.equal(offline.action("Create private remix").props.disabled, true);
-    offline.action("Create private remix").props.onPress();
+    offline.render();
     await settle();
+    assert.equal(offline.action("Create private remix"), undefined);
+    assert.equal(offline.action("Upload"), undefined);
     assert.equal(offline.counts().uploads, 0);
   } finally {
     offline.unmount();
@@ -471,10 +506,11 @@ test("Unavailable matching worker or absent rights cannot upload or submit media
   try {
     missing.render();
     await settle();
+    missing.action("Continue to response").props.onPress();
     missing.action("Upload").props.onPress();
     await settle();
-    missing.action("Create private remix").props.onPress();
-    await settle();
+    missing.action("Review remix").props.onPress();
+    assert.equal(missing.action("Create private remix").props.disabled, true);
     assert.equal(missing.counts().uploads, 0);
   } finally {
     missing.unmount();
@@ -543,6 +579,13 @@ test("Owner may save explicit inside-Ziipa permissions while processing is offli
   try {
     h.render();
     await settle();
+    h.render()
+      .find(
+        (node) =>
+          node.type === "Disclosure" &&
+          node.props.title === "Remix permissions",
+      )!
+      .props.onToggle();
     assert.equal(h.action("Save remix permissions").props.disabled, true);
     h.pill("Everyone").props.onPress();
     h.consent("Stitch").props.onPress();
@@ -571,6 +614,7 @@ test("Recording a response reuses the recorder but does not upload until a separ
   try {
     h.render();
     await settle();
+    h.action("Continue to response").props.onPress();
     h.action("Camera").props.onPress();
     const recording = h.render().find((node) => node.type === "Recorder")!;
     assert.equal(recording.props.mode, "record");
@@ -581,6 +625,7 @@ test("Recording a response reuses the recorder but does not upload until a separ
     recording.props.onCapture(response);
     await settle();
     assert.equal(h.counts().uploads, 0);
+    h.action("Review remix").props.onPress();
     assert.equal(h.action("Create private remix").props.disabled, true);
   } finally {
     h.unmount();

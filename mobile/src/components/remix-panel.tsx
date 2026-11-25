@@ -5,17 +5,23 @@ import * as Crypto from "expo-crypto";
 import * as FileSystem from "expo-file-system/legacy";
 import {
   Camera,
+  ArrowRight,
   Check,
   Columns2,
   Music2,
   Play,
   RefreshCw,
   Scissors,
+  Video,
   Upload,
 } from "lucide-react-native";
 import { Sheet } from "./floating";
 import { Action, Field, IconButton, Notice, Pill } from "./ui";
 import { HelpLabel } from "./help-label";
+import { InfoTip } from "./info-tip";
+import { OverlaySlider } from "./editor-overlay-controls";
+import { WorkflowProgress } from "./workflow-progress";
+import { Disclosure } from "./disclosure";
 import { MediaPlayer } from "./player";
 import { Recorder } from "./recorder";
 import { useZiipa } from "../provider";
@@ -35,6 +41,7 @@ import {
   remixRange,
   remixReceipt,
   remixSnapshot,
+  validateRemixClip,
   validateRemixFields,
   type RemixAudience,
   type RemixCreate,
@@ -69,6 +76,11 @@ const modeIcons = {
   split_screen: Columns2,
   use_sound: Music2,
 };
+const remixSteps = [
+  { title: "Clip", icon: Scissors },
+  { title: "Response", icon: Video },
+  { title: "Review", icon: Check },
+] as const;
 const pending = (status?: RemixReceipt["status"]) =>
   status === "queued" || status === "processing";
 const statusNames: Record<RemixReceipt["status"], string> = {
@@ -161,6 +173,8 @@ function ScopedRemixPanel({
   const [policyConsent, setPolicyConsent] = useState(false);
   const [recording, setRecording] = useState(false);
   const [showSource, setShowSource] = useState(false);
+  const [step, setStep] = useState(0);
+  const [showPermissions, setShowPermissions] = useState(false);
   const selected = useRef<LocalSelection | null>(null);
   const locked = useRef(false);
   const statusReading = useRef(false);
@@ -474,9 +488,7 @@ function ScopedRemixPanel({
       recordSavedItem(saved, session.access_token);
       setDraft(saved);
       setReceipt({ ...receipt, status: "applied" });
-      setNotice(
-        "Your private remix draft is ready. Open it in the editor to review and edit before sharing.",
-      );
+      setNotice("");
     } catch (cause) {
       if (current()) setError(unavailable(cause));
     } finally {
@@ -524,9 +536,7 @@ function ScopedRemixPanel({
         throw new Error(
           "Your remix permissions were not confirmed. Refresh before trying again.",
         );
-      setNotice(
-        "Remix permissions saved. Changed permissions can stop pending remixes and make existing remixes unavailable. Attribution is retained.",
-      );
+      setNotice("Remix permissions saved.");
     } catch (cause) {
       if (current()) setError(unavailable(cause));
     } finally {
@@ -536,12 +546,34 @@ function ScopedRemixPanel({
   }
   const close = () => {
     if (locked.current || busy) {
-      setNotice(
-        "Wait for this request to finish. If its outcome is unconfirmed, check the same request before starting another.",
-      );
+      setNotice("Wait for this request to finish.");
       return;
     }
     onClose();
+  };
+  const clipRange = remixRange(mode);
+  const maxLength = Math.max(
+    clipRange.min,
+    Math.min(clipRange.max, 90 - (Number(start) || 0)),
+  );
+  const lengthValue = Math.min(
+    maxLength,
+    Math.max(clipRange.min, Number(seconds) || clipRange.min),
+  );
+  const changeStep = (next: number) => {
+    setError("");
+    setNotice("");
+    setStep(next);
+  };
+  const reviewClip = () => {
+    if (!snapshot) return;
+    try {
+      validateRemixClip(mode, start, seconds, snapshot);
+      setShowSource(false);
+      changeStep(1);
+    } catch (cause) {
+      setError(unavailable(cause));
+    }
   };
   return (
     <Sheet title="Remix this creation" onClose={close} maxWidth={760}>
@@ -550,8 +582,8 @@ function ScopedRemixPanel({
           <Notice
             text={
               item.demo
-                ? "Sample media cannot be copied into a remix. Choose a creator's permitted media after signing in."
-                : "Sign in to check permissions and create your own private remix."
+                ? "Sample media is unavailable for remixing."
+                : "Sign in to remix."
             }
           />
           <Action title="Sign in" onPress={onSignIn} />
@@ -585,189 +617,272 @@ function ScopedRemixPanel({
                   }
                 />
               )}
-              {snapshot.allowed_modes.length > 0 && (
-                <>
-                  <HelpLabel
-                    label="Mode"
-                    help={`${modeHelp[mode]} Choose your own response video; the result stays private until you review and publish. Only modes permitted by this creator are offered. Permission is checked before processing and applying the remix.`}
-                  />
-                  <View
-                    style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
-                  >
-                    {snapshot.allowed_modes.map((value) => {
-                      const Icon = modeIcons[value];
-                      return (
-                        <Pressable
-                          key={value}
-                          accessibilityRole="radio"
-                          accessibilityLabel={modeNames[value]}
-                          accessibilityState={{
-                            checked: mode === value,
-                            disabled: !editing,
-                          }}
-                          disabled={!editing}
+              {snapshot.available &&
+                snapshot.allowed_modes.length > 0 &&
+                !receipt &&
+                !submitted && (
+                  <>
+                    <WorkflowProgress
+                      steps={remixSteps}
+                      activeStep={step}
+                      onStepPress={editing ? changeStep : undefined}
+                    />
+                    {step === 0 && (
+                      <>
+                        <HelpLabel
+                          label="Mode"
+                          help={`${modeHelp[mode]} Choose your own response video; the result stays private until you review and publish. Only modes permitted by this creator are offered. Permission is checked before processing and applying the remix.`}
+                        />
+                        <View
                           style={{
-                            flex: 1,
-                            minWidth: 80,
-                            minHeight: 62,
-                            gap: 5,
-                            alignItems: "center",
-                            justifyContent: "center",
-                            borderRadius: 12,
-                            borderWidth: 1,
-                            borderColor:
-                              mode === value ? color.lime : color.border,
-                            backgroundColor: color.panel,
-                            opacity: editing ? 1 : 0.55,
-                          }}
-                          onPress={() => {
-                            if (!editing) return;
-                            setMode(value);
-                            const range = remixRange(value);
-                            setSeconds(
-                              String(
-                                Math.max(
-                                  range.min,
-                                  Math.min(range.max, Number(seconds) || 5),
-                                ),
-                              ),
-                            );
-                            setRights(false);
+                            flexDirection: "row",
+                            flexWrap: "wrap",
+                            gap: 8,
                           }}
                         >
-                          <Icon
-                            size={21}
-                            color={mode === value ? color.lime : color.text}
-                          />
-                          <Text style={styles.small}>{modeNames[value]}</Text>
+                          {snapshot.allowed_modes.map((value) => {
+                            const Icon = modeIcons[value];
+                            return (
+                              <Pressable
+                                key={value}
+                                accessibilityRole="radio"
+                                accessibilityLabel={modeNames[value]}
+                                aria-checked={mode === value}
+                                accessibilityState={{
+                                  checked: mode === value,
+                                  disabled: !editing,
+                                }}
+                                disabled={!editing}
+                                style={{
+                                  flex: 1,
+                                  minWidth: 80,
+                                  minHeight: 62,
+                                  gap: 5,
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  borderRadius: 12,
+                                  borderWidth: 1,
+                                  borderColor:
+                                    mode === value ? color.lime : color.border,
+                                  backgroundColor: color.panel,
+                                  opacity: editing ? 1 : 0.55,
+                                }}
+                                onPress={() => {
+                                  if (!editing) return;
+                                  setMode(value);
+                                  const range = remixRange(value);
+                                  setSeconds(
+                                    String(
+                                      Math.max(
+                                        range.min,
+                                        Math.min(
+                                          range.max,
+                                          Number(seconds) || 5,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                  setRights(false);
+                                }}
+                              >
+                                <Icon
+                                  size={21}
+                                  color={
+                                    mode === value ? color.lime : color.text
+                                  }
+                                />
+                                <Text style={styles.small}>
+                                  {modeNames[value]}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Preview source"
+                          accessibilityState={{ expanded: showSource }}
+                          onPress={() => setShowSource((value) => !value)}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 7,
+                            minHeight: 44,
+                          }}
+                        >
+                          <Play size={17} color={color.text} />
+                          <Text style={styles.small}>
+                            {showSource ? "Hide source" : "Preview source"}
+                          </Text>
                         </Pressable>
-                      );
-                    })}
-                  </View>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Preview source"
-                    accessibilityState={{ expanded: showSource }}
-                    onPress={() => setShowSource((value) => !value)}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 7,
-                      minHeight: 44,
-                    }}
-                  >
-                    <Play size={17} color={color.text} />
-                    <Text style={styles.small}>
-                      {showSource ? "Hide source" : "Preview source"}
-                    </Text>
-                  </Pressable>
-                  {showSource && !recording && <MediaPlayer item={item} />}
-                  <HelpLabel
-                    label="Source clip"
-                    help={`Choose ${remixRange(mode).min}–${remixRange(mode).max} seconds of the published clip. Times start at its beginning; trimmed-out sections are not available.`}
-                  />
-                  <View
-                    style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}
-                  >
-                    <View style={{ flex: 1, minWidth: 110 }}>
-                      <Field
-                        label="Start (s)"
-                        value={start}
-                        keyboardType="decimal-pad"
-                        editable={editing}
-                        onChangeText={(value) => {
-                          setStart(value);
-                          setRights(false);
-                        }}
-                      />
-                    </View>
-                    <View style={{ flex: 1, minWidth: 110 }}>
-                      <Field
-                        label="Length (s)"
-                        value={seconds}
-                        keyboardType="decimal-pad"
-                        editable={editing}
-                        onChangeText={(value) => {
-                          setSeconds(value);
-                          setRights(false);
-                        }}
-                      />
-                    </View>
-                  </View>
-                  <Field
-                    label="Title"
-                    value={title}
-                    maxLength={140}
-                    editable={editing}
-                    onChangeText={setTitle}
-                  />
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    <View style={{ flex: 1 }}>
-                      <Action
-                        secondary
-                        title={file ? "Replace" : "Upload"}
-                        icon={Upload}
-                        disabled={!editing || !foreground}
-                        onPress={() => void pick()}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Action
-                        secondary
-                        title="Camera"
-                        icon={Camera}
-                        disabled={!editing || !foreground}
-                        onPress={() => {
-                          setError("");
-                          recordingScope.current = capture();
-                          setRecording(true);
-                        }}
-                      />
-                    </View>
-                  </View>
-                  {file && (
-                    <Text style={styles.small}>
-                      {file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB
-                    </Text>
-                  )}
-                  <HelpLabel
-                    label="Ziipa-only remix"
-                    help="Remix permission covers the signed-in Ziipa feed only. External publishing, public galleries and minting need a separate source license and are not available for this remix. You must have permission for both your response video and the selected source segment."
-                  />
-                  <RightsConsent
-                    checked={rights}
-                    disabled={!editing}
-                    onChange={() => setRights((value) => !value)}
-                    label="I have permission to use both clips on Ziipa."
-                  />
-                  {!submitted && !receipt && (
-                    <Action
-                      title="Create private remix"
-                      icon={Scissors}
-                      busy={!!busy && busy !== "Saving permissions"}
-                      disabled={
-                        !editing ||
-                        loading ||
-                        !snapshot.available ||
-                        !snapshot.allowed_modes.includes(mode) ||
-                        !file ||
-                        !rights ||
-                        !foreground
-                      }
-                      onPress={() => void create()}
-                    />
-                  )}
-                  {busy === "Creating remix" && (
-                    <Text accessibilityLiveRegion="polite" style={styles.small}>
-                      {progress < 100
-                        ? `Uploading response · ${progress}%`
-                        : "Submitting remix request…"}
-                    </Text>
-                  )}
-                </>
-              )}
+                        {showSource && !recording && (
+                          <MediaPlayer item={item} />
+                        )}
+                        <View style={[styles.panel, { padding: 12, gap: 8 }]}>
+                          <Field
+                            label="Start (s)"
+                            help="Time is measured from the beginning of the published clip."
+                            value={start}
+                            keyboardType="decimal-pad"
+                            editable={editing}
+                            onChangeText={(value) => {
+                              setStart(value);
+                              if (
+                                Number.isFinite(Number(value)) &&
+                                Number(seconds) + Number(value) > 90
+                              )
+                                setSeconds(
+                                  String(
+                                    Math.max(
+                                      clipRange.min,
+                                      Number((90 - Number(value)).toFixed(1)),
+                                    ),
+                                  ),
+                                );
+                              setRights(false);
+                            }}
+                          />
+                          <OverlaySlider
+                            label="Clip length"
+                            value={lengthValue}
+                            min={clipRange.min}
+                            max={maxLength}
+                            step={0.1}
+                            disabled={!editing}
+                            valueText={`${lengthValue}s`}
+                            formatValue={(value) => `${value}s`}
+                            onChange={(value) => {
+                              setSeconds(String(value));
+                              setRights(false);
+                            }}
+                          />
+                        </View>
+                        <Action
+                          title="Continue to response"
+                          icon={ArrowRight}
+                          onPress={reviewClip}
+                          disabled={!editing}
+                        />
+                      </>
+                    )}
+                    {step === 1 && (
+                      <>
+                        <HelpLabel
+                          label="Response video"
+                          help="Upload or record a video you have permission to use. MP4, MOV, and WebM up to 100 MB."
+                        />
+                        <View style={{ flexDirection: "row", gap: 8 }}>
+                          <View style={{ flex: 1 }}>
+                            <Action
+                              secondary
+                              title={file ? "Replace" : "Upload"}
+                              icon={Upload}
+                              disabled={!editing || !foreground}
+                              onPress={() => void pick()}
+                            />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Action
+                              secondary
+                              title="Camera"
+                              icon={Camera}
+                              disabled={!editing || !foreground}
+                              onPress={() => {
+                                setError("");
+                                recordingScope.current = capture();
+                                setRecording(true);
+                              }}
+                            />
+                          </View>
+                        </View>
+                        {file && (
+                          <Text style={styles.small} numberOfLines={2}>
+                            {file.name} · {(file.size / 1024 / 1024).toFixed(1)}{" "}
+                            MB
+                          </Text>
+                        )}
+                        <Action
+                          title="Review remix"
+                          icon={ArrowRight}
+                          disabled={!file || !editing}
+                          onPress={() => changeStep(2)}
+                        />
+                      </>
+                    )}
+                    {step === 2 && (
+                      <>
+                        <View style={[styles.panel, { padding: 12, gap: 3 }]}>
+                          <Text style={styles.label}>
+                            {modeNames[mode]} · {start}s–
+                            {Number(
+                              (Number(start) + Number(seconds)).toFixed(2),
+                            )}
+                            s
+                          </Text>
+                          <Text numberOfLines={2} style={styles.small}>
+                            {file?.name}
+                          </Text>
+                        </View>
+                        <Field
+                          label="Title"
+                          value={title}
+                          maxLength={140}
+                          editable={editing}
+                          onChangeText={setTitle}
+                        />
+                        <HelpLabel
+                          label="Ziipa-only remix"
+                          help="Remix permission covers the signed-in Ziipa feed only. External publishing, public galleries and minting need a separate source license and are not available for this remix. You must have permission for both your response video and the selected source segment."
+                        />
+                        <RightsConsent
+                          checked={rights}
+                          disabled={!editing}
+                          onChange={() => setRights((value) => !value)}
+                          label="I have permission to use both clips on Ziipa."
+                        />
+                        <Action
+                          title="Create private remix"
+                          icon={Scissors}
+                          busy={!!busy && busy !== "Saving permissions"}
+                          disabled={
+                            !editing ||
+                            loading ||
+                            !snapshot.available ||
+                            !snapshot.allowed_modes.includes(mode) ||
+                            !file ||
+                            !title.trim() ||
+                            !rights ||
+                            !foreground
+                          }
+                          onPress={() => void create()}
+                        />
+                      </>
+                    )}
+                    {busy === "Creating remix" && (
+                      <Text
+                        accessibilityLiveRegion="polite"
+                        style={styles.small}
+                      >
+                        {progress < 100
+                          ? `Uploading response · ${progress}%`
+                          : "Submitting remix request…"}
+                      </Text>
+                    )}
+                  </>
+                )}
               {snapshot.policy && item.creator_id === session?.user.id && (
-                <View style={[styles.panel, { gap: 12 }]}>
+                <Disclosure
+                  title="Remix permissions"
+                  detail={
+                    audience === "disabled"
+                      ? "Off"
+                      : audience === "everyone"
+                        ? "Everyone"
+                        : "Followers"
+                  }
+                  expanded={showPermissions}
+                  onToggle={() => setShowPermissions((previous) => !previous)}
+                >
                   <HelpLabel
                     label="Who can remix this creation?"
                     style={styles.heading}
@@ -828,7 +943,7 @@ function ScopedRemixPanel({
                     disabled={!!busy || !policyConsent || !foreground}
                     onPress={() => void savePolicy()}
                   />
-                </View>
+                </Disclosure>
               )}
               {snapshot.children.length > 0 && (
                 <View style={{ gap: 4 }}>
@@ -855,29 +970,27 @@ function ScopedRemixPanel({
           )}
           {receipt && (
             <View style={[styles.panel, { gap: 10 }]}>
-              <Text accessibilityLiveRegion="polite" style={styles.heading}>
-                {statusNames[receipt.status]}
-              </Text>
-              {!!receipt.detail &&
-                receipt.detail.trim().toLowerCase() !==
-                  statusNames[receipt.status].toLowerCase() && (
-                  <Text style={styles.small}>{receipt.detail}</Text>
-                )}
-              <Action
-                secondary
-                title="Refresh remix status"
-                icon={RefreshCw}
-                disabled={!!busy || !foreground}
-                onPress={() => {
-                  setPollBudget(12);
-                  void checkStatus(receipt.item_id);
-                }}
-              />
-              {pending(receipt.status) && !pollBudget && (
-                <Text style={styles.small}>
-                  Your remix is still processing. Refresh to check its progress.
+              <View style={styles.between}>
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={[styles.heading, { flex: 1 }]}
+                >
+                  {statusNames[receipt.status]}
                 </Text>
-              )}
+                <InfoTip
+                  title="Remix status"
+                  content="Find this private creation in your Profile. Processing continues after you close this panel."
+                />
+                <IconButton
+                  label="Refresh remix status"
+                  icon={RefreshCw}
+                  disabled={!!busy || !foreground}
+                  onPress={() => {
+                    setPollBudget(12);
+                    void checkStatus(receipt.item_id);
+                  }}
+                />
+              </View>
               {["ready", "applied"].includes(receipt.status) && !draft && (
                 <Action
                   title="Prepare editable draft"
@@ -892,10 +1005,6 @@ function ScopedRemixPanel({
                   onPress={() => onOpenDraft(draft)}
                 />
               )}
-              <Text style={styles.small}>
-                You can find this private creation in your Profile. Closing this
-                panel does not cancel processing.
-              </Text>
             </View>
           )}
           {!!busy && (
@@ -1243,31 +1352,29 @@ function ScopedProjectStatus({
   if (missing) return null;
   return (
     <View style={[styles.panel, { gap: 10 }]}>
-      <Text style={styles.heading}>Remix draft</Text>
+      <View style={styles.between}>
+        <Text style={[styles.heading, { flex: 1 }]}>Remix draft</Text>
+        <InfoTip
+          title="Remix draft"
+          content="Processing continues after you close the editor."
+        />
+        <IconButton
+          label="Refresh saved remix"
+          icon={RefreshCw}
+          disabled={disabled || applying || reading || !focused || !foreground}
+          onPress={() => {
+            setPollBudget(12);
+            void read();
+          }}
+        />
+      </View>
       <Text accessibilityLiveRegion="polite" style={styles.small}>
         {receipt
           ? statusNames[receipt.status]
           : reading
-            ? "Checking your remix…"
-            : "Check this remix’s saved status."}
+            ? "Checking…"
+            : "Status unavailable"}
       </Text>
-      {!!receipt?.detail && <Text style={styles.small}>{receipt.detail}</Text>}
-      <Action
-        secondary
-        title="Refresh saved remix"
-        icon={RefreshCw}
-        busy={reading}
-        disabled={disabled || applying || reading || !focused || !foreground}
-        onPress={() => {
-          setPollBudget(12);
-          void read();
-        }}
-      />
-      {pending(receipt?.status) && (
-        <Text style={styles.small}>
-          Your remix keeps processing when you close the editor.
-        </Text>
-      )}
       {receipt && ["ready", "applied"].includes(receipt.status) && (
         <>
           {!!unsavedKey && (

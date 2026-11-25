@@ -17,7 +17,10 @@ function loadApi(portalMode, response={id:7,name:'Studio member',email:'test@exa
   const navigationExports={};
   const navigationSource=readFileSync(new URL('../../mobile/src/lib/desktop-navigation.ts', import.meta.url), 'utf8');
   vm.runInNewContext(ts.transpileModule(navigationSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:navigationExports,URLSearchParams});
-  const context={exports,require:(name)=>{if(name==='./request-deadline')return deadlineExports;if(name==='./desktop-navigation')return navigationExports;assert.equal(name,'./config');return {portalMode,validateOrigin:()=> 'https://ziipa.com',authorizationHeaders:(token)=>token&&!portalMode?{Authorization:`Bearer ${token}`}:{}};},
+  const feedbackExports={};
+  const feedbackSource=readFileSync(new URL('../../mobile/src/lib/api-feedback.ts', import.meta.url), 'utf8');
+  vm.runInNewContext(ts.transpileModule(feedbackSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:feedbackExports});
+  const context={exports,require:(name)=>{if(name==='./request-deadline')return deadlineExports;if(name==='./desktop-navigation')return navigationExports;if(name==='./api-feedback')return feedbackExports;assert.equal(name,'./config');return {portalMode,validateOrigin:()=> 'https://ziipa.com',authorizationHeaders:(token)=>token&&!portalMode?{Authorization:`Bearer ${token}`}:{}};},
     AbortController,setTimeout,clearTimeout,Date,window:browserWindow,
     fetch:async(url,options)=>{calls.push({url,options});return {ok:status>=200&&status<300,status,json:async()=>response};}};
   vm.runInNewContext(compiled,context);

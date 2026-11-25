@@ -2,8 +2,17 @@ import { useEffect, useState } from "react";
 import { AppState, Text, View } from "react-native";
 import { request } from "../lib/api";
 import { color, font, useTheme } from "../theme";
-import { androidPlayInternal, iosExternalTestflight, iosLimitedTestflight } from "../lib/config";
-import { androidPlayInternalNotice, externalBetaNotice, internalBetaNotice } from "../lib/internal-beta-policy";
+import {
+  androidPlayInternal,
+  iosExternalTestflight,
+  iosLimitedTestflight,
+} from "../lib/config";
+import {
+  androidPlayInternalNotice,
+  externalBetaNotice,
+  internalBetaNotice,
+} from "../lib/internal-beta-policy";
+import { InfoTip } from "./info-tip";
 
 type PlatformStatus = {
   maintenance_mode: boolean;
@@ -41,12 +50,69 @@ export function PlatformNotice() {
       listener.remove();
     };
   }, []);
-  const operatorMessage = status?.banner || (status?.maintenance_mode
-    ? "Ziipa maintenance: creator changes are temporarily paused."
-    : status?.signup_paused ? "New Ziipa registrations are temporarily paused." : "");
-  const message = [androidPlayInternal ? androidPlayInternalNotice : iosLimitedTestflight ? iosExternalTestflight ? externalBetaNotice : internalBetaNotice : "", operatorMessage].filter(Boolean).join("\n");
-  if (!message) return null;
-  return <View accessibilityRole="alert" style={{ backgroundColor: color.panel, paddingHorizontal: 18, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: color.purple }}>
-    <Text style={{ color: color.text, fontFamily: font.medium, fontSize: 13 }}>{message}</Text>
-  </View>;
+  const operatorMessage =
+    status?.banner ||
+    (status?.maintenance_mode
+      ? "Ziipa maintenance: creator changes are temporarily paused."
+      : status?.signup_paused
+        ? "New Ziipa registrations are temporarily paused."
+        : "");
+  const betaDetails = androidPlayInternal
+    ? androidPlayInternalNotice
+    : iosLimitedTestflight
+      ? iosExternalTestflight
+        ? externalBetaNotice
+        : internalBetaNotice
+      : "";
+  if (!betaDetails && !operatorMessage) return null;
+  return (
+    <View
+      style={{
+        backgroundColor: color.panel,
+        paddingHorizontal: 16,
+        paddingVertical: 3,
+        borderBottomWidth: 1,
+        borderBottomColor: color.border,
+      }}
+    >
+      {!!betaDetails && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+          <View
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: color.lime,
+            }}
+          />
+          <Text
+            style={{
+              color: color.text,
+              fontFamily: font.semibold,
+              fontSize: 12,
+            }}
+          >
+            Beta
+          </Text>
+          <Text style={{ color: color.muted, fontSize: 12, flexShrink: 1 }}>
+            Changes use your live account
+          </Text>
+          <InfoTip title="beta access" content={betaDetails} />
+        </View>
+      )}
+      {!!operatorMessage && (
+        <Text
+          accessibilityRole="alert"
+          style={{
+            color: color.text,
+            fontFamily: font.medium,
+            fontSize: 13,
+            paddingVertical: 5,
+          }}
+        >
+          {operatorMessage}
+        </Text>
+      )}
+    </View>
+  );
 }
