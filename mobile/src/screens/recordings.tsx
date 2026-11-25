@@ -305,7 +305,12 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
   }
   if (!session || guest)
     return (
-      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" style={styles.screen} contentContainerStyle={styles.page}>
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
+        style={styles.screen}
+        contentContainerStyle={styles.page}
+      >
         <Notice text="Sign in to view private recordings. No broadcasts, recordings or clips are created in sample mode." />
         <Action title="Sign in" onPress={() => navigation.navigate("Login")} />
       </ScrollView>
@@ -320,7 +325,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
       ready: "Private recording",
       queued: "Queued",
       processing: "Processing",
-      blocked: "Needs setup",
+      blocked: "Needs attention",
       failed: "Needs attention",
       cancelled: "Cancelled",
     })[receipt.status];
@@ -340,14 +345,15 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
     receipt.clips.map((clip, index) => ({ receipt, clip, index })),
   );
   return (
-    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
+    <ScrollView
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
       style={styles.screen}
       contentContainerStyle={[
         styles.page,
         { width: "100%", maxWidth: 1440, alignSelf: "center" },
         desktop && { paddingHorizontal: 28 },
       ]}
-
     >
       <View style={[styles.between, { flexWrap: "wrap" }]}>
         {desktop ? (
@@ -487,8 +493,8 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
               }}
             >
               <Text style={styles.small}>
-                Automatic recording imports are unavailable. Existing media
-                remains accessible. View status ›
+                Automatic saving is unavailable. Your existing recordings are
+                still available. View status ›
               </Text>
             </Pressable>
           ) : null}
@@ -750,30 +756,30 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
         >
           <Text style={styles.heading}>
             {importsReady
-              ? "Ready for recording imports"
-              : "Recording imports unavailable"}
+              ? "Ready to save recordings"
+              : "Automatic saving unavailable"}
           </Text>
           <Text style={styles.body}>
             {importsReady
               ? "Completed broadcast recordings can be saved to your private library."
-              : "Recording processing needs administrator setup. You can still open existing recordings and use the editor."}
+              : "Automatic saving is unavailable right now. You can still open existing recordings and use the editor."}
           </Text>
           {config ? (
             <View style={{ gap: 10 }}>
               <Text style={styles.small}>
-                Recording import: {config.enabled ? "Enabled" : "Not enabled"}
+                Automatic saving: {config.enabled ? "Enabled" : "Not enabled"}
               </Text>
               <Text style={styles.small}>
-                Recording connection:{" "}
-                {config.webhook_configured ? "Configured" : "Needs setup"}
+                Recording updates:{" "}
+                {config.webhook_configured ? "Enabled" : "Unavailable"}
               </Text>
               <Text style={styles.small}>
                 Media processing:{" "}
                 {config.worker_ready ? "Available" : "Unavailable"}
               </Text>
               <Text style={styles.small}>
-                Import limit: {Math.round(config.max_bytes / 1024 / 1024)} MB ·{" "}
-                {Math.round(config.max_duration_seconds / 60)} minutes
+                Recording limits: {Math.round(config.max_bytes / 1024 / 1024)}{" "}
+                MB · {Math.round(config.max_duration_seconds / 60)} minutes
               </Text>
             </View>
           ) : (
@@ -906,7 +912,7 @@ function ScopedRecordingsScreen({ navigation, route }: Props) {
                     >
                       {clip.status === "ready" && clip.render_id && (
                         <Action
-                          title="Preview actual rendered clip"
+                          title="Preview exported clip"
                           secondary
                           disabled={busy}
                           onPress={() =>

@@ -3,6 +3,9 @@
 
 Run: python scripts/check-production-readiness.py
 Exit 0: public deployment checks passed; 1: missing/unready routes; 2: CLI error.
+Add --public-launch for stricter signup, renderer, policy and Web3 checks.
+Launch mode exits 3 when public checks pass but authenticated/device acceptance
+is still unverified. This read-only program can never approve a public launch.
 Only fixed HTTPS GETs are sent. The one permitted redirect is the exact
 Studio static canonicalization /studio/index.html -> 307 /studio/ on ziipa.com.
 No other redirect is followed. No credentials, cookies, OAuth authorization,
@@ -15,6 +18,7 @@ printed. The final result is not release approval or a user-flow acceptance test
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 import json
 import re
 import socket
@@ -28,6 +32,76 @@ API = "https://api.ziipa.com"
 MAX_RESPONSE_BYTES = 1024 * 1024
 METADATA_PATH = "/api/publishing/oauth/bluesky/client-metadata.json"
 JWKS_PATH = "/api/publishing/oauth/bluesky/jwks.json"
+POLICY_HEADINGS = {
+    "policy_privacy": "ziipa privacy policy",
+    "policy_terms": "ziipa terms of use",
+    "policy_community": "ziipa community rules",
+    "policy_deletion": "delete your ziipa account",
+}
+ACCEPTANCE_NOT_TESTED = ["registration", "email delivery", "user OAuth",
+                       "publishing", "broadcasting", "render worker execution",
+                       "physical devices", "provider approval"]
+LAUNCH_ACCEPTANCE_NOT_TESTED = [
+    "new-account signup, verification, password recovery and account deletion",
+    "authenticated provider configuration and OAuth permissions",
+    "private upload, edited-video export and cross-network publishing",
+    "live ingest, playback, stop, recording import and clip rendering",
+    "live payments and seller payouts; sandbox checkout is not acceptance",
+    "contract bytecode, wallet signing and actual mint execution",
+    "iOS/Android installation, permissions, push delivery and store approval",
+    "policy adequacy, operator approval, service quotas and sustained uptime",
+]
+
+
+class PolicyDocument(HTMLParser):
+    """Read rendered document text, not scripts or Next.js serialized props."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.ignored = 0
+        self.in_heading = False
+        self.text = []
+        self.headings = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"script", "style", "template"}:
+            self.ignored += 1
+        if tag == "h1" and not self.ignored:
+            self.in_heading = True
+            self.headings.append([])
+
+    def handle_endtag(self, tag):
+        if tag in {"script", "style", "template"}:
+            self.ignored = max(0, self.ignored - 1)
+        if tag == "h1":
+            self.in_heading = False
+
+    def handle_data(self, data):
+        if not self.ignored:
+            self.text.append(data)
+            if self.in_heading:
+                self.headings[-1].append(data)
+
+
+def validate_policy(kind, body):
+    document = PolicyDocument()
+    document.feed(body.decode("utf-8"))
+    normalize = lambda value: " ".join(value.lower().split())
+    text = normalize(" ".join(document.text))
+    headings = [normalize("".join(parts)) for parts in document.headings]
+    facts = {
+        "expected_heading": POLICY_HEADINGS[kind] in headings,
+        "substantive_document": len(text.split()) >= 60,
+        "restricted_beta_notice": bool(re.search(
+            r"existing (?:ziipa )?accounts only|(?:limited|private|internal) (?:iphone )?beta|"
+            r"beta privacy notice|(?:draft|proposed) (?:privacy policy|terms of use|community rules)", text)),
+    }
+    if kind != "policy_deletion":
+        facts["operator_named"] = "niche labs llc" in text
+        facts["contact_present"] = "ziipaziipa@gmail.com" in text
+    else:
+        facts["deletion_instructions"] = "current password" in text and "delete to confirm" in text
+    ok = all(value for key, value in facts.items() if key != "restricted_beta_notice") and not facts["restricted_beta_notice"]
+    return ok, "Public policy page checked; legal adequacy and deletion execution remain unverified", facts
 
 
 class NoRedirects(HTTPRedirectHandler):
@@ -35,12 +109,12 @@ class NoRedirects(HTTPRedirectHandler):
         return None
 
 
-def cases():
+def cases(public_launch=False):
     result = [(WEBSITE + "/", "html"), (WEBSITE + "/portal", "html"),
               (WEBSITE + "/studio/index.html", "studio")]
     for origin in (API, WEBSITE):
         result.extend((origin + path, kind) for path, kind in (
-            ("/api/livez", "liveness"), ("/api/health", "health"), ("/api/live/config", "live"),
+            ("/api/livez", "liveness"), ("/api/health", "launch_health" if public_launch else "health"), ("/api/live/config", "live"),
             ("/api/publishing/config", "authenticated"),
             ("/api/render/config", "authenticated"),
             ("/api/os/campaigns/config", "authenticated"),
@@ -48,12 +122,21 @@ def cases():
             ("/api/live/recordings/config", "authenticated"),
             ("/api/notifications/config", "authenticated"),
             (METADATA_PATH, "metadata"), (JWKS_PATH, "jwks")))
+        if public_launch:
+            result.extend((origin + path, kind) for path, kind in (
+                ("/api/platform/status", "signup"), ("/api/web3/config", "web3_launch"),
+                ("/api/editor/title/config", "authenticated"),
+                ("/api/store/payments/config", "authenticated")))
+    if public_launch:
+        result.extend((WEBSITE + path, kind) for path, kind in (
+            ("/privacy", "policy_privacy"), ("/terms", "policy_terms"),
+            ("/community", "policy_community"), ("/account-deletion", "policy_deletion")))
     return result
 
 
 def validate(kind, status, content_type, body):
     """Return only fixed messages and a bounded allowlisted facts dictionary."""
-    if kind in ("html", "studio"):
+    if kind in ("html", "studio") or kind in POLICY_HEADINGS:
         if status != 200 or content_type != "text/html":
             return False, "Expected HTTP 200 HTML page", {}
         lower = body.lower()
@@ -61,6 +144,11 @@ def validate(kind, status, content_type, body):
             return False, "Response is not an HTML document", {}
         if kind == "studio" and b"/studio/_expo/" not in body:
             return False, "Shared Studio asset prefix missing; possible fallback page", {}
+        if kind in POLICY_HEADINGS:
+            try:
+                return validate_policy(kind, body)
+            except (ValueError, UnicodeError):
+                return False, "Invalid public policy document", {}
         return True, "HTML route available", {}
 
     expected = 401 if kind == "authenticated" else 200
@@ -79,7 +167,7 @@ def validate(kind, status, content_type, body):
     if kind == "liveness":
         ok = value.get('status') == 'alive' and value.get('scope') == 'process'
         return ok, "Process liveness checked; workers and providers not tested", {}
-    if kind == "health":
+    if kind in ("health", "launch_health"):
         fields = {
             "database": {"connected", "unavailable"},
             "redis": {"connected", "unavailable"},
@@ -91,7 +179,41 @@ def validate(kind, status, content_type, body):
                  for key, allowed in fields.items()}
         ok = (facts["database"] == facts["redis"] == "connected"
               and facts["media_storage"] == "r2" and facts["email"] == "configured")
+        if kind == "launch_health":
+            renderer = value.get("renderer")
+            renderer = renderer if isinstance(renderer, dict) else {}
+            facts.update({"renderer_" + field: renderer.get(field) is True
+                          for field in ("enabled", "worker_ready", "can_render")})
+            ok = ok and facts["environment"] == "production" and all(
+                facts["renderer_" + field] for field in ("enabled", "worker_ready", "can_render"))
+            return ok, "Production dependencies and renderer heartbeat checked; real export still unverified", facts
         return ok, "Database, session storage, media and email configuration checked", facts
+    if kind == "signup":
+        facts = {"signup_unpaused": value.get("signup_paused") is False,
+                 "maintenance_off": value.get("maintenance_mode") is False}
+        return all(facts.values()), "Public signup switches checked; account creation and email delivery unverified", facts
+    if kind == "web3_launch":
+        chains = value.get("chains")
+        valid_shape = isinstance(chains, list) and 0 < len(chains) <= 16 and all(
+            isinstance(chain, dict) and type(chain.get("id")) is int and chain["id"] > 0 for chain in chains)
+        chains = chains if valid_shape else []
+        def declared_deployment(chain):
+            contracts = chain.get("contracts")
+            return chain.get("deployed") is True and isinstance(contracts, dict) and all(
+                isinstance(contracts.get(name), str)
+                and re.fullmatch(r"0x[0-9a-fA-F]{40}", contracts[name])
+                and contracts[name].lower() != "0x" + "0" * 40
+                for name in ("collectibles", "factory", "tips"))
+        # Recognized Ethereum/Base mainnets only. Unknown chain IDs cannot turn
+        # the current testnet-only product into an apparent mainnet release.
+        mainnets = sum(declared_deployment(chain) for chain in chains if chain["id"] in {1, 8453})
+        testnets = sum(declared_deployment(chain) for chain in chains if chain["id"] in {84532, 11155111, 31337})
+        facts = {"network_scope": "testnet_only" if value.get("testnet_only") is True else
+                 "mainnet_declared" if value.get("testnet_only") is False else "unknown",
+                 "valid_chain_list": valid_shape, "configured_mainnet_deployments": mainnets,
+                 "configured_testnet_deployments": testnets}
+        ok = valid_shape and value.get("testnet_only") is False and mainnets > 0
+        return ok, "Web3 network and contract configuration checked; testnet-only is not mainnet mint capability; mint execution unverified", facts
     if kind == "live":
         facts = {
             "configured": value.get("configured") is True,
@@ -134,7 +256,7 @@ def check(case, timeout, retries):
         started = time.monotonic()
         try:
             request = Request(url, method="GET", headers={
-                "Accept": "text/html" if kind in ("html", "studio") else "application/json",
+                "Accept": "text/html" if kind in ("html", "studio") or kind in POLICY_HEADINGS else "application/json",
                 "User-Agent": "Ziipa-readonly-deployment-check/1.0",
             })
             try:
@@ -191,24 +313,36 @@ def check(case, timeout, retries):
     return result
 
 
+def result_summary(results, public_launch=False):
+    failed = sum(not result["passed"] for result in results)
+    summary = {"passed": len(results) - failed, "failed": failed,
+               "acceptance_not_tested": list(ACCEPTANCE_NOT_TESTED)}
+    if public_launch:
+        summary.update(public_checks_passed=failed == 0,
+                       launch_readiness="blocked" if failed else "unverified",
+                       public_launch_approved=False,
+                       acceptance_not_tested=list(LAUNCH_ACCEPTANCE_NOT_TESTED))
+    return summary, 1 if failed else 3 if public_launch else 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--timeout", type=int, default=30, choices=range(5, 61), metavar="5..60")
     parser.add_argument("--retries", type=int, default=1, choices=(0, 1), help="bounded GET retries for cold starts")
+    parser.add_argument("--public-launch", action="store_true",
+                        help="check launch prerequisites; exit 3 still requires authenticated/device acceptance")
     args = parser.parse_args()
-    checks = cases()
+    checks = cases(args.public_launch)
     print(json.dumps({"checked_at_utc": datetime.now(timezone.utc).isoformat(),
-                      "mode": "unauthenticated fixed-origin GET only", "checks": len(checks)}), flush=True)
+                      "mode": "public-launch prerequisites" if args.public_launch else "unauthenticated fixed-origin GET only",
+                      "checks": len(checks)}), flush=True)
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda case: check(case, args.timeout, args.retries), checks))
     for result in results:
         print(json.dumps(result, sort_keys=True), flush=True)
-    failed = sum(not result["passed"] for result in results)
-    print(json.dumps({"passed": len(results) - failed, "failed": failed,
-                      "acceptance_not_tested": ["registration", "email delivery", "user OAuth",
-                                                "publishing", "broadcasting", "render worker execution",
-                                                "physical devices", "provider approval"]}), flush=True)
-    return 1 if failed else 0
+    summary, exit_code = result_summary(results, args.public_launch)
+    print(json.dumps(summary), flush=True)
+    return exit_code
 
 
 if __name__ == "__main__":

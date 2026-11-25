@@ -478,8 +478,8 @@ export function StoreSellWizard(props: Props) {
             onPress={props.onEnableStore}
           />
           <Text style={styles.small}>
-            Live payments are off. Physical merchandise test checkout requires
-            seller sandbox setup.
+            Publishing creates a visible product listing. Live payments are off;
+            test checkout is available only for eligible merchandise.
           </Text>
           <Action
             title="Save privately"

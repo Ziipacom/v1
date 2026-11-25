@@ -21,7 +21,6 @@ import {
 } from "lucide-react-native";
 import { color, font, styles, useTheme } from "../theme";
 import { logo, logoLight, coverSource } from "../lib/assets";
-import { conceptsEnabled } from "../lib/config";
 import type { Category, Item } from "../lib/types";
 import { useZiipa } from "../provider";
 import { useDesktopLayout } from "./desktop-layout";
@@ -209,17 +208,14 @@ export const allCategories: {
   id: Category;
   title: string;
   icon: LucideIcon;
-  concept?: boolean;
 }[] = [
   { id: "video", title: "Videos", icon: Clapperboard },
   { id: "games", title: "Games", icon: Gamepad2 },
   { id: "music", title: "Music & film", icon: Music2 },
-  { id: "live", title: "Live feeds", icon: Radio, concept: true },
-  { id: "store", title: "Store", icon: Store, concept: true },
+  { id: "live", title: "Live feeds", icon: Radio },
+  { id: "store", title: "Store", icon: Store },
 ];
-export const categories = allCategories.filter(
-  (c) => conceptsEnabled || !c.concept,
-);
+export const categories = allCategories;
 export function Pill({
   title,
   active,

@@ -261,12 +261,17 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
     setCapability(supported);
     setDeviceConsent(false);
     setMessage(
-      "This device is registered. Registration and provider acceptance do not prove a notification was displayed. Delivery receipts appear below when actual events occur.",
+      "This device is registered. New notification activity will appear below.",
     );
   }
   if (!session || guest)
     return (
-      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" style={styles.screen} contentContainerStyle={styles.page}>
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
+        style={styles.screen}
+        contentContainerStyle={styles.page}
+      >
         <Notice text="Sign in to manage your notifications and registered devices." />
         <Action title="Sign in" onPress={() => navigation.navigate("Login")} />
       </ScrollView>
@@ -285,7 +290,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
         : !preferences?.enabled
           ? "Turn on and save account notifications in Preferences first."
           : !deviceReady
-            ? "Push delivery is temporarily unavailable. Your activity remains in Ziipa."
+            ? "Device notifications are unavailable right now. Your activity remains in Ziipa."
             : "";
   const permission =
     capability?.permission === "granted"
@@ -407,7 +412,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
         placeholder="My phone or work browser"
       />
       <Consent
-        text="Enable notifications on this device and save its push subscription to my Ziipa account."
+        text="Enable notifications and register this device with my Ziipa account."
         checked={deviceConsent}
         disabled={busy}
         onPress={() => setDeviceConsent(!deviceConsent)}
@@ -473,7 +478,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
                     ),
                   );
                   setMessage(
-                    "Device revoked. This does not change its browser/OS permission.",
+                    "Device removed. Manage its notification permission in your phone or browser settings.",
                   );
                 }
               })
@@ -488,7 +493,7 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
       <HelpLabel
         label="Activity"
         style={styles.heading}
-        help="Receipts track notification attempts. Provider acceptance does not guarantee that a notification appeared on the device."
+        help="Activity tracks attempts to send your notifications. A sent status does not guarantee that a notification appeared on the device."
       />
       {deliveries.length === 0 && (
         <Text style={styles.body}>
@@ -508,10 +513,10 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
             · {notificationStatus(delivery.status)}
           </Text>
           <Text style={styles.small}>
-            {delivery.provider} ·{" "}
+            {delivery.provider === "web" ? "Browser" : "Ziipa app"} ·{" "}
             {new Date(delivery.created_at).toLocaleString()}
             {delivery.provider_accepted_at
-              ? ` · provider accepted ${new Date(delivery.provider_accepted_at).toLocaleString()}`
+              ? ` · sent to notification service ${new Date(delivery.provider_accepted_at).toLocaleString()}`
               : ""}
             {delivery.opened_at
               ? ` · opened ${new Date(delivery.opened_at).toLocaleString()}`
@@ -548,14 +553,15 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
     </View>
   );
   return (
-    <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
+    <ScrollView
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
       style={styles.screen}
       contentContainerStyle={[
         styles.page,
         { width: "100%", maxWidth: 1200, alignSelf: "center" },
         desktop && { paddingHorizontal: 28 },
       ]}
-
     >
       <View style={[styles.between, { flexWrap: "wrap" }]}>
         {desktop ? (
@@ -678,18 +684,19 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
           <Text style={styles.heading}>
             {deviceReady
               ? config?.readiness_protocol === 2
-                ? "Push service available"
-                : "Push configuration awaiting verification"
-              : "Push service unavailable"}
+                ? "Device notifications available"
+                : "Delivery status not confirmed"
+              : "Device notifications unavailable"}
           </Text>
           <Text style={styles.body}>
-            Your in-app activity remains available even when push delivery is
-            unavailable.
+            Your in-app activity remains available even when device
+            notifications are unavailable.
           </Text>
           {config ? (
             <View style={{ gap: 10 }}>
               <Text style={styles.small}>
-                Push service: {config.enabled ? "Enabled" : "Not enabled"}
+                Device notifications:{" "}
+                {config.enabled ? "Enabled" : "Not enabled"}
               </Text>
               <Text style={styles.small}>
                 Processing: {config.worker_ready ? "Available" : "Unavailable"}
@@ -705,8 +712,8 @@ function ScopedNotificationsScreen({ navigation, route }: Props) {
             <Text style={styles.small}>Refresh to load service status.</Text>
           )}
           <Text style={styles.small}>
-            Provider acceptance does not confirm that a device displayed a
-            notification.
+            Sending a notification to the delivery service does not confirm that
+            it appeared on your device.
           </Text>
         </Sheet>
       ) : null}

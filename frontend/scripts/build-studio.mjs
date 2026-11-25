@@ -17,7 +17,19 @@ if(!existsSync(resolve(mobile,'node_modules/expo/bin/cli'))) {
   if(!npmCli) throw new Error('Run this build using npm run build:studio.');
   run(process.execPath,[npmCli,'ci','--no-audit','--no-fund'],mobile);
 }
-const env={...process.env,EXPO_PUBLIC_PORTAL_MODE:'true',EXPO_PUBLIC_API_URL:'',EXPO_PUBLIC_ENABLE_DEMO:'false',EXPO_PUBLIC_ENABLE_CONCEPTS:'true',APP_VARIANT:'preview',EXPO_PUBLIC_CANONICAL_API_ORIGIN:process.env.ZIIPA_API_PROXY||process.env.ZIIPA_CANONICAL_API_ORIGIN||'https://api.ziipa.com'};
+const env = {
+  ...process.env,
+  EXPO_NO_DOTENV: '1',
+  EXPO_PUBLIC_PORTAL_MODE: 'true',
+  EXPO_PUBLIC_API_URL: '',
+  EXPO_PUBLIC_ENABLE_DEMO: 'false',
+  EXPO_PUBLIC_ENABLE_CONCEPTS: 'false',
+  EXPO_PUBLIC_PRIVACY_URL: 'https://ziipa.com/privacy',
+  EXPO_PUBLIC_TERMS_URL: 'https://ziipa.com/terms',
+  EXPO_PUBLIC_COMMUNITY_URL: 'https://ziipa.com/community',
+  APP_VARIANT: 'preview',
+  EXPO_PUBLIC_CANONICAL_API_ORIGIN: process.env.ZIIPA_API_PROXY || process.env.ZIIPA_CANONICAL_API_ORIGIN || 'https://api.ziipa.com',
+};
 // The portal uses the site's existing same-origin /api proxy + HttpOnly cookie.
 // Never bundle backend credentials or reuse a developer's native API URL.
 // A preview and production export may use different public API origins. Clear

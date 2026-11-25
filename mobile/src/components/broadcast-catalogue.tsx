@@ -156,7 +156,7 @@ export function LiveCatalogue({
           <Text style={[styles.small, { textAlign: "center" }]}>
             {config?.configured
               ? "Start a broadcast or return when a creator is live."
-              : "Live broadcasting is awaiting service setup."}
+              : "Broadcasting is unavailable right now. Check back later."}
           </Text>
           <Action secondary title="Broadcast studio" onPress={prepare} />
         </View>

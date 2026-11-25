@@ -15,23 +15,13 @@ import {
   Scissors,
   ShieldCheck,
   SlidersHorizontal,
-  Smartphone,
-  Sparkles,
   Store,
-  Users,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { BrandLogo } from '@/components/brand-logo';
-import { WaitlistForm } from '@/components/waitlist-form';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
 import {
   Accordion,
   AccordionContent,
@@ -41,7 +31,6 @@ import {
 import { HeroAppPreview, InteractiveWalkthrough } from './app-preview';
 import './landing.css';
 
-type Platform = 'iOS' | 'Android';
 const worlds = [
   { name: 'Videos', icon: Clapperboard },
   { name: 'Music & film', icon: Music2 },
@@ -52,66 +41,28 @@ const worlds = [
 const faqs = [
   [
     'What is Ziipa?',
-    'Ziipa brings media discovery and creator tools into one space. The web preview lets you browse collections, upload and publish to Ziipa, create custom feeds, and choose personal content filters.',
+    'Ziipa brings media discovery and creator tools into one space. Browse collections, publish your own media, and build feeds around what you want to see.',
   ],
   [
-    'Can I use Ziipa today?',
-    'Yes. Open the web app and create a Ziipa account. You can upload media, save drafts, add a manual caption, set playback trims, publish to signed-in Ziipa members, leave comments, and build custom feeds. This is an early-access web demo, not an unrestricted public launch.',
+    'How do I get started?',
+    'Create an account and verify your email. In Studio, upload your media, save a private draft, and publish it when it’s ready.',
   ],
   [
-    'Is Ziipa available on iOS and Android?',
-    'Mobile apps are planned. App Store and Google Play download links have not been added yet. You can explore the responsive web app now or join the waitlist for future beta invitations.',
+    'Can I use Ziipa on my phone?',
+    'Open Ziipa in your phone’s browser and sign in with your Ziipa account.',
   ],
   [
-    'Which features are still coming?',
-    'AT Protocol identity and federation, live broadcasting, adaptive streaming, AI editing, licensed sound libraries, creator subscriptions, and marketplace checkout still require production integrations. They are not active in the current web demo.',
+    'Who can see my creations?',
+    'Drafts stay private. You choose what to publish and whether to make your gallery public in Settings.',
   ],
   [
     'What does “your feed, your rules” mean?',
-    'The current feed builder lets you combine a content category with tag, creator-name, and declared-city filters. You can preview matching creations, save the rules, and share them with Ziipa members in the web demo. Personal safety filters still apply.',
+    'Build a feed around a category, tag, creator, or city. You can save and share the feed with other Ziipa members. Your mute and block settings still apply.',
   ],
 ];
 
-function DownloadButtons({
-  onSelect,
-  compact = false,
-}: {
-  onSelect: (p: Platform) => void;
-  compact?: boolean;
-}) {
-  return (
-    <div className={`zl-download-buttons ${compact ? 'compact' : ''}`}>
-      <Button
-        variant="outline"
-        onClick={() => onSelect('iOS')}
-        aria-label="Download Ziipa for iOS — coming soon"
-      >
-        <Smartphone size={compact ? 16 : 23} />
-        <span>
-          {!compact && <small>COMING SOON FOR</small>}
-          <strong>iOS</strong>
-        </span>
-        {compact && <small>SOON</small>}
-      </Button>
-      <Button
-        variant="outline"
-        onClick={() => onSelect('Android')}
-        aria-label="Download Ziipa for Android — coming soon"
-      >
-        <Play size={compact ? 15 : 22} />
-        <span>
-          {!compact && <small>COMING SOON FOR</small>}
-          <strong>Android</strong>
-        </span>
-        {compact && <small>SOON</small>}
-      </Button>
-    </div>
-  );
-}
-
 export default function LandingPage() {
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [platform, setPlatform] = useState<Platform | null>(null);
   return (
     <main className="ziipa-landing" id="top">
       <a className="zl-skip" href="#main-content">
@@ -126,9 +77,8 @@ export default function LandingPage() {
             <a href="#creators">For creators</a>
           </nav>
           <div className="zl-nav-actions">
-            <DownloadButtons compact onSelect={setPlatform} />
             <Link className="zl-signin" href="/portal">
-              Open web app <ArrowUpRight size={15} />
+              Open Ziipa <ArrowUpRight size={15} />
             </Link>
           </div>
           <Button
@@ -153,9 +103,8 @@ export default function LandingPage() {
               For creators
             </a>
             <Link href="/portal">
-              Open web app <ArrowUpRight size={15} />
+              Open Ziipa <ArrowUpRight size={15} />
             </Link>
-            <DownloadButtons compact onSelect={setPlatform} />
           </nav>
         )}
       </header>
@@ -169,12 +118,12 @@ export default function LandingPage() {
             <br />A world <em>of yours.</em>
           </h1>
           <p>
-            Find your people. Share your creativity. Explore video, music,
-            gaming, and what comes next — all in one connected space.
+            Discover video, music, and games. Create and share your own media
+            from Ziipa Studio.
           </p>
           <div className="zl-hero-actions">
-            <Link className="zl-button" href="/portal">
-              Explore Ziipa <ArrowUpRight size={19} />
+            <Link className="zl-button" href="/portal?mode=register">
+              Create an account <ArrowUpRight size={19} />
             </Link>
             <a className="zl-watch-link" href="#in-action">
               <span>
@@ -183,16 +132,6 @@ export default function LandingPage() {
               See how it works
             </a>
           </div>
-          <div className="zl-hero-availability">
-            <span>
-              <Globe2 size={14} /> Try the web preview
-            </span>
-            <i />
-            <span>iOS & Android coming soon</span>
-          </div>
-          <p className="zl-hero-disclosure">
-            Creator tools are available in the web demo.
-          </p>
         </div>
         <HeroAppPreview />
       </section>
@@ -212,7 +151,6 @@ export default function LandingPage() {
       <section className="zl-section zl-container" id="features">
         <div className="zl-section-heading">
           <div>
-            <span className="zl-eyebrow">SIX WAYS TO FIND YOUR THING</span>
             <h2>
               Different passions.
               <br />
@@ -230,7 +168,6 @@ export default function LandingPage() {
               <span className="zl-feature-icon">
                 <Clapperboard />
               </span>
-              <span className="zl-status available">WEB PREVIEW</span>
             </div>
             <h3>
               Stories worth
@@ -292,7 +229,6 @@ export default function LandingPage() {
               <span className="zl-feature-icon">
                 <Music2 />
               </span>
-              <span className="zl-status">COLLECTIONS PREVIEW</span>
             </div>
             <div className="zl-feature-bottom">
               <h3>Find your frequency.</h3>
@@ -320,13 +256,11 @@ export default function LandingPage() {
               <span className="zl-feature-icon">
                 <Gamepad2 />
               </span>
-              <span className="zl-status">CHANNELS PREVIEW</span>
             </div>
             <div className="zl-feature-bottom">
               <h3>More than a game.</h3>
               <p>
-                Discover gaming communities and plan your channel. Gameplay
-                broadcasting is on the roadmap.
+                Discover clips and creations from Ziipa’s gaming community.
               </p>
               <Link href="/portal">
                 Explore gaming <ArrowUpRight size={16} />
@@ -338,15 +272,14 @@ export default function LandingPage() {
               <span className="zl-feature-icon">
                 <Radio />
               </span>
-              <span className="zl-status planned">PLANNED</span>
             </div>
             <h3>Be part of the moment.</h3>
             <p>
-              Live conversations, performances, and behind-the-scenes access.
-              Live broadcasting is not connected yet.
+              Find live conversations, performances, and behind-the-scenes
+              sessions in Live Feed.
             </p>
             <Link href="/portal">
-              Live feed concepts <ArrowUpRight size={16} />
+              Open Ziipa <ArrowUpRight size={16} />
             </Link>
           </article>
           <article className="zl-feature zl-feature-small">
@@ -354,12 +287,11 @@ export default function LandingPage() {
               <span className="zl-feature-icon">
                 <Store />
               </span>
-              <span className="zl-status planned">LISTINGS PREVIEW</span>
             </div>
             <h3>Make room for your brand.</h3>
             <p>
-              Create a product listing and shape your storefront.
-              Checkout, inventory, and seller payouts are still to come.
+              Discover products from Ziipa creators or set up your own
+              storefront and publish listings.
             </p>
             <Link href="/portal">
               Explore the marketplace <ArrowUpRight size={16} />
@@ -375,16 +307,14 @@ export default function LandingPage() {
               From “what if” to <em>watch this.</em>
             </h2>
             <p>
-              Take a little tour of your next creative space.
-              <br />
-              Pause the walkthrough and try the demo controls yourself.
+              See how Studio helps you go from an upload to a published post.
             </p>
           </div>
           <InteractiveWalkthrough />
           <div className="zl-demo-cta">
             <span>Ready to make it real?</span>
             <Link href="/portal">
-              Step inside the web app <ArrowRight size={17} />
+              Open Ziipa <ArrowRight size={17} />
             </Link>
           </div>
         </div>
@@ -464,56 +394,21 @@ export default function LandingPage() {
               </Link>
             </div>
           </article>
-          <article className="zl-capability-future">
+          <article>
             <span>
-              <Store />
+              <Globe2 />
             </span>
             <div>
-              <div className="zl-future-label">ON THE ROADMAP</div>
-              <h3>More possibilities for creators.</h3>
+              <h3>Share your gallery.</h3>
               <p>
-                Portable AT Protocol identity, live broadcasts, AI editing,
-                tips, subscriptions, and creator commerce. These production
-                integrations are still ahead.
+                Choose which published creations appear in your gallery and
+                share its link with your audience.
               </p>
-              <a href="#faq">
-                What’s available now? <ArrowUpRight size={14} />
-              </a>
+              <Link href="/portal">
+                Open your profile <ArrowUpRight size={14} />
+              </Link>
             </div>
           </article>
-        </div>
-      </section>
-      <section className="zl-vision-section" id="vision">
-        <div className="zl-container zl-vision">
-          <span className="zl-vision-symbol">
-            <Globe2 size={45} />
-          </span>
-          <span className="zl-eyebrow">THE NEXT CHAPTER OF THE WEB</span>
-          <h2>
-            Your creativity shouldn’t
-            <br />
-            have <em>boundaries.</em>
-          </h2>
-          <p>
-            We’re building toward a world where identity is portable,
-            communities choose their feeds, and creators have more ways to grow.
-            The journey starts with a space that puts you first.
-          </p>
-          <div>
-            <span>
-              <Users size={16} /> Community-led
-            </span>
-            <span>
-              <SlidersHorizontal size={16} /> Choice by design
-            </span>
-            <span>
-              <Sparkles size={16} /> Creator-first
-            </span>
-          </div>
-          <small>
-            Our direction for Ziipa. Federation and financial services are not
-            enabled in the current web demo.
-          </small>
         </div>
       </section>
       <section className="zl-section zl-container zl-faq" id="faq">
@@ -535,28 +430,15 @@ export default function LandingPage() {
           ))}
         </Accordion>
       </section>
-      <section className="zl-join-section" id="waitlist">
+      <section className="zl-join-section" id="get-started">
         <div className="zl-container zl-join">
           <div>
-            <span className="zl-eyebrow">
-              <i /> THIS IS JUST THE BEGINNING
-            </span>
             <h2>
-              Your next chapter.
-              <br />
-              <em>Make it Ziipa.</em>
+              Make your first creation.
             </h2>
-            <p>
-              Try the web app today, or join the waitlist for what comes next.
-              We’d love to have you along for the journey.
-            </p>
-            <Link className="zl-button" href="/portal">
-              Open the web app <ArrowUpRight size={18} />
+            <Link className="zl-button" href="/portal?mode=register">
+              Create an account <ArrowUpRight size={18} />
             </Link>
-            <DownloadButtons onSelect={setPlatform} />
-          </div>
-          <div className="zl-waitlist-form">
-            <WaitlistForm />
           </div>
         </div>
       </section>
@@ -583,20 +465,16 @@ export default function LandingPage() {
             </div>
             <div>
               <h3>Get to know us</h3>
-              <a href="#vision">Our vision</a>
               <a href="#faq">Your questions</a>
-              <a href="#waitlist">Join the waitlist</a>
               <a href="mailto:ziipaziipa@gmail.com">Contact us</a>
               <Link href="/network-imports">Public imports & data</Link>
             </div>
-            <div className="zl-footer-download">
-              <h3>Your world, wherever you go.</h3>
-              <DownloadButtons onSelect={setPlatform} />
-              <span>
-                Mobile apps coming soon.
-                <br />
-                The responsive web preview is ready to explore.
-              </span>
+            <div>
+              <h3>Account and privacy</h3>
+              <Link href="/privacy">Privacy</Link>
+              <Link href="/terms">Terms of use</Link>
+              <Link href="/community">Community rules</Link>
+              <Link href="/account-deletion">Account deletion</Link>
             </div>
           </div>
           <div className="zl-footer-bottom">
@@ -608,36 +486,6 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-      <Dialog
-        open={platform !== null}
-        onOpenChange={(open) => {
-          if (!open) setPlatform(null);
-        }}
-      >
-        <DialogContent className="zl-download-dialog">
-          <span className="zl-download-dialog-icon">
-            <Smartphone size={32} />
-          </span>
-          <DialogTitle>Ziipa for {platform} is on its way.</DialogTitle>
-          <DialogDescription>
-            Mobile downloads aren’t available yet. Explore the responsive web
-            app now, or join the waitlist for future beta invitations.
-          </DialogDescription>
-          <Link className="zl-button" href="/portal">
-            Try the web app <ArrowUpRight size={16} />
-          </Link>
-          <a
-            className="zl-dialog-waitlist"
-            href="#waitlist"
-            onClick={() => setPlatform(null)}
-          >
-            Join the waitlist <ArrowRight size={15} />
-          </a>
-          <small>
-            No App Store or Google Play listing is connected to this preview.
-          </small>
-        </DialogContent>
-      </Dialog>
     </main>
   );
 }

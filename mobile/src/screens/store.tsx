@@ -499,7 +499,7 @@ function ScopedStoreScreen({
     setDraft(editListing(value));
     setMessage(
       status === "published"
-        ? "Listing published to Ziipa Store. Sandbox checkout requires completed seller setup; live payments are off."
+        ? "Listing published to Ziipa Store. Live payments are off; eligible merchandise can use test checkout when available."
         : "Listing saved to your account.",
     );
     await loadAccount();
@@ -787,7 +787,7 @@ function ScopedStoreScreen({
         {!!message && <Notice text={message} />}
 
         {(tab === "browse" || tab === "sell") && !guest && (
-          <MarketplacePaymentSettings />
+          <MarketplacePaymentSettings sellerTools={tab === "sell"} />
         )}
         {tab === "browse" && (
           <>
@@ -1000,7 +1000,9 @@ function ScopedStoreScreen({
         {tab === "sell" && (
           <View style={{ gap: 12 }}>
             <StoreSellWizard
-              onConnect={() => navigation.navigate("Publishing", {tab:"connections"})}
+              onConnect={() =>
+                navigation.navigate("Publishing", { tab: "connections" })
+              }
               onNew={() => {
                 if (!operation.current) {
                   newProduct();

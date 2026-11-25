@@ -26,6 +26,7 @@ import { Action, Empty, Field, Pill } from "../components/ui";
 import { LiveTransmitter } from "../components/live-transmitter";
 import { LiveViewer } from "../components/live-viewer";
 import { LiveDestinations } from "../components/live-destinations";
+import { HelpLabel } from "../components/help-label";
 import { useZiipa } from "../provider";
 import { request } from "../lib/api";
 import {
@@ -165,7 +166,7 @@ export function LiveScreen({
         attempted.current = value.status !== "ended";
         report(
           value.status === "ended"
-            ? "Camera, microphone and provider ingest are stopped."
+            ? "Camera, microphone and broadcast are stopped."
             : value.detail,
         );
       } catch (cause) {
@@ -561,8 +562,7 @@ export function LiveScreen({
       {tab === "watch" ? (
         <>
           <Text style={styles.body}>
-            Live moments from the Ziipa community. Only broadcasts confirmed
-            active by the streaming provider appear here.
+            Live moments from the Ziipa community.
           </Text>
           {watching && (
             <View style={[styles.panel, desktop && workspace.panel]}>
@@ -586,8 +586,8 @@ export function LiveScreen({
           )}
           {publics.length === 0 ? (
             <Empty
-              title="No verified live feeds yet"
-              body="Creators appear here after they connect their camera or encoder and Livepeer confirms incoming video."
+              title="No live broadcasts right now"
+              body="Broadcasts appear here once incoming video is confirmed."
             />
           ) : (
             publics.map((value) => (
@@ -625,8 +625,7 @@ export function LiveScreen({
         <View style={[styles.panel, desktop && workspace.panel]}>
           <Text style={styles.heading}>Sign in to broadcast</Text>
           <Text style={styles.body}>
-            Public streams belong to a verified Ziipa session. Guest previews
-            cannot create provider resources or go live.
+            Use your Ziipa account to prepare and start a public broadcast.
           </Text>
           <Action
             title="Sign in or register"
@@ -637,11 +636,16 @@ export function LiveScreen({
         <>
           {config && !config.configured && (
             <View style={[styles.panel, desktop && workspace.panel]}>
-              <Text style={styles.heading}>Provider setup required</Text>
-              <Text style={styles.body}>{config.detail}</Text>
+              <HelpLabel
+                label="Broadcasting unavailable"
+                style={styles.heading}
+                help={
+                  config.detail ||
+                  "Broadcasting must be available before you can prepare a live session. Your camera and microphone stay off until you choose to start."
+                }
+              />
               <Text style={styles.small}>
-                An administrator must configure Livepeer on the backend. Do not
-                paste an API key into this app.
+                Try refreshing the status. Your camera and microphone are off.
               </Text>
             </View>
           )}
@@ -696,11 +700,10 @@ export function LiveScreen({
                 </Text>
               </Pressable>
               <Text style={styles.small}>
-                Recording is {record ? "on for the provider session" : "off"}.
-                Preparing reserves a session; your camera stays off and nothing
-                is transmitted. Provider recording access/retention is separate
-                from private Ziipa drafts. Imported recordings and automated
-                clips are never published without a reviewed campaign.
+                Recording is {record ? "on" : "off"}. Preparing keeps your
+                camera off and sends no media. The streaming service may retain
+                its own recording. Imported recordings and clips stay private
+                until you review and publish them.
               </Text>
               <Action
                 title={
@@ -715,9 +718,8 @@ export function LiveScreen({
               />
               {createRequest.current && (
                 <Text style={styles.small}>
-                  This request ID is kept for safe retries. If setup is
-                  unresolved, ask an administrator to reconcile it rather than
-                  creating a duplicate.
+                  Use this same request if preparation is unconfirmed. Do not
+                  start a second request; refresh the broadcast status first.
                 </Text>
               )}
             </View>
@@ -740,16 +742,22 @@ export function LiveScreen({
                 <Text style={styles.body}>{selected.detail}</Text>
                 <Text style={styles.small}>
                   {selected.record
-                    ? "Provider recording was selected. Before going live, open Live & recordings to separately enable the private import/excerpt workflow. Provider retention and access remain separate from Ziipa privacy."
+                    ? "Recording is on. Before going live, open Live & recordings to enable private saving and clips. The streaming service may keep its own recording."
                     : "Recording is off for this broadcast. Prepare a new broadcast with recording selected to create a recording; it cannot be added retroactively."}
                 </Text>
               </View>
-              {!["creating", "provisioning_unknown"].includes(selected.status) && (
+              {!["creating", "provisioning_unknown"].includes(
+                selected.status,
+              ) && (
                 <LiveDestinations
                   broadcast={selected}
                   focused={enabled}
-                  disabled={!!busy || attempted.current || selected.status === "ended"}
-                  onConnections={() => navigation.navigate("Publishing", { tab: "connections" })}
+                  disabled={
+                    !!busy || attempted.current || selected.status === "ended"
+                  }
+                  onConnections={() =>
+                    navigation.navigate("Publishing", { tab: "connections" })
+                  }
                   onSavingChange={setSavingDestinations}
                 />
               )}

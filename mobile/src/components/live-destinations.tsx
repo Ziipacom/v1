@@ -139,10 +139,10 @@ const statusText: Record<Status, string> = {
   starting: "Starting",
   live: "Live",
   receiving: "Receiving",
-  verification_unavailable: "Unverified",
+  verification_unavailable: "Not confirmed",
   error: "Needs attention",
   ended: "Ended",
-  setup_required: "Setup required",
+  setup_required: "Not connected",
   unavailable: "Unavailable",
 };
 
@@ -492,7 +492,7 @@ function ScopedDestinations({
       )}
       {snapshot && backend.current === "legacy" && (
         <Text style={styles.small}>
-          This server currently supports Ziipa and Twitch.
+          This broadcast supports Ziipa and Twitch destinations.
         </Text>
       )}
       {loadError && (
@@ -556,7 +556,7 @@ function ScopedDestinations({
                   accessibilityLabel={
                     canRemove
                       ? `Remove ${item.name}`
-                      : `${expanded ? "Close" : "Open"} ${item.name} setup`
+                      : `${expanded ? "Close" : "Open"} ${item.name} connection`
                   }
                   accessibilityState={{
                     disabled: locked,
@@ -593,22 +593,29 @@ function ScopedDestinations({
               )}
             </View>
             {!!detail && <Text style={styles.small}>{detail}</Text>}
-            {item.mode === "link_only" && localZiipaStatus(broadcast) === "live" && (
-              <Action
-                secondary
-                title={copiedWatchLink ? "Watch link copied" : "Copy live watch link"}
-                onPress={() => {
-                  const watchUrl = `https://ziipa.com/studio/?view=live&watchId=${encodeURIComponent(broadcast.id)}`;
-                  void Clipboard.setStringAsync(watchUrl).then(
-                    (copied) => {
-                      if (copied) setCopiedWatchLink(true);
-                      else setActionError("Could not copy the live watch link.");
-                    },
-                    () => setActionError("Could not copy the live watch link."),
-                  );
-                }}
-              />
-            )}
+            {item.mode === "link_only" &&
+              localZiipaStatus(broadcast) === "live" && (
+                <Action
+                  secondary
+                  title={
+                    copiedWatchLink
+                      ? "Watch link copied"
+                      : "Copy live watch link"
+                  }
+                  onPress={() => {
+                    const watchUrl = `https://ziipa.com/studio/?view=live&watchId=${encodeURIComponent(broadcast.id)}`;
+                    void Clipboard.setStringAsync(watchUrl).then(
+                      (copied) => {
+                        if (copied) setCopiedWatchLink(true);
+                        else
+                          setActionError("Could not copy the live watch link.");
+                      },
+                      () =>
+                        setActionError("Could not copy the live watch link."),
+                    );
+                  }}
+                />
+              )}
             {editor && editor.provider === item.provider && prepared && (
               <View style={s.editor}>
                 <Text style={s.name}>Add {item.name}</Text>
@@ -618,14 +625,14 @@ function ScopedDestinations({
                 {item.mode === "manual" && (
                   <>
                     <Text style={styles.small}>
-                      Ziipa sends your {item.name} RTMPS URL and key to its relay
-                      for this broadcast. You may also need to approve Go Live
-                      in {item.name}.
+                      Ziipa sends your {item.name} streaming address and key to
+                      the streaming service for this broadcast. You may also
+                      need to approve Go Live in {item.name}.
                     </Text>
                     {!!resolvedSetupUrl(item) && (
                       <Action
                         secondary
-                        title={`Open ${item.name} setup`}
+                        title={`Open ${item.name} live settings`}
                         icon={ChevronRight}
                         disabled={locked}
                         onPress={() => {
@@ -633,7 +640,7 @@ function ScopedDestinations({
                           if (url)
                             void Linking.openURL(url).catch(() =>
                               setActionError(
-                                `Could not open ${item.name} setup.`,
+                                `Could not open ${item.name} live settings.`,
                               ),
                             );
                         }}
@@ -689,8 +696,8 @@ function ScopedDestinations({
                     )}
                   </View>
                   <Text style={[styles.body, s.consentCopy]}>
-                    Share this public broadcast and its audio with {item.name}.
-                    {" "}{item.name} may keep its own recording.
+                    Share this public broadcast and its audio with {item.name}.{" "}
+                    {item.name} may keep its own recording.
                   </Text>
                 </Pressable>
                 <View style={s.actions}>

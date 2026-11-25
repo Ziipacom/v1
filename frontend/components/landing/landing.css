@@ -1676,10 +1676,7 @@
   padding: 85px 0;
 }
 .zl-join {
-  display: grid;
-  grid-template-columns: 1fr 0.8fr;
-  gap: 115px;
-  align-items: center;
+  text-align: center;
 }
 .zl-join h2 {
   font-size: 48px;
@@ -1694,7 +1691,7 @@
   max-width: 410px;
 }
 .zl-join .zl-button {
-  margin-top: 27px;
+  margin: 27px auto 0;
   display: flex;
   width: fit-content;
 }

@@ -26,7 +26,6 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import { color, font, styles, themedStyles, useTheme } from "../theme";
-import { conceptsEnabled, limitedStoreBeta } from "../lib/config";
 import type { Category } from "../lib/types";
 import { useDesktopLayout } from "./desktop-layout";
 
@@ -34,19 +33,12 @@ export const worlds: {
   id: Category;
   title: string;
   icon: LucideIcon;
-  concept?: boolean;
 }[] = [
   { id: "games", title: "Games", icon: Gamepad2 },
-  { id: "live", title: "Live Feed", icon: Video, concept: true },
+  { id: "live", title: "Live Feed", icon: Video },
   { id: "music", title: "Music & Film", icon: Music2 },
   { id: "store", title: "Store", icon: Store },
-  // Live navigation remains visible in the iPhone beta without enabling a provider.
-].filter((w) => conceptsEnabled || limitedStoreBeta || !w.concept) as {
-  id: Category;
-  title: string;
-  icon: LucideIcon;
-  concept?: boolean;
-}[];
+];
 
 export function WorldGlyph({
   id,

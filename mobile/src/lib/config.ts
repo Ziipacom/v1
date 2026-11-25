@@ -42,8 +42,6 @@ export const apiOrigin = browserPreviewApiOrigin(configuredApiOrigin, {
 });
 export const demoEnabled =
   __DEV__ || process.env.EXPO_PUBLIC_ENABLE_DEMO === "true";
-export const conceptsEnabled =
-  __DEV__ || process.env.EXPO_PUBLIC_ENABLE_CONCEPTS === "true";
 export const policyVersion = "2026-08-31";
 export const legalUrls = {
   privacy: iosExternalTestflight || androidPlayInternal ? externalBetaPrivacyUrl : process.env.EXPO_PUBLIC_PRIVACY_URL || "",

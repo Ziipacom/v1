@@ -548,29 +548,29 @@ const policies = {
     title: "Your privacy",
     sections: [
       [
-        "What this build stores",
-        "Ziipa stores your name, email, password hash, uploaded media, posts, comments, feed rules, likes, bookmarks, safety preferences, and reports on the configured Ziipa server. Live-session records, saved edits and export jobs are stored when you use those features. Connected-network authorizations are encrypted on the server alongside selected destinations and publishing receipts. Passwords are never saved as plain text.",
+        "Account and media",
+        "Ziipa uses your name, email, password hash and account settings to provide and protect your account. We store the media, edits, posts, comments, feeds, and preferences you save. Connected-network authorizations are encrypted.",
       ],
       [
         "On your device",
-        "The native app keeps your session in iOS Keychain or Android encrypted storage. The web portal uses its HttpOnly session cookie; the standalone browser preview keeps its session in memory. Selected or recorded files and prepared exports may be temporarily copied into the app cache. Private media requires your session; it is not intentionally cached for offline playback.",
+        "The app keeps your session in secure device storage. The website uses a session cookie. The app may temporarily store files you select, record, or export. Your private media requires your session to open.",
       ],
       [
         "Your choices",
-        "Camera and microphone access are optional and requested when you open capture or enable a live preview. A private preview is not a broadcast; Go live requires confirmation before media is sent to the configured streaming provider. Connecting a social account does not automatically publish media: each post and live relay needs your approval. File selection uses the operating system picker. No contacts, precise location or advertising access is requested.",
+        "You choose which device permissions to enable. Ziipa asks for confirmation before a public broadcast, and before publishing or relaying to a connected network.",
       ],
       [
         "Deletion and support",
-        `Ziipa is operated by ${legalOperatorName}. Delete your account in Settings with your password. This removes server account data, wallet links and the metadata index, and queues failed private-media cleanup for retry. Public IPFS copies, blockchain records and assets held in your external wallet remain. Contact ${supportEmail} with privacy questions. Production retention terms and the complete policies still require owner review before release.`,
+        `Ziipa is operated by ${legalOperatorName}. You can export your account data or delete your account in Settings. When media cleanup fails, Ziipa queues it for retry. Public blockchain records and copies on other services may remain. Contact ${supportEmail} with privacy questions.`,
       ],
     ],
   },
   terms: {
-    title: "A space we share",
+    title: "Terms of use",
     sections: [
       [
         "Your account",
-        "This first release is intended for adults aged 18 and older. Use accurate account information, keep your password private, and do not impersonate others. You are responsible for activity on your account.",
+        "You must be at least 18 years old to register in the app. Use accurate account information, keep your password private, and do not impersonate others. You are responsible for activity on your account.",
       ],
       [
         "Your creations",
@@ -581,13 +581,13 @@ const policies = {
         "Follow the community rules. Ziipa may remove violating content. Blocking and reporting are available on posts and comments. Contact support if you believe a removal is mistaken.",
       ],
       [
-        "Preview limitations",
-        "Live broadcasting, supported social publishing and video rendering require configured provider services and any required approvals. Bluesky support covers supported AT Protocol accounts and posts, not unrestricted federation or every network's private feeds. Twitch supports live relay, not finished-video uploads. Subscriptions and checkout remain unavailable. Full commercial terms require owner and legal review before public distribution.",
+        "Connected services",
+        "Connected networks have their own terms and account requirements. Review the destination before sharing media or broadcasting. You can disconnect services in Ziipa.",
       ],
     ],
   },
   community: {
-    title: "Keep it creative.\nKeep it kind.",
+    title: "Community rules",
     sections: [
       [
         "Respect people",
@@ -603,7 +603,7 @@ const policies = {
       ],
       [
         "Speak up",
-        `Use Report on a post or comment and choose the reason. Block a creator to hide their content. Contact ${supportEmail} for appeals or safety concerns. A staffed moderation process is required before this development service is opened to the public.`,
+        `Use Report on a post or comment to flag it for review. Block a creator to hide their content. Contact ${supportEmail} for appeals or safety concerns.`,
       ],
     ],
   },
@@ -625,14 +625,13 @@ export function LegalScreen({
         desktop ? [workspace.page, workspace.narrow] : styles.page
       }
     >
-      <Text style={styles.eyebrow}>ZIIPA · TRUST & COMMUNITY</Text>
       <Text style={styles.title}>{policy.title}</Text>
       {url ? (
         <Action
           title={
             betaPrivacy
               ? "Open beta privacy notice"
-              : "Read the published policy"
+              : "Read on ziipa.com"
           }
           secondary
           onPress={() =>
@@ -641,11 +640,7 @@ export function LegalScreen({
             )
           }
         />
-      ) : (
-        <Notice
-          text={`Development policy draft · not the final published policy. Ziipa is operated by ${legalOperatorName}. Complete policies, retention terms and public policy URLs still require owner review before store release.`}
-        />
-      )}
+      ) : null}
       {!!error && <Notice error text={error} />}
       {betaPrivacy ? (
         <Text

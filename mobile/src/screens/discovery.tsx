@@ -176,7 +176,7 @@ function MobileDiscoverScreen({
             minHeight: 32,
           }}
         >
-          {(guest || activeWorld?.concept) && (
+          {guest && (
             <Text
               style={{
                 color: color.faint,
@@ -184,8 +184,7 @@ function MobileDiscoverScreen({
                 fontFamily: font.regular,
               }}
             >
-              {guest ? "SAMPLE STUDIO" : "CONCEPT"}
-              {guest && activeWorld?.concept ? " · CONCEPT" : ""}
+              Sample Studio
             </Text>
           )}
           <Pressable

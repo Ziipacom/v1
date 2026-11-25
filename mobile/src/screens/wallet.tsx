@@ -89,13 +89,36 @@ export function WalletScreen(props: Props) {
   return <FullWalletScreen {...props} />;
 }
 
+export function walletMintAvailability(
+  config: WalletConfig | null,
+  chainId: number,
+  kind: "mint_nft" | "create_token",
+) {
+  const ready = !mintSetupIssue(config, chainId, kind);
+  return {
+    ready,
+    label: !config
+      ? "Checking minting…"
+      : ready
+        ? "Test minting available"
+        : "Minting unavailable",
+    detail: !config
+      ? "Checking this test network. Your saved media is unchanged."
+      : ready
+        ? "Review your media and approve each step in your external wallet. Test assets have no monetary value."
+        : "Minting is not available on this test network right now. You can keep working on your creation and try again later.",
+  };
+}
+
 function FullWalletScreen({ navigation, initialItem }: Props) {
   const { desktop } = useDesktopLayout();
   const { session, api, data } = useZiipa();
   initialItem =
     sourceMintItem(initialItem, session?.user.id, false) || undefined;
   const [step, setStep] = useState(0);
-  const [view, setView] = useState<"wizard" | "vault">("wizard");
+  const [view, setView] = useState<"wizard" | "vault">(
+    initialItem ? "wizard" : "vault",
+  );
   const [config, setConfig] = useState<WalletConfig | null>(null);
   const [chainId, setChainId] = useState(84532);
   const [name, setName] = useState(initialItem?.title || "");
@@ -157,6 +180,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
   const [split, setSplit] = useState("0");
   const chain = config?.chains.find((c) => c.id === chainId);
   const mintIssue = mintSetupIssue(config, chainId, kind);
+  const mintAvailability = walletMintAvailability(config, chainId, kind);
   const activeLink = link?.chain_id === chainId ? link : null;
   const balance =
     syncedBalance?.chain_id === chainId &&
@@ -374,7 +398,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
         "Reconnect your verified wallet before preparing a mint.",
       );
     assertWalletNetwork(chainId, __DEV__, Platform.OS);
-    if (mintIssue) throw new Error(mintIssue);
+    if (mintIssue) throw new Error(mintAvailability.detail);
     if (!name.trim() || (!mediaId && !imageUri.trim()))
       throw new Error(
         "Name your token and choose your saved media before minting.",
@@ -662,7 +686,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 {!!mediaName && (
                   <Text style={s.hint}>Selected creation: {mediaName}</Text>
                 )}
-                {!!mintIssue && <Notice text={mintIssue} />}
+                {!!mintIssue && <Notice text={mintAvailability.detail} />}
                 {step === 0 && (
                   <Action
                     secondary
@@ -677,10 +701,10 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                 <Text style={s.cardTitle}>
                   {
                     [
-                      "Token Engine",
-                      "Protocol",
-                      "Your connection",
-                      "Metadata & Mint",
+                      "Your creation",
+                      "Test network",
+                      "Connect wallet",
+                      "Review & mint",
                     ][step]
                   }
                 </Text>
@@ -688,7 +712,7 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                   {step === 0 && (
                     <>
                       <Input
-                        label="Name Token"
+                        label="Creation name"
                         value={name}
                         onChangeText={(v) => changed(() => setName(v))}
                         maxLength={80}
@@ -839,10 +863,8 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                           />
                           {!walletConnectConfigured && (
                             <Text style={s.hint}>
-                              Wallet connection is not enabled in this build
-                              yet. You can prepare your token and saved media
-                              here. Browser extensions can connect directly on
-                              web.
+                              Wallet connection is unavailable right now. Your
+                              saved media and existing assets are unchanged.
                             </Text>
                           )}
                         </>
@@ -1001,8 +1023,11 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                       </View>
                       <Text style={s.hint}>
                         {config?.storage === "local_ipfs"
-                          ? "Current environment: offline local IPFS. Files are pinned locally and are not publicly retrievable."
-                          : "Current environment: public IPFS. Publishing may be permanent."}
+                          ? "Media is stored locally and is not publicly retrievable."
+                          : config?.storage === "public_ipfs" ||
+                              config?.storage === "pinata_ipfs"
+                            ? "Approved media and metadata are stored publicly on IPFS. Publishing may be permanent."
+                            : "Public media storage is currently unavailable. Your private library is unchanged."}
                       </Text>
                     </>
                   )}
@@ -1024,8 +1049,8 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
           ) : (
             <>
               <View style={styles.between}>
-                <Text style={s.kicker}>ZIIPA STUDIO / WEB3</Text>
-                <Text style={s.chip}>TESTNET</Text>
+                <Text style={s.kicker}>YOUR WALLET</Text>
+                <Text style={s.chip}>TEST NETWORK</Text>
               </View>
               <View style={[s.card, { padding: 23, gap: 18 }]}>
                 <View style={styles.between}>
@@ -1569,22 +1594,18 @@ function FullWalletScreen({ navigation, initialItem }: Props) {
                         {c.id === 31337
                           ? "Local development chain"
                           : `Test network · chain ${c.id}`}{" "}
-                        ·{" "}
-                        {c.deployed
-                          ? "Contracts configured"
-                          : "Contracts pending deployment"}
+                        · {walletMintAvailability(config, c.id, kind).label}
                       </Text>
                     </View>
                     {c.id === chainId && <Check size={20} color="#A6E21B" />}
                   </Pressable>
                 ))}
               <Text style={s.hint}>
-                Mainnet is disabled. Network configuration and signed
-                transactions must match.
+                Use test assets only. Mainnet transactions are disabled.
               </Text>
               {!config && (
                 <Action
-                  title="Retry connection to API"
+                  title="Refresh wallet availability"
                   onPress={() =>
                     void run(async () =>
                       setConfig(

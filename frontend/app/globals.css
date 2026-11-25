@@ -35,6 +35,9 @@ body{font-family:Barlow,Arial,sans-serif}::selection{background:#b1eb62;color:#2
 
 
 .portal-password-field{position:relative;min-width:0}
+.portal-recovery-link{align-self:flex-start;color:#d9c2ff;font-size:13px;margin-top:6px}
+.portal-policy-links{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12px;color:#c8bbdd;margin-top:20px}
+.portal-recovery-link,.portal-policy-links a{text-decoration:underline;text-underline-offset:3px}
 .auth-card .ziipa-form .portal-password-field input{padding-inline-end:52px}
 .portal-password-toggle{position:absolute;inset-block:1px;inset-inline-end:1px;width:44px;display:grid;place-items:center;border-radius:4px;background:transparent;color:#d0cde0;cursor:pointer}
 .portal-password-toggle:hover{color:#fff}

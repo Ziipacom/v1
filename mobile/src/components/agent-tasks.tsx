@@ -295,9 +295,7 @@ export function AgentTasks({
     detailGeneration.current++;
     setSelected({ ...task, steps: [] });
     setPollRemaining(12);
-    setNotice(
-      "Task queued. A model reply is not a completion receipt; follow its verified steps below.",
-    );
+    setNotice("Task added. Follow its progress and completed steps below.");
     await loadTasks();
   }
 
@@ -348,17 +346,17 @@ export function AgentTasks({
     if (!valid(token, current)) return;
     setNotice(
       action === "cancel"
-        ? "Cancelled. Completed private actions remain in your activity receipts."
+        ? "Cancelled. Completed changes remain in your activity."
         : action === "pause"
           ? "Paused. An action already in progress may finish before the pause takes effect."
-          : "Task resumed with current permissions and its remaining budget.",
+          : "Task resumed with your current permissions and remaining limits.",
     );
   }
 
   const agentReadiness = (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
       {[
-        ["Service", !!config?.worker_ready],
+        ["Processing", !!config?.worker_ready],
         ["AI", !!config?.inference.available],
         ["Agent", !!policy?.enabled],
       ].map(([label, ready]) => (
@@ -403,8 +401,8 @@ export function AgentTasks({
   const agentInference = config?.inference.model ? (
     <Text style={styles.small}>
       {config.inference.mode === "hosted_ai"
-        ? "Private inference gateway"
-        : "Local inference"}{" "}
+        ? "Private AI service"
+        : "Local AI service"}{" "}
       · {config.inference.model}
     </Text>
   ) : null;
@@ -536,14 +534,14 @@ export function AgentTasks({
                 </Text>
                 <Text style={styles.small}>
                   {config.effective_tools.includes(tool.id)
-                    ? "Effective permission"
-                    : "Also grant this tool in Assistant permissions"}
+                    ? "Enabled for tasks"
+                    : "Also allow this action in Assistant permissions"}
                 </Text>
               </View>
             </Pressable>
           ))}
         {tools.includes("render.create") ? (
-          <Notice text="An existing render permission is retained. This panel does not queue renders; choose owned media and its export settings in Creator Studio." />
+          <Notice text="Your export permission is saved. Choose media and export settings in Creator Studio to create an export." />
         ) : null}
         <Text style={styles.small}>
           A tool must be enabled here and in Assistant permissions. Both grants
@@ -575,7 +573,7 @@ export function AgentTasks({
           editable={!busy && !loading}
         />
         <Action
-          title="Save agent policy"
+          title="Save agent settings"
           icon={ShieldCheck}
           busy={busy}
           disabled={loading || !steps || !daily || !policyChanged}
@@ -663,7 +661,7 @@ export function AgentTasks({
             </Text>
             <InfoTip
               title="Task availability"
-              content="Background processing, private AI and at least one effective tool permission must be available before a task can run. Check Agent settings or refresh the status."
+              content="Tasks need an available AI service and at least one action enabled in both Agent settings and Assistant permissions. Review your settings or refresh the status."
             />
           </View>
         ) : null}
@@ -681,7 +679,7 @@ export function AgentTasks({
                 )} without separate approval, for up to ${policy.max_steps} steps. No public publishing or wallet actions are included.`}
             />
             <Action
-              title="Confirm and queue task"
+              title="Confirm task"
               icon={Play}
               busy={busy}
               onPress={() => void run(queueTask)}
@@ -917,7 +915,7 @@ export function AgentTasks({
         <>
           {agentSafety}
           {policyEditor}
-          <LibrarySection title="Service details" initiallyOpen={false}>
+          <LibrarySection title="About task availability" initiallyOpen={false}>
             {agentInference}
             {agentDetail}
             <Text style={styles.small}>

@@ -556,17 +556,24 @@ function ScopedPublishingScreen({
     <>
       {ready && (
         <View style={[styles.panel, desktop && dp.card]}>
-          <Text style={[styles.heading, desktop && dp.sectionTitle]}>
-            {ready.name}
+          <HelpLabel
+            label={ready.name}
+            style={[styles.heading, desktop && dp.sectionTitle]}
+            help={[
+              ready.detail,
+              ...ready.requirements,
+              ...(ready.delivery_requirements || []),
+            ]
+              .filter(Boolean)
+              .join("\n")}
+          />
+          <Text style={styles.small}>
+            {selected?.status === "authorized"
+              ? "Account connected. Choose the channel you control below."
+              : ready.configured
+                ? "Connect the account you want to publish from."
+                : "Connection unavailable. Refresh status or choose another network."}
           </Text>
-          <Text style={styles.small}>{ready.detail}</Text>
-          {[...ready.requirements, ...(ready.delivery_requirements || [])].map(
-            (r) => (
-              <Text key={r} style={styles.small}>
-                • {r}
-              </Text>
-            ),
-          )}
           {provider === "bluesky" && (
             <Field
               label="Bluesky handle"
@@ -581,10 +588,10 @@ function ScopedPublishingScreen({
           <Action
             title={
               selected
-                ? "Reauthorize account"
+                ? "Reconnect account"
                 : provider === "twitch"
-                  ? "Authorize Twitch channel"
-                  : "Authorize publishing account"
+                  ? "Connect Twitch channel"
+                  : "Connect account"
             }
             secondary
             disabled={
@@ -597,7 +604,7 @@ function ScopedPublishingScreen({
           />
           {authUrl ? (
             <Action
-              title="Open secure authorization"
+              title="Continue secure connection"
               onPress={() => {
                 void run(async () => {
                   assertInternalBetaAction(limitedStoreBeta, "network-import");
@@ -618,7 +625,10 @@ function ScopedPublishingScreen({
                   onPress={() => {
                     resetApproval();
                     void run(async (current) => {
-                      assertInternalBetaAction(limitedStoreBeta, "network-import");
+                      assertInternalBetaAction(
+                        limitedStoreBeta,
+                        "network-import",
+                      );
                       await api(
                         `/api/publishing/connections/${provider}/target`,
                         { target_id: target.id },
@@ -1190,7 +1200,7 @@ function ScopedPublishingScreen({
               onPress={() => void run(publish)}
             />
             {submitted && (
-              <Notice text="Request submitted. Refresh receipts below before trying again. A timeout can mean the provider received the upload; Ziipa will not automatically send a duplicate." />
+              <Notice text="Request submitted. Check its status below before trying again. A timeout can mean the network received the upload; Ziipa will not automatically send a duplicate." />
             )}
           </View>
         </>
@@ -1226,7 +1236,9 @@ function ScopedPublishingScreen({
               color={job.status === "delivered" ? color.lime : color.muted}
             />
             <Text style={styles.label}>
-              {job.provider} · {job.status}
+              {providers.find((entry) => entry.provider === job.provider)
+                ?.name || job.provider}{" "}
+              · {job.status.replaceAll("_", " ")}
             </Text>
           </View>
           <Text style={styles.small}>{job.detail}</Text>
@@ -1265,7 +1277,7 @@ function ScopedPublishingScreen({
           <Choice
             disabled={busy}
             key={p.provider}
-            title={`${p.name} · ${p.configured ? "Ready to authorize" : p.publish_implemented || p.live_implemented ? "Provider setup needed" : "Manual sharing only"}`}
+            title={`${p.name} · ${p.configured ? "Ready to connect" : p.publish_implemented || p.live_implemented ? "Connection unavailable" : "Manual sharing only"}`}
             active={provider === p.provider}
             onPress={() => {
               setProvider(p.provider);
@@ -1316,7 +1328,7 @@ function ScopedPublishingScreen({
         {accountControls}
         {!providers.length && (
           <Text style={styles.small}>
-            Network setup is unavailable. Refresh to check available providers.
+            Connections could not be loaded. Refresh to try again.
           </Text>
         )}
       </ScrollView>
@@ -1333,7 +1345,7 @@ function ScopedPublishingScreen({
         <View style={dp.workspace}>
           <View style={dp.header}>
             <View style={{ gap: 6, flex: 1, minWidth: 250 }}>
-              <Text style={dp.eyebrow}>DISTRIBUTION / DIRECT PUBLISHING</Text>
+              <Text style={dp.eyebrow}>SHARE YOUR WORK</Text>
               <Text style={dp.title}>Publish to your networks</Text>
               <Text style={styles.small}>
                 Choose a channel, review the exact media and approve this
@@ -1356,7 +1368,7 @@ function ScopedPublishingScreen({
             </View>
           </View>
           {guest && (
-            <Notice text="Sign in to authorize accounts and publish your own uploaded media. Preview samples cannot be sent to a network." />
+            <Notice text="Sign in to connect accounts and share your own media. Sample media cannot be published." />
           )}
           {message ? <Notice text={message} /> : null}
           <View
@@ -1397,7 +1409,7 @@ function ScopedPublishingScreen({
                         ? "Authorized"
                         : entry.configured
                           ? "Ready to connect"
-                          : "Setup required"}
+                          : "Connection unavailable"}
                     </Text>
                   </View>
                 </Pressable>
@@ -1405,8 +1417,7 @@ function ScopedPublishingScreen({
             })}
             {!providers.length && (
               <Text style={styles.small}>
-                No provider configuration loaded. Refresh status to check
-                available integrations.
+                Connections could not be loaded. Refresh status to try again.
               </Text>
             )}
           </View>
@@ -1459,12 +1470,12 @@ function ScopedPublishingScreen({
         <ShieldCheck size={26} color={color.lime} />
         <Text style={styles.title}>Publish beyond Ziipa</Text>
         <Text style={styles.small}>
-          Authorize the actual channel, choose your media and approve each
-          destination. Linking a profile is separate from permission to publish.
+          Connect your account, choose your media and review each destination
+          before publishing.
         </Text>
       </View>
       {guest ? (
-        <Notice text="Sign in to authorize accounts and publish your own uploaded media. Preview samples cannot be sent to a network." />
+        <Notice text="Sign in to connect accounts and share your own media. Sample media cannot be published." />
       ) : null}
       <Action
         title="Refresh accounts and delivery status"

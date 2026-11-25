@@ -128,15 +128,15 @@ const desktopTitles: Record<WorkspaceTab, { title: string; detail: string }> = {
   },
   Agent: {
     title: "Agent",
-    detail: "Private tasks, tool permissions and verified receipts.",
+    detail: "Private tasks, permissions and progress.",
   },
   Workflows: {
     title: "Tasks",
-    detail: "Configure scheduled work and follow each run.",
+    detail: "Schedule work and follow its progress.",
   },
   Insights: {
     title: "Insights & economics",
-    detail: "Ziipa activity and your recorded creator ledger.",
+    detail: "Your activity, income and expenses.",
   },
 };
 
@@ -217,10 +217,12 @@ const toolTitles: Record<string, string> = {
 function Block({
   title,
   subtitle,
+  help = sectionHelp[title],
   children,
 }: {
   title: string;
   subtitle?: string;
+  help?: string;
   children: ReactNode;
 }) {
   const { desktop } = useDesktopLayout();
@@ -234,7 +236,7 @@ function Block({
     >
       <HelpLabel
         label={title}
-        help={sectionHelp[title]}
+        help={help}
         style={[styles.heading, desktop && { fontSize: 18 }]}
       />
       {subtitle ? <Text style={styles.small}>{subtitle}</Text> : null}
@@ -1146,7 +1148,9 @@ export function MediaOSScreen({
           ))}
         </View>
       ) : null}
-      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
         ref={contentScroll}
         showsVerticalScrollIndicator={false}
 
@@ -1230,7 +1234,9 @@ export function MediaOSScreen({
                 busy={busy}
                 mutate={mutate}
                 openItem={openItem}
-                mint={(item) => navigation.navigate("Utility", { kind: "wallet", item })}
+                mint={(item) =>
+                  navigation.navigate("Utility", { kind: "wallet", item })
+                }
                 exports={(id) => navigation.navigate("Exports", { itemId: id })}
                 publish={(id) =>
                   navigation.navigate("Publishing", { itemId: id })
@@ -1673,7 +1679,11 @@ function LibraryPanel({
     setVisibleOriginals(30);
   }, [query, projectFilter]);
   const [selected, setSelected] = useState<LibraryItem | null>(null);
-  const selectedMintItem = sourceMintItem(data.drafts.find((row) => row.id === selected?.id), session?.user.id, false);
+  const selectedMintItem = sourceMintItem(
+    data.drafts.find((row) => row.id === selected?.id),
+    session?.user.id,
+    false,
+  );
   const [meta, setMeta] = useState<AssetMetadata>(emptyAssetMetadata);
   const [tags, setTags] = useState("");
   const [expiry, setExpiry] = useState("");
@@ -1868,10 +1878,13 @@ function LibraryPanel({
             }}
           />
           {selectedMintItem ? (
-            <Pill title="Mint" onPress={() => {
-              setSelected(null);
-              mint(selectedMintItem);
-            }} />
+            <Pill
+              title="Mint"
+              onPress={() => {
+                setSelected(null);
+                mint(selectedMintItem);
+              }}
+            />
           ) : null}
         </View>
         <Field
@@ -2633,27 +2646,31 @@ function WorkflowsPanel({
   };
   const workerStatus = (
     <Block
-      title={desktop ? "Worker connection" : "Background workflows"}
-      subtitle="A schedule continues on the Ziipa worker when you close the app. Run history records completion and failures."
+      title="Scheduled tasks"
+      subtitle="Reminders, exports and connected-network updates."
+      help="Scheduled work can continue after you leave Ziipa when processing is available. Each run has its own status and result. Publishing still requires its separate review and approval."
     >
       {!desktop ? (
         <Text style={styles.body}>
-          Prepare reminders, rendered exports and supported network
-          synchronization. Publishing still opens its separate review flow.
+          Choose an action and schedule, then follow its progress below.
         </Text>
       ) : null}
       <Action secondary title="Manage network connections" onPress={connect} />
       <Notice
         text={
           typeof workspace.workflowConfig.can_run !== "boolean"
-            ? "Checking the background worker connection…"
+            ? "Checking scheduled tasks…"
             : workspace.workflowConfig.can_run === true
-              ? "Background worker connected. Check run history for each verified result."
-              : "The background worker is currently unavailable. Scheduled work stays pending until a worker is connected."
+              ? "Scheduled tasks are available. View run history for results."
+              : "Scheduled tasks are unavailable right now. Pending work is saved."
         }
       />
       {typeof workspace.workflowConfig.notice === "string" ? (
-        <Text style={styles.small}>{workspace.workflowConfig.notice}</Text>
+        <HelpLabel
+          label="About scheduled tasks"
+          help={workspace.workflowConfig.notice}
+          style={styles.small}
+        />
       ) : null}
     </Block>
   );
@@ -2837,7 +2854,8 @@ function WorkflowsPanel({
   const workflowHistory = (
     <Block
       title="Run history"
-      subtitle="Queued work is not yet complete. A completed status is produced by the worker."
+      subtitle="Track progress and results."
+      help="Queued or running work is still in progress. Review each result before assuming the task completed."
     >
       {!workspace.runs.length ? (
         <Text style={styles.small}>
@@ -3021,8 +3039,9 @@ function InsightsPanel({
   const engagement = workspace.insights.engagement || {};
   const engagementSummary = (
     <Block
-      title="Insights grounded in your activity"
-      subtitle="Counts below come from Ziipa. External network views and payouts are not inferred."
+      title="Activity insights"
+      subtitle="Your recorded activity on Ziipa."
+      help="These counts come from Ziipa activity. They do not estimate external views, audience totals or payouts. Connected-network figures appear only when available."
     >
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         {[
@@ -3048,8 +3067,8 @@ function InsightsPanel({
         ))}
       </View>
       <Text style={styles.small}>
-        Views: {metric(engagement.views)} · Verified provider analytics will
-        appear only when connected and supported.
+        Views: {metric(engagement.views)} · Connected-network totals appear when
+        available.
       </Text>
       <Text style={styles.small}>
         Publishing requests: {metric(workspace.insights.publishing?.total)} ·
@@ -3060,7 +3079,8 @@ function InsightsPanel({
   const economicsSummary = (
     <Block
       title="Creator economics"
-      subtitle="Your recorded ledger. These figures are user-reported and are not verified payment receipts."
+      subtitle="Income and expenses you record."
+      help="These figures are entered by you, not verified payment receipts. Expected income is separate from received income, and different currencies are not added together."
     >
       {Object.entries(totals).length ? (
         Object.entries(totals).map(([code, total]) => (
@@ -3165,11 +3185,7 @@ function InsightsPanel({
         ))}
       </View>
       {validation ? <Notice error text={validation} /> : null}
-      <Action
-        title="Save ledger entry"
-        busy={busy}
-        onPress={() => void save()}
-      />
+      <Action title="Save entry" busy={busy} onPress={() => void save()} />
     </Block>
   );
   const ledgerEntries = workspace.revenue
@@ -3182,7 +3198,7 @@ function InsightsPanel({
       >
         <Text style={styles.body}>{entry.note}</Text>
         <Remove
-          title="Delete ledger entry"
+          title="Delete entry"
           busy={busy}
           onConfirm={() => void mutate(`/api/os/revenue/${entry.id}`, "DELETE")}
         />
@@ -3192,7 +3208,7 @@ function InsightsPanel({
     workspace.revenue.length > visibleEntries ? (
       <Action
         secondary
-        title="Show more ledger entries"
+        title="Show more entries"
         onPress={() => setVisibleEntries((n) => n + 30)}
       />
     ) : null;
@@ -3221,12 +3237,12 @@ function InsightsPanel({
         main={
           <>
             <Text style={[styles.heading, { fontSize: 18 }]}>
-              Ledger entries
+              Income and expense entries
             </Text>
             {workspace.revenue.length ? (
               ledgerEntries
             ) : (
-              <Notice text="No ledger entries recorded. Add received or expected amounts without mixing their totals." />
+              <Notice text="No entries yet. Record received or expected amounts; each total stays separate." />
             )}
             {moreEntries}
             {activityHistory}
